@@ -1,6 +1,6 @@
 slug: slides-pack
 base_ref: 2b661ae84a73996fbf338c8ee34d471485d8f300
-phase: verify
+phase: architect-review
 task: Build the `slides` skill pack — 5 skills, cross-platform pipeline, python-pptx renderer, two-layer slop detector
 started: 2026-05-16
 last_updated: 2026-05-16
@@ -34,3 +34,4 @@ history:
   - 2026-05-16 — Phase 3b mid-review (Sonnet) PROCEED. Verbatim copies confirmed byte-identical; 3 rewritten files correct; D-002 compliance clean; both accepted concerns sound; 9 test fails confirmed all Wave-2-pending (not bugs). Four low-severity Wave-2 notes: watch slop.md ≤190 lines; SKILL.md files carry the leakage-test burden; source/commands/*.md description must match SKILL.md description; .gitkeep can stay. Dispatching Wave 2 (Workstream C).
   - 2026-05-16 — Phase 3 Wave 2 complete (commit 1fbd331). Workstream C: craft core (T-050..T-055, opus + orchestrator review) and command skills + wrappers (T-056..T-060, opus). npm test 44/44. All within line ceilings. Orchestrator reviewed all 6 craft files and all 4 command skills directly — high quality, principle-only, coherent.
   - 2026-05-16 — Phase 3 Wave 3 complete (commit 73359e1). Integration fixes applied (relative brand.json template-path resolution). T-070 all 6 output trees built + committed, no syntax leaks. T-071 check-sync in sync, npm test 44/44, python unittest 8/8. T-072 PARTIAL (renderer arc + slop detector verified; live interactive run + desktop PowerPoint manual). T-073 PARTIAL (structural cross-harness smoke passes; live Codex/opencode invocation manual). Phase 3 (Implement) complete; advancing to Phase 3c (Verify).
+  - 2026-05-16 — Phase 3c (Verify) complete. Verdict PARTIAL. npm test 44/44, python unittest 8/8, npm run build exit 0, check-sync in sync, all manifest verify commands green. REQ-003/004/005/006/007 covered with fresh evidence; REQ-001/REQ-002 PARTIAL (interactive skill behaviour not auto-runnable here). Gaps are environmental, not defects. Report at slides-pack-verify.md. Advancing to Phase 4 (Architect Review).
