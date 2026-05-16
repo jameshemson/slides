@@ -1,23 +1,21 @@
 ---
 name: build-deck
 description: Render a deck spec into an on-brand .pptx by filling the user's own template, after a slop check on the spec.
-user-invocable: true
-argument-hint: "[path to a .deck.md spec]"
 ---
 
 ## MANDATORY PREPARATION
 
-Load the `presentation-craft` skill. Read its [SKILL.md](../presentation-craft/SKILL.md) and run its Context Gathering Protocol. If `.slides/` is absent or incomplete, run /slides:teach-slides first, then resume here.
+Load the `presentation-craft` skill. Read its [SKILL.md](../presentation-craft/SKILL.md) and run its Context Gathering Protocol. If `.slides/` is absent or incomplete, run `teach-slides` (via the skill tool) first, then resume here.
 
 Read [deck-spec.md](../presentation-craft/reference/deck-spec.md) for the spec format and [slop.md](../presentation-craft/reference/slop.md) for the detector you run before rendering.
 
 ---
 
-$ARGUMENTS
+*(Treat the user's message that invoked this skill as the task input.)*
 
 You render a deck spec into a real `.pptx`. The spec carries the content; the user's template in `.slides/` carries the look. The renderer fills the template's existing placeholders and never adds a shape, so the output stays on-brand.
 
-If the user did not name a spec, ask which `.deck.md` file to render. If no spec exists yet, point them at /slides:narrative to write one.
+If the user did not name a spec, ask which `.deck.md` file to render. If no spec exists yet, point them at `narrative` (via the skill tool) to write one.
 
 ## Step 1: Check the toolchain
 
@@ -52,7 +50,7 @@ python3 scripts/render.py --spec <deck>.deck.md \
 
 On success it exits 0 and prints a one-line summary. On a malformed spec or brand profile it exits 1, prints `error: ...` naming the offending slide, role, or key, and writes nothing.
 
-If the render fails, read the error. It names the fault: a slide numbered out of sequence, a role with more fields than its layout has placeholders, a missing `brand.json` key. Fix the spec or, for a layout-map fault, send the user back to /slides:teach-slides. Then run again.
+If the render fails, read the error. It names the fault: a slide numbered out of sequence, a role with more fields than its layout has placeholders, a missing `brand.json` key. Fix the spec or, for a layout-map fault, send the user back to `teach-slides` (via the skill tool). Then run again.
 
 ## Step 4: Report
 
@@ -60,4 +58,4 @@ Print the render summary. It states how many slides were written and which slide
 
 A `Visual:` field in the spec is recorded in that slide's speaker notes, prefixed `VISUAL TO ADD:`. The renderer does not draw the image, chart, or diagram. Tell the user which slides carry one and that placing the visual in PowerPoint is their step. Point them at the speaker notes, where each visual is described and the reason it belongs there is given.
 
-Tell the user where the `.pptx` was written. To audit the finished deck, point them at /slides:slop-check.
+Tell the user where the `.pptx` was written. To audit the finished deck, point them at `slop-check` (via the skill tool).

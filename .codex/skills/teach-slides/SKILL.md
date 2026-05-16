@@ -1,8 +1,6 @@
 ---
 name: teach-slides
 description: Capture a user's brand once (template, fonts, colours, voice, audience) into a project .slides/ directory the other slides skills read.
-user-invocable: true
-argument-hint: "[path to a .pptx/.potx template, optional]"
 ---
 
 ## MANDATORY PREPARATION
@@ -13,7 +11,7 @@ Read [deck-spec.md](../presentation-craft/reference/deck-spec.md) for the `brand
 
 ---
 
-$ARGUMENTS
+*(Treat the user's message that invoked this skill as the task input.)*
 
 You capture the user's brand once. Every other slides skill reads what you write, so a deck comes out on-brand instead of generic. The brand lives in a `.slides/` directory at the project root: `context.md`, `brand.json`, `template.pptx`.
 
@@ -35,9 +33,7 @@ On macOS with a managed Python, that command can refuse. Tell the user they can 
 
 Gather the brand. You need: a template source, heading and body fonts, brand colours as hex, a logo, the usual audience, the voice, and the presenting context.
 
-<!-- claude-only -->
-Use the AskUserQuestion tool to ask these in small batches so the user picks rather than types. Offer concrete options and an "other" path.
-<!-- /claude-only -->
+
 
 Ask the user these questions and wait for the answers before moving on:
 
@@ -117,4 +113,4 @@ Write three files into `.slides/` at the project root.
 
 **`template.pptx`** is the chosen template, already copied in from Step 3.
 
-Tell the user the brand is captured, name the three files, and point them at /slides:narrative to shape their first deck.
+Tell the user the brand is captured, name the three files, and point them at `narrative` (via `$skill narrative` or `/skills`) to shape their first deck.
