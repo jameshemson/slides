@@ -181,5 +181,99 @@ class RenderTest(unittest.TestCase):
         os.rmdir(cls._tmp)
 
 
+class RenderErrorTest(unittest.TestCase):
+    """Negative-path coverage: malformed input must exit non-zero with a
+    message naming the fault, and never emit a .pptx."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.mkdtemp(prefix="slides-render-error-test-")
+
+    @classmethod
+    def tearDownClass(cls):
+        for name in os.listdir(cls._tmp):
+            os.remove(os.path.join(cls._tmp, name))
+        os.rmdir(cls._tmp)
+
+    def _run(self, name, spec_text, brand=None):
+        """Write a spec (+ brand) and run render.py. Returns CompletedProcess."""
+        if brand is None:
+            brand = {
+                "template": TEMPLATE,
+                "fonts": {"heading": "Calibri", "body": "Calibri"},
+                "colours": {"ink": "#1A1A1A"},
+                "layout_map": dict(LAYOUT_MAP),
+            }
+        spec_path = os.path.join(self._tmp, f"{name}.deck.md")
+        brand_path = os.path.join(self._tmp, f"{name}.brand.json")
+        out_path = os.path.join(self._tmp, f"{name}.pptx")
+        with open(spec_path, "w", encoding="utf-8") as fh:
+            fh.write(spec_text)
+        with open(brand_path, "w", encoding="utf-8") as fh:
+            json.dump(brand, fh)
+        result = subprocess.run(
+            [sys.executable, RENDER_PY, "--spec", spec_path,
+             "--brand", brand_path, "--out", out_path],
+            capture_output=True, text=True,
+        )
+        self.assertFalse(
+            os.path.exists(out_path),
+            "render.py must not emit a .pptx on malformed input",
+        )
+        return result
+
+    def _assert_named_error(self, result, *needles):
+        self.assertEqual(
+            result.returncode, 1,
+            f"expected exit 1; got {result.returncode}\nstderr: {result.stderr}",
+        )
+        msg = (result.stderr + result.stdout).lower()
+        self.assertIn("error:", msg)
+        for needle in needles:
+            self.assertIn(needle.lower(), msg)
+
+    def test_slide_number_gap_is_named(self):
+        spec = ("---\ndeck: d\naudience: a\n---\n\n"
+                "## Slide 1\nlayout: section\nTitle: One\n\n"
+                "## Slide 3\nlayout: section\nTitle: Three\n")
+        self._assert_named_error(self._run("gap", spec), "slide", "3")
+
+    def test_unknown_role_is_named(self):
+        spec = ("---\ndeck: d\naudience: a\n---\n\n"
+                "## Slide 1\nlayout: splash\nTitle: One\n")
+        self._assert_named_error(self._run("role", spec), "slide 1", "splash")
+
+    def test_unrecognised_field_is_named(self):
+        spec = ("---\ndeck: d\naudience: a\n---\n\n"
+                "## Slide 1\nlayout: title\nTitle: Hi\n"
+                "Strapline: Innovate. Accelerate. Dominate.\n")
+        self._assert_named_error(self._run("field", spec), "slide 1", "strapline")
+
+    def test_field_overflow_is_named(self):
+        # two-column carries 3 fields; point it at the 1-placeholder
+        # statement layout so the fill overflows.
+        brand = {
+            "template": TEMPLATE,
+            "fonts": {"heading": "Calibri", "body": "Calibri"},
+            "colours": {"ink": "#1A1A1A"},
+            "layout_map": {**LAYOUT_MAP, "two-column": 5},
+        }
+        spec = ("---\ndeck: d\naudience: a\n---\n\n"
+                "## Slide 1\nlayout: two-column\nTitle: T\nLeft: L\nRight: R\n")
+        self._assert_named_error(
+            self._run("overflow", spec, brand), "slide 1", "placeholder")
+
+    def test_missing_brand_key_is_named(self):
+        brand = {
+            "template": TEMPLATE,
+            "fonts": {"heading": "Calibri", "body": "Calibri"},
+            "colours": {"ink": "#1A1A1A"},
+        }  # no layout_map
+        spec = ("---\ndeck: d\naudience: a\n---\n\n"
+                "## Slide 1\nlayout: section\nTitle: One\n")
+        self._assert_named_error(
+            self._run("brandkey", spec, brand), "layout_map")
+
+
 if __name__ == "__main__":
     unittest.main()

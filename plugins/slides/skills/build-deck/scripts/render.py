@@ -25,6 +25,7 @@ never emits a half-built .pptx.
 import argparse
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -249,6 +250,19 @@ def _parse_slide(number, lines):
                 order.append(label)
             continue
 
+        # A colon-led, field-shaped line that is not a known field, seen
+        # outside an open block field, is a typo'd or stray field (a
+        # tacked-on `Strapline:`, a misspelt `Titel:`). Fail loudly naming
+        # it rather than dropping it silently. Inside a block field a
+        # colon-led line is legitimate prose and is left alone.
+        if current_field not in BLOCK_FIELDS and _looks_like_field_decl(line):
+            bad = line.split(":", 1)[0].strip()
+            known = sorted(set(META_FIELDS).union(*ROLE_FIELDS.values()))
+            raise SpecError(
+                f"slide {number} has an unrecognised field {bad!r}; "
+                f"expected one of {', '.join(known)}"
+            )
+
         # A non-label line belongs to the open block field, if any.
         if current_field in BLOCK_FIELDS:
             current_block.append(line)
@@ -298,6 +312,26 @@ def _field_label(line):
         return None, None
     value = line.split(":", 1)[1].strip()
     return canonical[label.lower()], value
+
+
+_FIELD_DECL_HEAD = re.compile(r"^[A-Za-z][\w -]*$")
+
+
+def _looks_like_field_decl(line):
+    """True if `line` is shaped like a `Field: value` declaration.
+
+    Used to catch a typo'd or stray field at a slide's top level. A line
+    qualifies when it has a colon, an unindented head with no list marker,
+    and a head that reads like a field name (a word, not a number or URL).
+    """
+    if ":" not in line:
+        return False
+    head = line.split(":", 1)[0]
+    if head != head.strip() or not head.strip():
+        return False
+    if head.lstrip().startswith(("-", "*")):
+        return False
+    return bool(_FIELD_DECL_HEAD.match(head.strip()))
 
 
 def _block_items(block_lines):
