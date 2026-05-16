@@ -52,3 +52,14 @@ Two sequential opus agents.
 | T-073 | PARTIAL. Cross-harness structural smoke passes: all 4 non-Claude trees carry the 5 skills; 4 opencode wrappers resolve to `@.opencode/skills/<name>/SKILL.md`; `$ARGUMENTS` rewritten to portable prose, claude-only blocks stripped, `user-invocable` stripped. **Manual, not run here:** live invocation inside Codex and opencode. |
 
 Build decisions: D-013 (render.py records visuals as notes, does not draw them). Accepted Wave 1 concerns: `source/commands/.gitkeep`, builder.test.js `.md`-only leakage guard.
+
+## Phase 4 architect-review polish (committed d26fd6a)
+
+Architect review verdict PASS_WITH_NOTES — 4 minor findings, none blocking. Three were folded in:
+
+- **F1** — `render.py` now raises `SpecError` on an unrecognised field-shaped line at a slide's top level (a typo'd field, a stray `Strapline:`); block-field prose is untouched. The renderer now honours its docstring's loud-failure promise.
+- **F3** — `tests/test_render.py` gained `RenderErrorTest`: 5 negative-path cases (slide-number gap, unknown role, unrecognised field, field overflow, missing brand key) — each asserts exit 1, a named error, and no emitted `.pptx`.
+- **F4** — `tests/test_fixtures.py` added: asserts the slop fixtures keep their planted defects, locking the REQ-004 verification gate.
+- **F2** — REQ-001/REQ-002 interactive behaviour + live Codex/opencode invocation + opening a `.pptx` in desktop PowerPoint: environmental, carried to the release checklist (see completion summary).
+
+Post-polish re-verification: `npm run check-sync` in sync, `npm test` 44/44, `python3 -m unittest discover tests` 19/19, output trees rebuilt and committed.
