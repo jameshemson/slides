@@ -32,6 +32,23 @@ Two parallel opus agents in the shared dir (worktree isolation unavailable — h
 
 Wave 1 integrated verification (orchestrator, commit 88a7a14): `npm run build` exit 0; `npm test` 35 pass / 9 fail (Wave-2-pending); `python3 -m unittest tests.test_render` 8/8 OK. Generated output trees left untracked until T-070.
 
-## Wave 2 — Workstream C — pending
+## Wave 2 — Workstream C — COMPLETE (committed 1fbd331)
 
-## Wave 3 — Workstream E — pending
+Two sequential opus agents.
+
+**Wave 2.1 craft core (T-050..T-055) — DONE.** `presentation-craft/SKILL.md` (131 lines) + reference files `slop.md` (149), `narrative.md` (132), `slides.md` (86), `data-viz.md` (77), `delivery.md` (53). Transcribed from the three notes; principle-only (zero illustrative examples — orchestrator read all 6 files and confirmed); prose passes the Layer 2 slop checks; all within ceilings. `slop.md` carries an entry for every defect planted in `sloppy-deck.md`. Orchestrator reviewed all 6 files directly: high quality, faithful, coherent.
+
+**Wave 2.2 command skills + wrappers (T-056..T-060) — DONE.** The 4 command `SKILL.md` (teach-slides 120, narrative 78, build-deck 63, slop-check 68 lines) + 4 `source/commands/*.md` wrappers. Each command skill loads `presentation-craft` and runs the Context Gathering Protocol. AskUserQuestion guidance wrapped in `<!-- claude-only -->` with a portable prose fallback. `$ARGUMENTS` used standalone (not claude-only-wrapped — body-rewrites.js handles it). Wrapper `description:` is character-identical to each `SKILL.md` description. `npm test` went 44/44.
+
+## Wave 3 — Workstream E — COMPLETE (committed 73359e1)
+
+**Integration fixes (orchestrator, caught reviewing Wave 2).** The `brand.json` `template`-path resolution was inconsistent. Fixed: `render.py` now resolves a relative `template` path against the `brand.json` file's own directory (absolute paths still work — test_render still 8/8); `teach-slides` writes `template: "template.pptx"` (sibling of brand.json); `build-deck` dropped the run-from-project-root requirement. `.slides/` is now self-contained and cwd-independent. Verified end-to-end: a render with a relative `template` path, run from an unrelated cwd, produced a valid 6-slide `.pptx`.
+
+| Task | Result |
+|------|--------|
+| T-070 | `npm run build` emits all 6 output trees; committed. No `$ARGUMENTS` / `/slides:` / `claude-only` / `user-invocable` leak into the non-Claude trees (verified by grep). |
+| T-071 | `npm run check-sync` → "Outputs are in sync", exit 0. `npm test` → 44/44. `python3 -m unittest discover tests` → 8/8. |
+| T-072 | PARTIAL. Renderer arc validated end-to-end (valid 6-slide `.pptx`, reopens, correct per-slide layouts, VISUAL TO ADD note recorded). Slop detector applied to both fixtures: `sloppy-deck.md` trips all 5 planted defects (sensational title, ad-copy line, em dash ×2, 7-bullet soup, tacked-on `Strapline:`) plus jargon/throat-clearing/binary-contrast; `clean-deck.md` yields zero high-severity findings. **Manual, not run here:** the live interactive `teach-slides` → `narrative` chat flow, and opening the `.pptx` in desktop PowerPoint. |
+| T-073 | PARTIAL. Cross-harness structural smoke passes: all 4 non-Claude trees carry the 5 skills; 4 opencode wrappers resolve to `@.opencode/skills/<name>/SKILL.md`; `$ARGUMENTS` rewritten to portable prose, claude-only blocks stripped, `user-invocable` stripped. **Manual, not run here:** live invocation inside Codex and opencode. |
+
+Build decisions: D-013 (render.py records visuals as notes, does not draw them). Accepted Wave 1 concerns: `source/commands/.gitkeep`, builder.test.js `.md`-only leakage guard.
