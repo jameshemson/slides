@@ -102,6 +102,13 @@ def load_brand(path):
     template = brand["template"]
     if not isinstance(template, str) or not template.strip():
         raise SpecError("brand profile key 'template' must be a non-empty path")
+    # Resolve a relative template path against the brand profile's own
+    # directory, so a .slides/ directory is self-contained and portable: it
+    # works regardless of the working directory render.py runs from.
+    if not os.path.isabs(template):
+        brand_dir = os.path.dirname(os.path.abspath(path))
+        template = os.path.normpath(os.path.join(brand_dir, template))
+    brand["template"] = template
 
     layout_map = brand["layout_map"]
     if not isinstance(layout_map, dict) or not layout_map:

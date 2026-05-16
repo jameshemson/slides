@@ -99,11 +99,11 @@ Confirm the mapping with the user before writing it.
 
 Write three files into `.slides/` at the project root.
 
-**`brand.json`** is what the renderer reads. Write `template` as `.slides/template.pptx`, the path relative to the project root, so `render.py` resolves it when run from there.
+**`brand.json`** is what the renderer reads. Write `template` as `template.pptx`, the path relative to `brand.json` itself, so `.slides/` stays self-contained: `render.py` resolves a relative template path against the brand profile's own directory and finds the sibling file whatever directory it runs from.
 
 ```json
 {
-  "template": ".slides/template.pptx",
+  "template": "template.pptx",
   "fonts": { "heading": "Georgia", "body": "Verdana" },
   "colours": { "ink": "#1A1A2E", "accent": "#E94560" },
   "layout_map": {

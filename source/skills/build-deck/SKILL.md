@@ -41,14 +41,14 @@ Fix what you find in the spec itself. Show the user the changes and get a yes. A
 
 ## Step 3: Render
 
-Run `render.py` from the project root, so the relative `template` path inside `brand.json` resolves:
+Run the bundled `scripts/render.py` (it sits beside this skill). Pass the deck spec, the project's `.slides/brand.json`, and an output path:
 
 ```
 python3 scripts/render.py --spec <deck>.deck.md \
     --brand .slides/brand.json --out <deck>.pptx
 ```
 
-`render.py` reads the template path from `brand.json`'s `template` key. There is no `--template` argument.
+`render.py` reads the template path from `brand.json`'s `template` key. There is no `--template` argument. A relative `template` path resolves against the `brand.json` file's own directory, so the working directory does not matter.
 
 On success it exits 0 and prints a one-line summary. On a malformed spec or brand profile it exits 1, prints `error: ...` naming the offending slide, role, or key, and writes nothing.
 
