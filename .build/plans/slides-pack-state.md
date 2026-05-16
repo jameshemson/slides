@@ -1,6 +1,6 @@
 slug: slides-pack
 base_ref: 2b661ae84a73996fbf338c8ee34d471485d8f300
-phase: review
+phase: implement
 task: Build the `slides` skill pack — 5 skills, cross-platform pipeline, python-pptx renderer, two-layer slop detector
 started: 2026-05-16
 last_updated: 2026-05-16
@@ -28,3 +28,4 @@ execution_manifest:
 completed_tasks: [T-040]
 history:
   - 2026-05-16 — Workflow initialised. git init, base commit 2b661ae. Explored build/pm-skills/impeccable reference repos; python-pptx 1.0.2 installed. PLAN.md adopted verbatim as slides-pack-plan.md (T-040 marked complete — notes/ artifacts supersede the plan's draft craft guidance). Context and requirements artifacts written. Phase 1 (Plan) complete; advancing to Phase 2 (Review).
+  - 2026-05-16 — Phase 2 (Review) complete. PASS — no critical findings. 4 important findings (I-001: T-016 must_haves need concrete test-port adaptations per file; I-002: Stress-test prose incorrectly lists check-sync.js as repo-agnostic; I-003: skill-contract.test.js needs vacuous-pass guard; I-004: stale Workflow artifacts section). 4 minor findings. user-invocable field spelling confirmed as 'user-invocable' (with 'c') from frontmatter.js. All REQs covered; manifest acyclic; notes files sufficient for T-051..T-055. Advancing to Phase 3 (Implement).

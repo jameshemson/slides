@@ -108,7 +108,7 @@ teach-slides   narrative             build-deck          slop-check
 
 ### Stress-test
 
-The pipeline copy is low-risk: `transform.js`, `builder.js`, `frontmatter.js`, `utils.js`, `build.js`, and `check-sync.js` are repo-agnostic (verified by reading them); only `providers.js` (output dirs, excludes), `body-rewrites.js` (the `/build:` regex hard-codes the prefix at `body-rewrites.js:21`), and `version-carriers.js` (lists `build`'s manifests) carry `build`-specific values. `frontmatter.js`'s `CLAUDE_ONLY_FIELDS` set is generic and reused as-is.
+The pipeline copy is low-risk: `transform.js`, `builder.js`, `frontmatter.js`, `utils.js`, and `build.js` are repo-agnostic (verified by reading them) and are copied verbatim; `check-sync.js` is also copied verbatim but is not standalone — it imports `PROVIDERS`/`COMMAND_PROVIDERS` from `./transformers/providers.js` and iterates their output dirs, so it is correct only once the slides `providers.js` exists (handled in T-015, which depends on T-013/T-014). Only `providers.js` (output dirs, excludes), `body-rewrites.js` (the `/build:` regex hard-codes the prefix at `body-rewrites.js:21`), and `version-carriers.js` (lists `build`'s manifests) carry `build`-specific values that must be rewritten. `frontmatter.js`'s `CLAUDE_ONLY_FIELDS` set is generic and reused as-is.
 
 The genuinely uncertain part is the renderer. The template-fill approach assumes the user's template exposes usable, distinguishable slide layouts that python-pptx can enumerate via `prs.slide_layouts` and whose placeholders can be filled by `idx`. This holds for well-formed `.pptx` templates but not for degenerate ones (a template with a single blank layout). Mitigation is built into the design: `inspect_template.py` surfaces what it found and `teach-slides` has the user confirm the role-to-layout map, so a weak template fails loudly during setup rather than silently producing bad decks. python-pptx cannot render exotic chart types or guarantee that filled text does not overflow a placeholder; both are handled by scoping (native chart types only; the slop detector flags overflow-prone walls of text) rather than pretended away.
 
@@ -578,7 +578,16 @@ execution_manifest:
 
 ## Workflow artifacts
 
-N/A - standalone plan. This plan was produced by `/build:impl-plan` run standalone, not by the `/build` orchestrator, so there are no `.build/plans/{slug}-*.md` phase artifacts. This plan file is saved at `/Users/jameshemson/.claude/plans/design-a-slides-skill-generic-tarjan.md`. If James wants durable context through implementation, copy it into the new repo at `slides/notes/plans/` once the repo is initialised (mirroring `impeccable/notes/plans/`), alongside `notes/source-review.md` from T-040.
+This plan was adopted into the `/build` orchestrator under slug `slides-pack`. Phase artifacts live in `.build/plans/`:
+
+- Phase 1 Plan writes `slides-pack-plan.md` (this file), `slides-pack-context.md`, `slides-pack-requirements.md`, `slides-pack-state.md`.
+- Phase 2 Review reads those four; writes `slides-pack-review.md`.
+- Phase 3 Implement reads plan/context/requirements/review; writes `slides-pack-implementation-summary.md`.
+- Phase 3c Verify writes `slides-pack-verify.md`.
+- Phase 4 Architect Review writes `slides-pack-architect-review.md`.
+- Phase 5 archives the set to `.build/plans/archive/2026-05-16-slides-pack/`.
+
+The craft notes (`notes/source-review.md`, `notes/approach.md`, `notes/slop-detector.md`) are durable repo artifacts and remain in `notes/`.
 
 ---
 
