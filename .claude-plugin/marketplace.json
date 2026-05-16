@@ -1,0 +1,25 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "slides",
+  "metadata": {
+    "description": "A skill pack that takes you from a vague idea to a finished, on-brand, slop-free PowerPoint deck."
+  },
+  "owner": {
+    "name": "James Hemson",
+    "email": "REDACTED"
+  },
+  "plugins": [
+    {
+      "name": "slides",
+      "description": "A 5-skill pack for going from a vague idea to a finished, on-brand, slop-free .pptx deck. 4 user-invocable skills: teach-slides, narrative, build-deck, slop-check.",
+      "version": "0.1.0",
+      "author": {
+        "name": "James Hemson"
+      },
+      "source": "./",
+      "category": "productivity",
+      "homepage": "https://github.com/smonggliddery/slides",
+      "tags": ["slides", "presentation", "powerpoint", "pptx", "narrative", "design", "slop-check"]
+    }
+  ]
+}
