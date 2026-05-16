@@ -25,7 +25,8 @@ execution_manifest:
   wave_2: [T-050, T-051, T-052, T-053, T-054, T-055, T-056, T-057, T-058, T-059, T-060] — C, after B and D
   wave_3: [T-070, T-071, T-072, T-073] — E integrate and verify
   notes: same-wave tasks share no files_modified; depends_on edges per the plan's execution_manifest YAML
-completed_tasks: [T-040]
+completed_tasks: [T-040, T-001, T-002, T-003, T-004]
 history:
   - 2026-05-16 — Workflow initialised. git init, base commit 2b661ae. Explored build/pm-skills/impeccable reference repos; python-pptx 1.0.2 installed. PLAN.md adopted verbatim as slides-pack-plan.md (T-040 marked complete — notes/ artifacts supersede the plan's draft craft guidance). Context and requirements artifacts written. Phase 1 (Plan) complete; advancing to Phase 2 (Review).
   - 2026-05-16 — Phase 2 (Review) complete. PASS — no critical findings. 4 important findings (I-001: T-016 must_haves need concrete test-port adaptations per file; I-002: Stress-test prose incorrectly lists check-sync.js as repo-agnostic; I-003: skill-contract.test.js needs vacuous-pass guard; I-004: stale Workflow artifacts section). 4 minor findings. user-invocable field spelling confirmed as 'user-invocable' (with 'c') from frontmatter.js. All REQs covered; manifest acyclic; notes files sufficient for T-051..T-055. Advancing to Phase 3 (Implement).
+  - 2026-05-16 — Phase 3 Wave 0 complete (commit 6eba644). T-001..T-004 done: fixture template (11 layouts), deck-spec grammar, sample deck, clean/sloppy slop fixtures, test_render.py (8 tests, red by design). I-002/I-004 plan corrections applied. Build decision D-013 logged (render.py does not draw charts; Visual field → speaker notes). Dispatching Wave 1: Workstreams A (pipeline) + D (renderer) as parallel worktree agents.
