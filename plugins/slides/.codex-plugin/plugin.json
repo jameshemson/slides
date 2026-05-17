@@ -5,8 +5,8 @@
   "author": {
     "name": "James Hemson"
   },
-  "homepage": "https://github.com/smonggliddery/slides",
-  "repository": "https://github.com/smonggliddery/slides",
+  "homepage": "https://github.com/jameshemson/slides",
+  "repository": "https://github.com/jameshemson/slides",
   "license": "MIT",
   "keywords": ["slides", "presentation", "powerpoint", "pptx", "narrative", "skills"],
   "skills": "./skills/",
