@@ -19,7 +19,7 @@ Every user-invocable skill works standalone. Run `/slides:narrative pitch our Q3
 **Claude Code**
 
 ```
-claude plugin add smonggliddery/slides
+claude plugin add jameshemson/slides
 ```
 
 **OpenCode** — copy the `.opencode/` directory (preserving the leading dot) into your project so the final layout is `<your-project>/.opencode/skills/<skill-name>/SKILL.md` and `<your-project>/.opencode/commands/<command-name>.md`. OpenCode discovers skills from those paths. Once copied, the four user-invocable skills are invocable as flat slash commands: `/teach-slides`, `/narrative`, `/build-deck`, `/slop-check`. Each command thin-wraps the matching bundled skill.
@@ -29,7 +29,7 @@ claude plugin add smonggliddery/slides
 Via Plugins UI / CLI:
 
 ```
-codex plugin marketplace add smonggliddery/slides
+codex plugin marketplace add jameshemson/slides
 codex plugin install slides/slides
 ```
 
