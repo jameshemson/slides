@@ -5,8 +5,7 @@
     "description": "A skill pack that takes you from a vague idea to a finished, on-brand, slop-free PowerPoint deck."
   },
   "owner": {
-    "name": "James Hemson",
-    "email": "noodlehemson@gmail.com"
+    "name": "James Hemson"
   },
   "plugins": [
     {
