@@ -4,3 +4,9 @@ __pycache__/
 *.tmp
 *.pyc
 .venv/
+
+# Local-only: not part of the published plugin
+.build/
+notes/
+PLAN.md
+.claude/settings.local.json
