@@ -79,12 +79,21 @@ def main(argv=None):
     parser.add_argument("--spec", required=True, help="path to the deck spec .md")
     parser.add_argument("--brand", required=True, help="path to brand.json")
     parser.add_argument("--out", required=True, help="output .pptx path")
+    parser.add_argument(
+        "--charts-dir", default=None,
+        help="directory for generated chart PNGs (default: <out>.charts)",
+    )
     args = parser.parse_args(argv)
+
+    charts_dir = args.charts_dir or (os.path.splitext(args.out)[0] + ".charts")
 
     try:
         brand = load_brand(args.brand)
         slides = parse_spec(args.spec)
-        summary = build_deck(brand, slides, args.out)
+        summary = build_deck(
+            brand, slides, args.out,
+            charts_dir=charts_dir, brand_path=args.brand,
+        )
     except SpecError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -565,8 +574,13 @@ def _validate_slide_fields(number, role, fields):
 # --- rendering ---------------------------------------------------------------
 
 
-def build_deck(brand, slides, out_path):
-    """Render parsed slides into a .pptx at out_path. Returns a summary string."""
+def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None):
+    """Render parsed slides into a .pptx at out_path. Returns a summary string.
+
+    A slide carrying a `Chart` is drawn natively: charts.py renders a PNG and
+    it is placed below the body line. If matplotlib is not importable the chart
+    degrades to a `VISUAL TO ADD:` note (D-011) so the deck still builds.
+    """
     template = brand["template"]
     if not os.path.isfile(template):
         raise SpecError(f"template named in brand profile not found: {template}")
@@ -581,8 +595,16 @@ def build_deck(brand, slides, out_path):
     for sld in list(sld_id_lst):
         sld_id_lst.remove(sld)
 
+    if charts_dir is None:
+        charts_dir = os.path.splitext(out_path)[0] + ".charts"
+
     layout_map = brand["layout_map"]
     visual_slides = []
+    chart_slides = []        # drawn natively
+    fallback_slides = []     # matplotlib absent -> VISUAL TO ADD note
+    charts_mod = "unset"     # imported lazily once, on the first chart slide
+    font_family = "unset"    # resolved lazily once, when first drawing a chart
+    font_warning = None
 
     for spec in slides:
         number = spec["number"]
@@ -614,8 +636,53 @@ def build_deck(brand, slides, out_path):
                 f"placeholder(s)"
             )
 
+        chart = spec["fields"].get("Chart")
+        extra_visual = None
+        if chart:
+            if charts_mod == "unset":
+                try:
+                    import charts as charts_mod  # noqa: PLC0415
+                except ImportError:
+                    charts_mod = None
+            if charts_mod is None:
+                # Graceful degradation (D-011): record the chart as a note.
+                extra_visual = chart_to_note(chart)
+                fallback_slides.append(number)
+            else:
+                if font_family == "unset":
+                    font_family, font_warning = register_brand_font(
+                        brand, brand_path
+                    )
+                host = _object_placeholder(slide)
+                if host is None:
+                    raise SpecError(
+                        f"slide {number}: title-content layout has no content "
+                        f"placeholder to host a chart; re-run teach-slides"
+                    )
+                body_val = spec["fields"].get("Body")
+                has_body = body_val not in (None, "", [])
+                title_ph = slide.shapes.title
+                if has_body:
+                    _resize_to_text(slide, host, title_ph)
+                    # Body stays (it holds the explanatory line); keep it out
+                    # of the drop list.
+                    unused = [p for p in unused
+                              if p._element is not host._element]
+                region = _chart_region(number, prs, slide, host, title_ph,
+                                       has_body)
+                os.makedirs(charts_dir, exist_ok=True)
+                png = os.path.join(charts_dir, f"slide{number}.png")
+                try:
+                    charts_mod.render_png(
+                        chart, brand["colours"], font_family, png
+                    )
+                except charts_mod.ChartError as exc:
+                    raise SpecError(f"slide {number}: {exc}")
+                _place_picture(slide, png, region)
+                chart_slides.append(number)
+
         _drop_unused(unused)
-        _apply_meta(slide, spec["meta"])
+        _apply_meta(slide, spec["meta"], extra_visual=extra_visual)
         if "Visual" in spec["meta"]:
             visual_slides.append(number)
 
@@ -624,13 +691,36 @@ def build_deck(brand, slides, out_path):
         os.makedirs(out_dir, exist_ok=True)
     prs.save(out_path)
 
-    visual_note = (
-        f"; {len(visual_slides)} carry a VISUAL TO ADD note "
-        f"(slides {', '.join(map(str, visual_slides))})"
-        if visual_slides
-        else "; no visuals flagged"
-    )
-    return f"rendered {len(slides)} slide(s) to {out_path}{visual_note}"
+    return _summary(out_path, len(slides), visual_slides, chart_slides,
+                    fallback_slides, font_warning)
+
+
+def _summary(out_path, n_slides, visual_slides, chart_slides, fallback_slides,
+             font_warning):
+    """Compose the one-line run summary, naming charts, notes, and warnings."""
+    parts = [f"rendered {n_slides} slide(s) to {out_path}"]
+    if chart_slides:
+        parts.append(
+            f"; {len(chart_slides)} native chart(s) "
+            f"(slides {', '.join(map(str, chart_slides))})"
+        )
+    if visual_slides:
+        parts.append(
+            f"; {len(visual_slides)} carry a VISUAL TO ADD note "
+            f"(slides {', '.join(map(str, visual_slides))})"
+        )
+    if not chart_slides and not visual_slides:
+        parts.append("; no visuals flagged")
+    if fallback_slides:
+        parts.append(
+            f"; matplotlib not installed — {len(fallback_slides)} chart "
+            f"slide(s) fell back to VISUAL TO ADD notes "
+            f"(slides {', '.join(map(str, fallback_slides))}); "
+            f"pip install matplotlib to draw them"
+        )
+    if font_warning:
+        parts.append(f" [warning: {font_warning}]")
+    return "".join(parts)
 
 
 def _ordered_role_fields(spec):
@@ -672,14 +762,15 @@ def _drop_unused(placeholders):
             parent.remove(element)
 
 
-def _apply_meta(slide, meta):
+def _apply_meta(slide, meta, extra_visual=None):
     """Write a slide's Visual and Notes fields into its speaker notes.
 
     A Visual description is recorded — not drawn — prefixed 'VISUAL TO ADD:'.
-    Notes prose sits alongside it. Order: notes prose, then the visual line.
+    Notes prose sits alongside it. Order: notes prose, then the visual line(s).
+    `extra_visual` is a second VISUAL TO ADD line (the matplotlib-absent chart
+    fallback synthesised by chart_to_note), appended after any Visual field.
     """
-    if not meta:
-        return
+    meta = meta or {}
     parts = []
     notes = meta.get("Notes")
     if notes:
@@ -687,6 +778,8 @@ def _apply_meta(slide, meta):
     visual = meta.get("Visual")
     if visual:
         parts.append(f"VISUAL TO ADD: {_meta_text(visual)}")
+    if extra_visual:
+        parts.append(f"VISUAL TO ADD: {extra_visual}")
     if not parts:
         return
     notes_tf = slide.notes_slide.notes_text_frame
@@ -698,6 +791,178 @@ def _meta_text(value):
     if isinstance(value, (list, tuple)):
         return " ".join(str(v) for v in value)
     return str(value)
+
+
+# --- chart placement and font (D-002 carve-out: geometry from the template) --
+
+
+def register_brand_font(brand, brand_path):
+    """Register brand.json `font_files` with matplotlib for chart text.
+
+    Returns (family_name_or_None, warning_or_None). family is the family the
+    chart should use; None means matplotlib's default (with a warning). A
+    relative font path resolves against the brand.json directory, like
+    `template`. Imported matplotlib lazily — only reached on a chart slide.
+    """
+    font_files = brand.get("font_files")
+    if not isinstance(font_files, dict) or not font_files:
+        return None, "no brand font file supplied; charts use a fallback font"
+
+    from matplotlib import font_manager  # noqa: PLC0415
+
+    base = os.path.dirname(os.path.abspath(brand_path)) if brand_path else ""
+    registered = None
+    for family, path in font_files.items():
+        if not os.path.isabs(path) and base:
+            path = os.path.normpath(os.path.join(base, path))
+        if not os.path.isfile(path):
+            return None, (f"brand font file not found ({path}); charts use a "
+                          f"fallback font")
+        try:
+            font_manager.fontManager.addfont(path)
+        except Exception:  # noqa: BLE001
+            return None, (f"could not register brand font ({path}); charts use "
+                          f"a fallback font")
+        registered = family
+    return registered, None
+
+
+def _object_placeholder(slide):
+    """The content placeholder that hosts the chart (the non-title one)."""
+    from pptxlib import CONTENT_PLACEHOLDER_TYPES  # noqa: PLC0415
+
+    title = slide.shapes.title
+    title_idx = title.placeholder_format.idx if title is not None else None
+    cands = [
+        ph for ph in slide.placeholders
+        if ph.placeholder_format.type in CONTENT_PLACEHOLDER_TYPES
+        and ph.placeholder_format.idx != title_idx
+    ]
+    cands.sort(key=lambda p: p.placeholder_format.idx)
+    return cands[0] if cands else None
+
+
+def _geom(slide, ph):
+    """(left, top, width, height) for a placeholder, falling back to the layout.
+
+    A slide placeholder often inherits geometry (returns None); read the layout
+    placeholder of the same idx in that case. Any value may still be None.
+    """
+    idx = ph.placeholder_format.idx
+    layout_ph = None
+    for p in slide.slide_layout.placeholders:
+        if p.placeholder_format.idx == idx:
+            layout_ph = p
+            break
+
+    def pick(attr):
+        value = getattr(ph, attr)
+        if value is None and layout_ph is not None:
+            value = getattr(layout_ph, attr)
+        return value
+
+    return pick("left"), pick("top"), pick("width"), pick("height")
+
+
+def _resize_to_text(slide, host, title_ph):
+    """Shrink the body placeholder to roughly one line so the chart sits below.
+
+    Sets explicit geometry on the slide placeholder (so it stops inheriting)
+    and uses the title placeholder's height as a template-derived one-line
+    proxy — no inch literal.
+    """
+    hl, ht, hw, _ = _geom(slide, host)
+    _, _, _, th = _geom(slide, title_ph)
+    if None in (hl, ht, hw, th):
+        return  # cannot resize without geometry; chart region falls back
+    host.left, host.top, host.width, host.height = hl, ht, hw, th
+
+
+def _chart_region(number, prs, slide, host, title_ph, has_body):
+    """Compute the chart's (left, top, width, height) from the template.
+
+    With a body line: span the content width, from just below the resized body
+    line down to a bottom margin that mirrors the title's top margin. Chart
+    only: use the content placeholder's full region.
+    """
+    hl, ht, hw, hh = _geom(slide, host)
+    if None in (hl, ht, hw, hh):
+        raise SpecError(
+            f"slide {number}: chart host placeholder has no resolvable "
+            f"geometry; re-run teach-slides"
+        )
+    if not has_body:
+        return hl, ht, hw, hh
+    _, tt, _, _ = _geom(slide, title_ph)
+    margin = tt if tt is not None else ht
+    top = ht + hh  # host was resized to one line, so this is the body's bottom
+    bottom = prs.slide_height - margin
+    height = bottom - top
+    if height <= 0:
+        raise SpecError(
+            f"slide {number}: no room below the body line for a chart"
+        )
+    return hl, top, hw, height
+
+
+def _png_size(path):
+    """(width, height) in pixels from a PNG's IHDR — no Pillow dependency."""
+    import struct  # noqa: PLC0415
+
+    with open(path, "rb") as fh:
+        header = fh.read(24)
+    return struct.unpack(">II", header[16:24])
+
+
+def _place_picture(slide, png_path, region):
+    """Add the chart PNG, fit inside `region` preserving aspect, centred."""
+    left, top, width, height = region
+    iw, ih = _png_size(png_path)
+    scale = min(width / iw, height / ih)
+    w = int(iw * scale)
+    h = int(ih * scale)
+    x = int(left + (width - w) / 2)
+    y = int(top + (height - h) / 2)
+    slide.shapes.add_picture(png_path, x, y, width=w, height=h)
+
+
+def _num_str(value):
+    """Compact number for a synthesised note: drop a trailing .0."""
+    return str(int(value)) if float(value).is_integer() else f"{value:g}"
+
+
+def chart_to_note(chart):
+    """Synthesise a human-readable VISUAL TO ADD note from a chart dict.
+
+    Used when matplotlib is absent (D-011) so the deck still tells the reader
+    exactly what chart belongs on the slide.
+    """
+    ctype = chart["type"]
+    if ctype in ("bar", "column"):
+        cats = chart["categories"]
+        series = "; ".join(
+            f"{s['name']}: "
+            + ", ".join(f"{c} {_num_str(v)}"
+                        for c, v in zip(cats, s["values"]))
+            for s in chart["series"]
+        )
+        desc = f"{ctype.capitalize()} chart. {series}."
+        if chart.get("emphasis"):
+            desc += f" Emphasis: {chart['emphasis']}."
+    else:  # line
+        pts = ", ".join(
+            f"({_num_str(x)}, {_num_str(y)})" for x, y in chart["points"]
+        )
+        desc = f"Line chart. Points: {pts}."
+        if chart.get("markers"):
+            marks = "; ".join(
+                f"{m['label']} at {_num_str(m['x'])}"
+                for m in chart["markers"]
+            )
+            desc += f" Markers: {marks}."
+    if chart.get("callout"):
+        desc += f" Callout: {chart['callout']}."
+    return desc + " (Install matplotlib to draw this automatically.)"
 
 
 if __name__ == "__main__":
