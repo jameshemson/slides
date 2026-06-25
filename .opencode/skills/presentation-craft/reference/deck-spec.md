@@ -63,6 +63,31 @@ Any slide may carry an optional `Visual:` field: a plain-language description of
 
 `build-deck` does not draw the visual. It records the description in the slide's speaker notes, prefixed `VISUAL TO ADD:`, so the person finishing the deck knows exactly what to place and why. Choosing the right chart or diagram is craft, taught in [data-viz.md](data-viz.md); placing it is a deliberate human step, not a thing code guesses.
 
+Use `Visual:` for anything `build-deck` cannot draw: photographs, concept diagrams, and the chart families not yet supported (scatter, histogram, map). For the bar, column, and line families, use the `Chart:` field below, which `build-deck` draws.
+
+## The Chart field
+
+A `title-content` slide may carry a `Chart:` block: structured data `build-deck` draws as an on-brand chart and places below the slide's content. `Chart:` and `Body:` may both appear — the one-line `Body:` explains the chart above it (one of the two is required). `Chart:` is allowed on `title-content` only.
+
+`Chart:` is a block: write `Chart:` on its own line, then indented `key: value` lines. Three types:
+
+- `type: bar` (horizontal) or `type: column` (vertical) — needs `categories:` (comma-separated labels) and one or more `series <Name>:` (comma-separated numbers, one per category). Optional `emphasis:` names the one category to colour in the brand accent; the rest go muted. Optional `callout:` is a short annotation.
+- `type: line` — needs `points:` as comma-separated `x y` pairs. Optional `marker: <x> <label>` annotates the point at that x. Optional `callout:`.
+
+```
+## Slide 4
+layout: title-content
+Title: Where the savings land, year by year
+Body: After the spends, the pot grows again every year.
+Chart:
+  type: column
+  emphasis: 2031
+  categories: 2026, 2027, 2028, 2029, 2030, 2031
+  series Balance: 76900, 34300, 37400, 21900, 24600, 27300
+```
+
+Colours come from `brand.json` `colours` (accent for the emphasis, a muted tone for the rest); the chart text uses the brand font when `brand.json` names a `font_files` path. Drawing needs `matplotlib` (`pip install matplotlib`). If it is not installed, the chart degrades to a `VISUAL TO ADD:` note built from the chart data, so the deck still builds. Choosing the right chart for the data is craft, taught in [data-viz.md](data-viz.md).
+
 ## Speaker notes
 
 Any slide may carry `Notes:` — what the presenter says, or, for a read deck, the context a reader needs. Notes are prose and are held to the prose-slop standard in [slop.md](slop.md). The slide is not the script; the notes are.

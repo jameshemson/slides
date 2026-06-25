@@ -66,12 +66,21 @@ makes the idea click is craft.
 
 ## How the visual reaches the deck
 
-In v1 the renderer does not draw charts or diagrams. A slide's chart, diagram, or
-image is written into the deck spec as a `Visual:` field: a plain-language
-description of what belongs there and why. The build-deck skill records that
-description in the slide's speaker notes, prefixed `VISUAL TO ADD:`, and the user
-builds the visual in PowerPoint.
+The renderer draws three chart families directly: bar and column (comparing
+categories), and line (change over time). A slide carries them as a structured
+`Chart:` block in the deck spec; `build-deck` renders an on-brand PNG with
+matplotlib — direct labels, no legend, stripped axes, the insight in the brand
+accent and the rest muted — and places it below the slide's one-line `Body`. The
+`Chart:` format is in [deck-spec.md](deck-spec.md).
 
-So the skill's job here is not to render. It is to choose the right chart and the
-right diagram, and to describe it precisely in the spec. That choice is the craft
-this file teaches.
+Everything else still travels as a `Visual:` field: a plain-language description
+of what belongs there and why. The other chart families (scatter for
+relationship, a histogram for distribution, a map for geospatial), concept
+diagrams, and photographs are recorded in the speaker notes, prefixed
+`VISUAL TO ADD:`, for a person to place in PowerPoint. If matplotlib is not
+installed, a `Chart:` slide degrades to the same note, so the deck still builds.
+
+So for the three drawn families the skill's job is to pick the right one, name
+the point, and mark the insight to emphasise. For the rest it is to choose the
+right form and describe it precisely. Either way the choice is the craft this
+file teaches.
