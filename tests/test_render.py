@@ -475,13 +475,11 @@ class ChartRenderTest(unittest.TestCase):
             charts_dir,
             next(f for f in os.listdir(charts_dir) if f.endswith(".png")))
         img = Image.open(png).convert("RGB")
-        counts = {}
-        for px in img.getdata():
-            counts[px] = counts.get(px, 0) + 1
+        histogram = img.getcolors(maxcolors=2 ** 24) or []
 
         def near(target, tol=10):
             tr, tg, tb = target
-            return sum(n for (r, g, b), n in counts.items()
+            return sum(n for n, (r, g, b) in histogram
                        if abs(r - tr) <= tol and abs(g - tg) <= tol
                        and abs(b - tb) <= tol)
 
