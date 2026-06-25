@@ -21,11 +21,13 @@ Notes: The number is from the mail tool's own report for April. Read it once, sl
 ## Slide 4
 layout: title-content
 Title: What the 18 readers use it for
-Body:
-- Twelve are on the finance team and need the revenue line by Tuesday.
-- Six forward one chart into their own team's update.
-- The finance team already pulls the same revenue line from the dashboard.
-Notes: The email serves a real need for six people. The other 234 recipients can be dropped without anyone losing anything.
+Body: Twelve of the eighteen are on the finance team; six forward one chart.
+Chart:
+  type: column
+  emphasis: Finance team
+  categories: Finance team, Forwarders
+  series Readers: 12, 6
+Notes: The chart figures match the slide: twelve on finance, six forwarders. The email serves a real need for six people. The other 234 recipients can be dropped without anyone losing anything.
 
 ## Slide 5
 layout: two-column

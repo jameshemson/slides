@@ -33,8 +33,13 @@ layout: title-content
 Title: The Future Is Here
 Body:
 - Nexus represents a paradigm shift in how we think about work.
+- Adoption grew 40% in the first month.
+Chart:
+  type: column
+  categories: Jan, Feb
+  series Adoption: 100, 112
 Strapline: Innovate. Accelerate. Dominate.
-Notes: This matters because the future waits for no one.
+Notes: This matters because the future waits for no one. The dashboard actually shows 12% growth, not the 40% the slide claims.
 
 ## Slide 5
 layout: statement

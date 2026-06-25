@@ -1,11 +1,15 @@
 """Shared python-pptx helpers for the build-deck scripts.
 
-Decision D-002 is absolute: this module never sets fonts, colours, or
+Decision D-002 is absolute for this module: it never sets fonts, colours, or
 coordinates. The user's template carries all visual design. Code here only
 opens templates, lists and resolves layouts, fills the placeholders the
 template already defines, and — for `apply_theme` — writes brand values that
 the *caller* supplies (read from brand.json) into the template's theme XML.
 There are no font, colour, or coordinate literals anywhere in this file.
+
+Chart drawing is a deliberately separate concern: it lives in `charts.py`
+(matplotlib) and is placed by render.py, which derives the picture's geometry
+from the template. pptxlib itself still adds no shape and holds no literals.
 
 Public surface — exactly five helpers:
 

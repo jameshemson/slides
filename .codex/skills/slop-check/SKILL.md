@@ -48,6 +48,8 @@ Work through `slop.md` end to end.
 
 Hold the emotion line. Earned emotion, grounded in something true and concrete, passes. Flag only the unearned kind.
 
+**Chart figures match the words.** When a slide carries a `Chart:` block, check its numbers against the figures in the Body and the Notes. A chart that shows one figure while the prose claims another is a trust break: flag it and name both numbers. (A finished `.pptx` holds the chart as an image, so run this check on the deck spec, where the chart data is readable.)
+
 ## Step 3: Score
 
 Rate the deck's written content 1 to 10 on each dimension from `slop.md`: Directness, Rhythm, Trust, Authenticity, Density. Report the five numbers and the total out of 50. Below 35, the deck needs a revision pass.
