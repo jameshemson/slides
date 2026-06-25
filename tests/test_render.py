@@ -193,9 +193,8 @@ class RenderErrorTest(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        for name in os.listdir(cls._tmp):
-            os.remove(os.path.join(cls._tmp, name))
-        os.rmdir(cls._tmp)
+        # rmtree (not os.remove): a chart error may leave a sidecar charts dir.
+        shutil.rmtree(cls._tmp, ignore_errors=True)
 
     def _run(self, name, spec_text, brand=None):
         """Write a spec (+ brand) and run render.py. Returns CompletedProcess."""
