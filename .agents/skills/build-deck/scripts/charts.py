@@ -30,7 +30,7 @@ _ANNOT_SIZE = 14
 _BAR_THICK = 0.6
 _LINE_W = 3.2
 
-CHART_TYPES = ("bar", "column", "line")
+CHART_TYPES = ("bar", "column", "line", "pie", "scatter")
 
 
 class ChartError(Exception):
@@ -118,6 +118,10 @@ def render_png(chart, colours, font, out_path):
             _draw_bars(ax, chart, emphasis, muted, spend, ink, vertical=True)
         elif ctype == "bar":
             _draw_bars(ax, chart, emphasis, muted, spend, ink, vertical=False)
+        elif ctype == "pie":
+            _draw_pie(ax, chart, emphasis, muted, spend, ink)
+        elif ctype == "scatter":
+            _draw_scatter(ax, chart, emphasis, muted, spend, ink)
         else:  # line
             _draw_line(ax, chart, emphasis, muted, spend, ink)
         fig.savefig(out_path, dpi=_DPI, bbox_inches="tight",
@@ -215,6 +219,49 @@ def _draw_line(ax, chart, emphasis, muted, spend, ink):
                     fontsize=_ANNOT_SIZE, fontweight="bold", color=ink)
     ax.set_ylim(0, max(ys) * 1.12 or 1)
     _strip(ax, muted, keep_x=True)
+    _callout(ax, chart, spend, ink)
+
+
+def _draw_pie(ax, chart, emphasis, muted, spend, ink):
+    cats = chart["categories"]
+    values = chart["series"][0]["values"]
+    emph = chart.get("emphasis")
+    palette = [emphasis, muted, spend, ink]
+    if emph is None:
+        colours = [palette[i % len(palette)] for i in range(len(cats))]
+    else:
+        colours = [emphasis if c == emph else muted for c in cats]
+    labels = [f"{c}  {_fmt(v)}" for c, v in zip(cats, values)]
+    ax.pie(
+        values, labels=labels, colors=colours, startangle=90,
+        counterclock=False, wedgeprops={"linewidth": 0},
+        textprops={"color": ink, "fontsize": _TICK_SIZE},
+    )
+    ax.set_aspect("equal")
+    _callout(ax, chart, spend, ink)
+
+
+def _draw_scatter(ax, chart, emphasis, muted, spend, ink):
+    points = chart["points"]
+    xs = [p[0] for p in points]
+    ys = [p[1] for p in points]
+    at = dict(points)
+    ax.scatter(xs, ys, s=90, color=emphasis, zorder=3)
+    for m in chart.get("markers", []):
+        x = m["x"]
+        y = at[x]
+        ax.scatter([x], [y], s=130, color=spend, zorder=5)
+        ax.annotate(m["label"], (x, y), xytext=(0, -28),
+                    textcoords="offset points", ha="center",
+                    fontsize=_ANNOT_SIZE, fontweight="bold", color=ink)
+    # A scatter needs both axes to read the relationship: keep them, muted.
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    for side in ("bottom", "left"):
+        ax.spines[side].set_visible(True)
+        ax.spines[side].set_color(muted)
+    ax.tick_params(colors=ink, labelsize=_TICK_SIZE)
+    ax.grid(False)
     _callout(ax, chart, spend, ink)
 
 

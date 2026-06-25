@@ -64,7 +64,11 @@ CHART_ALLOWED_ROLES = {"title-content"}
 # Chart types render.py accepts at parse time. Kept in sync with
 # charts.CHART_TYPES (render.py must not import charts — and thus matplotlib —
 # at module load, so the list is duplicated rather than imported).
-CHART_TYPES = ("bar", "column", "line")
+# Two data shapes: category charts (categories + series) and point charts
+# (x/y points).
+CHART_TYPES = ("bar", "column", "line", "pie", "scatter")
+CATEGORY_CHART_TYPES = ("bar", "column", "pie")
+POINT_CHART_TYPES = ("line", "scatter")
 REQUIRED_BRAND_KEYS = ("template", "fonts", "colours", "layout_map")
 
 
@@ -494,7 +498,7 @@ def _parse_chart_block(number, lines):
             f"{', '.join(CHART_TYPES)}"
         )
 
-    if ctype in ("bar", "column"):
+    if ctype in CATEGORY_CHART_TYPES:
         if not categories:
             raise SpecError(
                 f"slide {number}: chart type {ctype!r} needs 'categories'"
@@ -503,6 +507,11 @@ def _parse_chart_block(number, lines):
             raise SpecError(
                 f"slide {number}: chart type {ctype!r} needs at least one "
                 f"'series'"
+            )
+        if ctype == "pie" and len(series) != 1:
+            raise SpecError(
+                f"slide {number}: a pie chart needs exactly one series, not "
+                f"{len(series)}"
             )
         for s in series:
             if len(s["values"]) != len(categories):
@@ -519,12 +528,14 @@ def _parse_chart_block(number, lines):
         return {"type": ctype, "categories": categories, "series": series,
                 "emphasis": emphasis, "callout": callout}
 
-    # line
+    # line or scatter (point charts)
     if not points:
-        raise SpecError(f"slide {number}: chart type 'line' needs 'points'")
+        raise SpecError(
+            f"slide {number}: chart type {ctype!r} needs 'points'"
+        )
     if emphasis is not None:
         raise SpecError(
-            f"slide {number}: 'emphasis' is not supported for a line chart; "
+            f"slide {number}: 'emphasis' is not supported for a {ctype} chart; "
             f"use 'marker' to call out a point instead"
         )
     point_xs = {x for x, _ in points}
@@ -943,7 +954,7 @@ def chart_to_note(chart):
     exactly what chart belongs on the slide.
     """
     ctype = chart["type"]
-    if ctype in ("bar", "column"):
+    if ctype in ("bar", "column", "pie"):
         cats = chart["categories"]
         series = "; ".join(
             f"{s['name']}: "
@@ -954,11 +965,11 @@ def chart_to_note(chart):
         desc = f"{ctype.capitalize()} chart. {series}."
         if chart.get("emphasis"):
             desc += f" Emphasis: {chart['emphasis']}."
-    else:  # line
+    else:  # line or scatter
         pts = ", ".join(
             f"({_num_str(x)}, {_num_str(y)})" for x, y in chart["points"]
         )
-        desc = f"Line chart. Points: {pts}."
+        desc = f"{ctype.capitalize()} chart. Points: {pts}."
         if chart.get("markers"):
             marks = "; ".join(
                 f"{m['label']} at {_num_str(m['x'])}"

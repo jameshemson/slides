@@ -66,21 +66,22 @@ makes the idea click is craft.
 
 ## How the visual reaches the deck
 
-The renderer draws three chart families directly: bar and column (comparing
-categories), and line (change over time). A slide carries them as a structured
-`Chart:` block in the deck spec; `build-deck` renders an on-brand PNG with
-matplotlib — direct labels, no legend, stripped axes, the insight in the brand
-accent and the rest muted — and places it below the slide's one-line `Body`. The
-`Chart:` format is in [deck-spec.md](deck-spec.md).
+The renderer draws four families directly: bar and column (comparing
+categories), line (change over time), pie (part-to-whole), and scatter
+(relationship). A slide carries them as a structured `Chart:` block in the deck
+spec; `build-deck` renders an on-brand PNG with matplotlib — direct labels, no
+legend, stripped axes, the insight in the brand accent and the rest muted — and
+places it below the slide's one-line `Body`. The `Chart:` format is in
+[deck-spec.md](deck-spec.md).
 
-Everything else still travels as a `Visual:` field: a plain-language description
-of what belongs there and why. The other chart families (scatter for
-relationship, a histogram for distribution, a map for geospatial), concept
-diagrams, and photographs are recorded in the speaker notes, prefixed
-`VISUAL TO ADD:`, for a person to place in PowerPoint. If matplotlib is not
-installed, a `Chart:` slide degrades to the same note, so the deck still builds.
+The two families that need a different data shape still travel as a `Visual:`
+field: a histogram for distribution (it needs binned data) and a map for
+geospatial. So do concept diagrams and photographs. These are recorded in the
+speaker notes, prefixed `VISUAL TO ADD:`, for a person to place in PowerPoint.
+If matplotlib is not installed, a `Chart:` slide degrades to the same note, so
+the deck still builds.
 
-So for the three drawn families the skill's job is to pick the right one, name
+So for the four drawn families the skill's job is to pick the right one, name
 the point, and mark the insight to emphasise. For the rest it is to choose the
 right form and describe it precisely. Either way the choice is the craft this
 file teaches.
