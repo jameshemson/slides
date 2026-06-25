@@ -65,7 +65,7 @@ Write `<deck>.deck.md`, conforming to [deck-spec.md](../presentation-craft/refer
 - `layout:` first on each slide, one of the six roles: `title`, `section`, `statement`, `title-content`, `two-column`, `quote`.
 - Only the fields the role allows, plus optional `Visual:` and `Notes:`; a `title-content` slide may also carry a `Chart:` block.
 - A `Visual:` field describes an image, diagram, or unsupported chart in plain words. `build-deck` records it as a note for a person to place; it does not draw it.
-- A `Chart:` block carries structured data (bar, column, or line) that `build-deck` draws as an on-brand chart. Use it when the data is one of those three; use `Visual:` for everything else. The format is in [deck-spec.md](../presentation-craft/reference/deck-spec.md).
+- A `Chart:` block carries structured data (bar, column, line, pie, or scatter) that `build-deck` draws as an on-brand chart. Use it when the data fits one of those; use `Visual:` for everything else (histograms, maps, diagrams, photos). The format is in [deck-spec.md](../presentation-craft/reference/deck-spec.md).
 - `Notes:` carries what the presenter says. Notes are prose and held to the prose-slop standard.
 
 The spec carries content and structure only, never fonts, colours, or coordinates. Those live in the template and `brand.json`.

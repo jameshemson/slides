@@ -358,6 +358,22 @@ class RenderErrorTest(unittest.TestCase):
             self._run("clineemph", spec, self._chart_brand()),
             "slide 1", "emphasis")
 
+    def test_chart_pie_multi_series_is_named(self):
+        # A pie shows one whole; more than one series is ambiguous.
+        spec = self._chart_spec(
+            "Chart:\n  type: pie\n  categories: A, B\n"
+            "  series X: 1, 2\n  series Y: 3, 4\n")
+        self._assert_named_error(
+            self._run("cpie", spec, self._chart_brand()), "slide 1", "pie")
+
+    def test_chart_scatter_emphasis_is_named(self):
+        # scatter has no categories to emphasise; fail loudly.
+        spec = self._chart_spec(
+            "Chart:\n  type: scatter\n  emphasis: Z\n  points: 0 1, 1 2\n")
+        self._assert_named_error(
+            self._run("cscatteremph", spec, self._chart_brand()),
+            "slide 1", "emphasis")
+
 
 # tests/fixtures/sample-template.pptx maps title-content to layout index 1,
 # whose content placeholder (idx 1) hosts the resized Body line; the chart is a
@@ -381,6 +397,15 @@ BAR_BLOCK = (
 LINE_BLOCK = (
     "Chart:\n  type: line\n"
     "  points: 0 76900, 12 34300, 26 19600, 60 27300\n  marker: 26 Car\n"
+)
+PIE_BLOCK = (
+    "Chart:\n  type: pie\n  emphasis: Rent\n"
+    "  categories: Rent, Food, Travel, Savings\n"
+    "  series Spend: 1200, 400, 200, 300\n"
+)
+SCATTER_BLOCK = (
+    "Chart:\n  type: scatter\n"
+    "  points: 1 2, 2 4, 3 5, 4 8\n  marker: 4 Peak\n"
 )
 
 
@@ -463,7 +488,8 @@ class ChartRenderTest(unittest.TestCase):
 
     def test_each_type_renders_a_picture(self):
         for name, block in (("t-bar", BAR_BLOCK), ("t-col", COLUMN_BLOCK),
-                            ("t-line", LINE_BLOCK)):
+                            ("t-line", LINE_BLOCK), ("t-pie", PIE_BLOCK),
+                            ("t-scatter", SCATTER_BLOCK)):
             with self.subTest(chart=name):
                 result, out, _ = self._render(name, block)
                 prs = self._ok(result, out)

@@ -69,10 +69,10 @@ Use `Visual:` for anything `build-deck` cannot draw: photographs, concept diagra
 
 A `title-content` slide may carry a `Chart:` block: structured data `build-deck` draws as an on-brand chart and places below the slide's content. `Chart:` and `Body:` may both appear — the one-line `Body:` explains the chart above it (one of the two is required). `Chart:` is allowed on `title-content` only.
 
-`Chart:` is a block: write `Chart:` on its own line, then indented `key: value` lines. Three types:
+`Chart:` is a block: write `Chart:` on its own line, then indented `key: value` lines. Five types in two data shapes:
 
-- `type: bar` (horizontal) or `type: column` (vertical) — needs `categories:` (comma-separated labels) and one or more `series <Name>:` (comma-separated numbers, one per category). Optional `emphasis:` names the one category to colour in the brand accent; the rest go muted. Optional `callout:` is a short annotation.
-- `type: line` — needs `points:` as comma-separated `x y` pairs. Optional `marker: <x> <label>` annotates the point at that x. Optional `callout:`.
+- **Category charts** — `type: bar` (horizontal), `type: column` (vertical), or `type: pie` (part-to-whole). Need `categories:` (comma-separated labels) and `series <Name>:` (comma-separated numbers, one per category). `bar`/`column` take one or more series; `pie` takes exactly one. Optional `emphasis:` names the one category to colour in the brand accent (one slice, for a pie); the rest go muted. Optional `callout:` is a short annotation.
+- **Point charts** — `type: line` (filled) or `type: scatter` (dots). Need `points:` as comma-separated `x y` pairs. Optional `marker: <x> <label>` annotates the point at that x. Optional `callout:`. `emphasis:` does not apply.
 
 ```
 ## Slide 4
