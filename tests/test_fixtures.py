@@ -48,6 +48,12 @@ class SloppyFixtureTest(unittest.TestCase):
     def test_carries_a_bullet_soup_slide(self):
         self.assertGreaterEqual(_max_consecutive_bullets(self.text), 7)
 
+    def test_carries_a_chart_prose_mismatch(self):
+        # A chart/notes figure that contradicts the slide's prose (REQ-007):
+        # the Body claims "grew 40%" while the chart and notes say 12%.
+        self.assertIn("grew 40%", self.text)
+        self.assertIn("12%", self.text)
+
 
 class CleanFixtureTest(unittest.TestCase):
     """clean-deck.md must carry none of the planted defects."""
@@ -63,6 +69,10 @@ class CleanFixtureTest(unittest.TestCase):
 
     def test_has_no_bullet_soup(self):
         self.assertLess(_max_consecutive_bullets(self.text), 7)
+
+    def test_has_no_chart_prose_mismatch(self):
+        # The clean deck's chart figures agree with its prose (REQ-007).
+        self.assertNotIn("grew 40%", self.text)
 
 
 if __name__ == "__main__":

@@ -31,6 +31,8 @@ pip install python-pptx
 
 On macOS with a managed Python that command can refuse. Tell the user they can run `pip install --break-system-packages python-pptx`, or make a virtualenv. Wait for the toolchain to work before rendering.
 
+If the spec carries any `Chart:` slides, drawing them needs matplotlib: `pip install matplotlib` (same `--break-system-packages` note applies). It is optional — without it, chart slides still render, falling back to a `VISUAL TO ADD:` note. For charts to use the brand font, `brand.json` must name a `font_files` path; otherwise the chart text uses a fallback font and the run summary says so.
+
 ## Step 2: Run the slop detector on the spec
 
 Render slop and you ship slop. Run the detector on the deck spec before `render.py` touches it.
@@ -56,8 +58,8 @@ If the render fails, read the error. It names the fault: a slide numbered out of
 
 ## Step 4: Report
 
-Print the render summary. It states how many slides were written and which slides carry a `VISUAL TO ADD` note.
+Print the render summary. It states how many slides were written, which carry a native chart, which carry a `VISUAL TO ADD` note, and any matplotlib or brand-font fallback warning.
 
-A `Visual:` field in the spec is recorded in that slide's speaker notes, prefixed `VISUAL TO ADD:`. The renderer does not draw the image, chart, or diagram. Tell the user which slides carry one and that placing the visual in PowerPoint is their step. Point them at the speaker notes, where each visual is described and the reason it belongs there is given.
+A `Chart:` block is drawn natively and placed on the slide (PNGs are written to a `.charts/` folder beside the `.pptx` and embedded in it). A `Visual:` field is recorded in the slide's speaker notes, prefixed `VISUAL TO ADD:`, and is not drawn — tell the user which slides carry one and that placing it in PowerPoint is their step. If the summary reports a matplotlib fallback, tell the user that those chart slides became notes and that `pip install matplotlib` will draw them on the next run.
 
 Tell the user where the `.pptx` was written. To audit the finished deck, point them at /slides:slop-check.
