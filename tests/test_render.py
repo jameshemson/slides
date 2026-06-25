@@ -178,9 +178,7 @@ class RenderTest(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        for name in os.listdir(cls._tmp):
-            os.remove(os.path.join(cls._tmp, name))
-        os.rmdir(cls._tmp)
+        shutil.rmtree(cls._tmp, ignore_errors=True)
 
 
 class RenderErrorTest(unittest.TestCase):
@@ -351,6 +349,14 @@ class RenderErrorTest(unittest.TestCase):
             "Chart:\n  type: line\n  points: 0 10, 1 20\n  marker: 5 Late\n")
         self._assert_named_error(
             self._run("cmark", spec, self._chart_brand()), "slide 1", "marker")
+
+    def test_chart_line_emphasis_is_named(self):
+        # emphasis is meaningless on a line chart; fail loudly, not silently.
+        spec = self._chart_spec(
+            "Chart:\n  type: line\n  emphasis: X\n  points: 0 10, 1 20\n")
+        self._assert_named_error(
+            self._run("clineemph", spec, self._chart_brand()),
+            "slide 1", "emphasis")
 
 
 # tests/fixtures/sample-template.pptx maps title-content to layout index 1,
