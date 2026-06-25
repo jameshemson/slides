@@ -522,6 +522,11 @@ def _parse_chart_block(number, lines):
     # line
     if not points:
         raise SpecError(f"slide {number}: chart type 'line' needs 'points'")
+    if emphasis is not None:
+        raise SpecError(
+            f"slide {number}: 'emphasis' is not supported for a line chart; "
+            f"use 'marker' to call out a point instead"
+        )
     point_xs = {x for x, _ in points}
     for m in markers:
         if m["x"] not in point_xs:
