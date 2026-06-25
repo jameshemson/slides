@@ -41,15 +41,30 @@ ROLE_FIELDS = {
     "two-column": ["Title", "Left", "Right"],
     "quote": ["Quote", "Attribution"],
 }
-# Fields that are optional for their role (absent is fine).
+# Fields that are optional for their role (absent is fine). Body is optional on
+# title-content because a chart may stand in for it (Body and Chart may coexist,
+# but at least one is required — enforced in _validate_slide_fields).
 OPTIONAL_FIELDS = {
     "title": {"Subtitle"},
     "quote": {"Attribution"},
+    "title-content": {"Body"},
 }
 # Block fields may carry a bullet list or short paragraphs across many lines.
 BLOCK_FIELDS = {"Body", "Left", "Right"}
 # Fields any slide may carry, handled outside the role's placeholder fill.
 META_FIELDS = {"Visual", "Notes"}
+# Structured block fields collect raw lines like a block but are parsed by a
+# dedicated parser (not _block_items). Chart is the only one. It is NOT in
+# BLOCK_FIELDS on purpose, so it skips the bullet-list / inline-value paths.
+STRUCTURED_BLOCK_FIELDS = {"Chart"}
+# Extra recognised field labels beyond ROLE_FIELDS and META_FIELDS.
+EXTRA_FIELDS = {"Chart"}
+# Roles a Chart may appear on.
+CHART_ALLOWED_ROLES = {"title-content"}
+# Chart types render.py accepts at parse time. Kept in sync with
+# charts.CHART_TYPES (render.py must not import charts — and thus matplotlib —
+# at module load, so the list is duplicated rather than imported).
+CHART_TYPES = ("bar", "column", "line")
 REQUIRED_BRAND_KEYS = ("template", "fonts", "colours", "layout_map")
 
 
@@ -218,6 +233,8 @@ def _parse_slide(number, lines):
         if current_field in BLOCK_FIELDS:
             items = _block_items(current_block)
             fields[current_field] = items
+        elif current_field in STRUCTURED_BLOCK_FIELDS:
+            fields[current_field] = _parse_chart_block(number, current_block)
         # Inline fields were already stored from the `Field: value` line.
 
     for raw in lines:
@@ -237,7 +254,15 @@ def _parse_slide(number, lines):
             _close_block()
             current_field = label
             current_block = []
-            if label in BLOCK_FIELDS:
+            if label in STRUCTURED_BLOCK_FIELDS:
+                # A structured block (Chart) must be a block, never inline.
+                if value:
+                    raise SpecError(
+                        f"slide {number}: {label!r} must be a block, not an "
+                        f"inline value (write '{label}:' then indented lines)"
+                    )
+                # Following lines are collected and parsed in _close_block.
+            elif label in BLOCK_FIELDS:
                 if value:
                     # Allow a block field given an inline value on one line.
                     fields[label] = [value]
@@ -255,16 +280,22 @@ def _parse_slide(number, lines):
         # tacked-on `Strapline:`, a misspelt `Titel:`). Fail loudly naming
         # it rather than dropping it silently. Inside a block field a
         # colon-led line is legitimate prose and is left alone.
-        if current_field not in BLOCK_FIELDS and _looks_like_field_decl(line):
+        if (
+            current_field not in BLOCK_FIELDS
+            and current_field not in STRUCTURED_BLOCK_FIELDS
+            and _looks_like_field_decl(line)
+        ):
             bad = line.split(":", 1)[0].strip()
-            known = sorted(set(META_FIELDS).union(*ROLE_FIELDS.values()))
+            known = sorted(
+                set(META_FIELDS).union(*ROLE_FIELDS.values()).union(EXTRA_FIELDS)
+            )
             raise SpecError(
                 f"slide {number} has an unrecognised field {bad!r}; "
                 f"expected one of {', '.join(known)}"
             )
 
         # A non-label line belongs to the open block field, if any.
-        if current_field in BLOCK_FIELDS:
+        if current_field in BLOCK_FIELDS or current_field in STRUCTURED_BLOCK_FIELDS:
             current_block.append(line)
         # Otherwise it is blank/decoration outside any field — ignored.
 
@@ -302,8 +333,8 @@ def _field_label(line):
     if head.lstrip().startswith(("-", "*")):
         return None, None
     label = head.strip()
-    # Every field name any role declares, plus the two meta fields.
-    known = set(META_FIELDS)
+    # Every field name any role declares, plus the meta and extra fields.
+    known = set(META_FIELDS) | set(EXTRA_FIELDS)
     for role_fields in ROLE_FIELDS.values():
         known.update(role_fields)
     # Match case-insensitively, then normalise to the canonical capitalisation.
@@ -351,9 +382,160 @@ def _block_items(block_lines):
     return items
 
 
+def _chart_number(number, token):
+    """Parse one numeric chart token to float, or raise SpecError naming it."""
+    try:
+        return float(token.strip())
+    except ValueError:
+        raise SpecError(
+            f"slide {number}: chart value {token.strip()!r} is not a number"
+        )
+
+
+def _parse_points(number, value):
+    """Parse a line chart's `points:` value into a list of (x, y) float pairs.
+
+    Format: comma-separated 'x y' pairs, e.g. '0 76900, 12 34300'.
+    """
+    points = []
+    for chunk in value.split(","):
+        parts = chunk.split()
+        if len(parts) != 2:
+            raise SpecError(
+                f"slide {number}: chart point {chunk.strip()!r} must be two "
+                f"numbers 'x y'"
+            )
+        points.append((_chart_number(number, parts[0]),
+                       _chart_number(number, parts[1])))
+    if not points:
+        raise SpecError(f"slide {number}: chart 'points' is empty")
+    return points
+
+
+def _parse_marker(number, value):
+    """Parse a line chart `marker:` value 'x label' into {'x', 'label'}."""
+    parts = value.split(None, 1)
+    if len(parts) != 2:
+        raise SpecError(
+            f"slide {number}: chart marker {value.strip()!r} must be 'x label'"
+        )
+    return {"x": _chart_number(number, parts[0]), "label": parts[1].strip()}
+
+
+def _parse_chart_block(number, lines):
+    """Parse a Chart block's raw lines into a chart dict. Raises SpecError.
+
+    Returns one of:
+      bar/column: {type, categories: [str], series: [{name, values:[float]}],
+                   emphasis: str|None, callout: str|None}
+      line:       {type, points: [(x,y)], markers: [{x,label}],
+                   callout: str|None}
+    """
+    ctype = categories = callout = emphasis = None
+    points = None
+    series = []
+    markers = []
+    seen = False
+
+    for raw in lines:
+        line = raw.strip()
+        if not line:
+            continue
+        seen = True
+        if ":" not in line:
+            raise SpecError(
+                f"slide {number}: chart line {line!r} is not 'key: value'"
+            )
+        head, _, value = line.partition(":")
+        key = head.strip().lower()
+        value = value.strip()
+        if key == "type":
+            ctype = value.lower()
+        elif key == "categories":
+            categories = [c.strip() for c in value.split(",") if c.strip()]
+        elif key == "emphasis":
+            emphasis = value
+        elif key == "callout":
+            callout = value
+        elif key == "points":
+            points = _parse_points(number, value)
+        elif key == "marker":
+            markers.append(_parse_marker(number, value))
+        elif key == "series" or key.startswith("series "):
+            name = head.strip()[len("series"):].strip() or "Series"
+            values = [_chart_number(number, t)
+                      for t in value.split(",") if t.strip()]
+            if not values:
+                raise SpecError(
+                    f"slide {number}: chart series {name!r} has no values"
+                )
+            series.append({"name": name, "values": values})
+        else:
+            raise SpecError(
+                f"slide {number}: unknown chart key {head.strip()!r}"
+            )
+
+    if not seen:
+        raise SpecError(f"slide {number}: chart block is empty")
+    if ctype is None:
+        raise SpecError(f"slide {number}: chart block has no 'type'")
+    if ctype not in CHART_TYPES:
+        raise SpecError(
+            f"slide {number}: unknown chart type {ctype!r}; expected one of "
+            f"{', '.join(CHART_TYPES)}"
+        )
+
+    if ctype in ("bar", "column"):
+        if not categories:
+            raise SpecError(
+                f"slide {number}: chart type {ctype!r} needs 'categories'"
+            )
+        if not series:
+            raise SpecError(
+                f"slide {number}: chart type {ctype!r} needs at least one "
+                f"'series'"
+            )
+        for s in series:
+            if len(s["values"]) != len(categories):
+                raise SpecError(
+                    f"slide {number}: chart series {s['name']!r} has "
+                    f"{len(s['values'])} values but there are "
+                    f"{len(categories)} categories (length mismatch)"
+                )
+        if emphasis is not None and emphasis not in categories:
+            raise SpecError(
+                f"slide {number}: chart emphasis {emphasis!r} is not one of "
+                f"the categories"
+            )
+        return {"type": ctype, "categories": categories, "series": series,
+                "emphasis": emphasis, "callout": callout}
+
+    # line
+    if not points:
+        raise SpecError(f"slide {number}: chart type 'line' needs 'points'")
+    point_xs = {x for x, _ in points}
+    for m in markers:
+        if m["x"] not in point_xs:
+            raise SpecError(
+                f"slide {number}: chart marker at x={m['x']:g} has no matching "
+                f"point"
+            )
+    return {"type": ctype, "points": points, "markers": markers,
+            "callout": callout}
+
+
 def _validate_slide_fields(number, role, fields):
     """Check a slide carries exactly the fields its role allows. Raises SpecError."""
+    has_chart = "Chart" in fields
+    if has_chart and role not in CHART_ALLOWED_ROLES:
+        raise SpecError(
+            f"slide {number}: 'Chart' is only allowed on a title-content "
+            f"slide, not {role!r}"
+        )
+
     allowed = set(ROLE_FIELDS[role]) | META_FIELDS
+    if role in CHART_ALLOWED_ROLES:
+        allowed |= {"Chart"}
     required = set(ROLE_FIELDS[role]) - OPTIONAL_FIELDS.get(role, set())
 
     for name in fields:
@@ -368,6 +550,15 @@ def _validate_slide_fields(number, role, fields):
         if empty:
             raise SpecError(
                 f"slide {number} ({role}) is missing required field {name!r}"
+            )
+
+    # title-content needs either a Body or a Chart (Body and Chart may coexist).
+    if role in CHART_ALLOWED_ROLES:
+        body = fields.get("Body")
+        body_empty = body is None or body == "" or body == []
+        if body_empty and not has_chart:
+            raise SpecError(
+                f"slide {number}: title-content slide needs a Body or a Chart"
             )
 
 
