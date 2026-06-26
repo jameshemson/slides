@@ -105,6 +105,8 @@ Any slide may carry `Notes:` — what the presenter says, or, for a read deck, t
 
 `teach-slides` can fill `fonts` and `colours` automatically. Pointed at a template or an existing deck, `extract_brand.py` reads the heading and body fonts and the palette (accent colours plus `ink` and `paper`) straight from the file's theme, so the brand profile reflects the real deck instead of hand-typed values. The user confirms or adjusts what it read.
 
+`init_brand.py` goes one step further: it writes a complete `brand.json` — `template`, `fonts`, `colours`, and a proposed `layout_map` — from a single template or deck, so a project can be brand-ready without the full interview. `build-deck` and `narrative` offer this when `.slides/` is missing; the user confirms the result and can refine it later with `teach-slides`.
+
 ## Rules the spec must hold
 
 - Slides numbered 1..N with no gaps; every slide has a `layout:` line first.

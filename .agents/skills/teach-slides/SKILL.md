@@ -15,6 +15,8 @@ Read [deck-spec.md](../presentation-craft/reference/deck-spec.md) for the `brand
 
 You capture the user's brand once. Every other slides skill reads what you write, so a deck comes out on-brand instead of generic. The brand lives in a `.slides/` directory at the project root: `context.md`, `brand.json`, `template.pptx`.
 
+For a one-step start, `../build-deck/scripts/init_brand.py <template> --template-ref template.pptx` writes a complete `brand.json` (fonts, colours, and a proposed layout map) straight from a template or deck — this is the fast path build-deck and narrative offer. This skill is the fuller capture: it also gathers voice, audience, logo, and lets the user hand-check the layout map. Run it when the user wants that depth, or to refine what `init_brand.py` proposed.
+
 If `.slides/` already exists, tell the user what it holds and ask whether to refresh it or keep it. Do not overwrite without a yes.
 
 ## Step 1: Check the toolchain
