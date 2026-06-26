@@ -52,10 +52,18 @@ written by the teach-slides skill, with `brand.json` as its core file.
 
 1. **Check for `.slides/` (fast).** Read `.slides/brand.json` from the project root.
    If it exists and carries the required keys, proceed.
-2. **Run teach-slides (REQUIRED).** If `.slides/` is absent or incomplete, run the
-   teach-slides skill NOW, before anything else. Do NOT infer a brand from guesswork
-   and do NOT impose a default look. Once teach-slides has written the brand
-   profile, resume the original task.
+2. **Capture the brand (REQUIRED).** If `.slides/` is absent or incomplete, set it
+   up NOW, before anything else. Do NOT infer a brand from guesswork and do NOT
+   impose a default look. Two ways:
+   - **Fast path.** If the user has a template or an existing deck they like, copy
+     it to `.slides/template.pptx` and run
+     `build-deck/scripts/init_brand.py .slides/template.pptx --template-ref template.pptx > .slides/brand.json`.
+     It reads the fonts and colours from the file's theme and proposes a
+     layout_map. Show the user what it captured, let them confirm or adjust, then
+     resume. This is the one-step path build-deck and narrative offer.
+   - **Full path.** Otherwise, or for voice, audience, logo, and a hand-checked
+     layout map, run the teach-slides skill — the authoritative brand capture.
+   Once `.slides/brand.json` exists, resume the original task.
 
 Every command skill in the pack performs this check before it builds. The brand
 profile is the join between the constant craft and the user's own look.

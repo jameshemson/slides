@@ -5,7 +5,7 @@ description: Shape a vague idea into a deck story through real back-and-forth, t
 
 ## MANDATORY PREPARATION
 
-Load the `presentation-craft` skill. Read its [SKILL.md](../presentation-craft/SKILL.md) and run its Context Gathering Protocol. If `.slides/` is absent or incomplete, run `teach-slides` (via `$skill teach-slides` or `/skills`) first, then resume here.
+Load the `presentation-craft` skill. Read its [SKILL.md](../presentation-craft/SKILL.md) and run its Context Gathering Protocol. If `.slides/` is absent or incomplete, set up the brand first, then resume here: offer the fast path (`../build-deck/scripts/init_brand.py` reads fonts, colours, and a layout map from a template or an existing deck) or the fuller `teach-slides` (via `$skill teach-slides` or `/skills`) interview.
 
 Read [narrative.md](../presentation-craft/reference/narrative.md) for the Plan and Create craft, [slop.md](../presentation-craft/reference/slop.md) for the full detector, and [deck-spec.md](../presentation-craft/reference/deck-spec.md) for the file you will write.
 

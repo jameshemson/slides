@@ -4,6 +4,25 @@ All notable changes to the slides skill pack are recorded here. The format
 follows [Keep a Changelog](https://keepachangelog.com/), and the pack uses
 [semantic versioning](https://semver.org/).
 
+## [0.5.0] - 2026-06-26
+
+### Added
+
+- **One-step brand setup, so onboarding actually happens.** A new
+  `init_brand.py` turns a single template or existing deck into a complete,
+  renderable `brand.json` — `template`, theme `fonts` and `colours` (via
+  v0.4.0's `read_theme`), and a proposed `layout_map`. The layout map is a
+  heuristic that maps each of the six semantic roles to one of the template's
+  real layouts: a normalised name match first (with `quote` falling back to a
+  `section` layout), otherwise the tightest-fitting layout with enough content
+  placeholders for the role's fields, so a role is never mapped to a layout that
+  would overflow at render.
+- **build-deck and narrative offer the fast path.** When `.slides/` is absent,
+  the Context Gathering Protocol now offers to set the brand up from a template
+  or deck in one step (init_brand) as well as the full `teach-slides` interview,
+  so a user is no longer silently left with an off-brand deck. teach-slides
+  remains the authoritative, fuller brand capture.
+
 ## [0.4.0] - 2026-06-26
 
 ### Added
@@ -82,6 +101,7 @@ follows [Keep a Changelog](https://keepachangelog.com/), and the pack uses
 - A `python-pptx` renderer that fills the user's own template, and a two-layer
   (presentation + prose) slop detector.
 
+[0.5.0]: https://github.com/jameshemson/slides/releases/tag/v0.5.0
 [0.4.0]: https://github.com/jameshemson/slides/releases/tag/v0.4.0
 [0.3.0]: https://github.com/jameshemson/slides/releases/tag/v0.3.0
 [0.2.0]: https://github.com/jameshemson/slides/releases/tag/v0.2.0

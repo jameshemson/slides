@@ -7,7 +7,7 @@ argument-hint: "[path to a .deck.md spec]"
 
 ## MANDATORY PREPARATION
 
-Load the `presentation-craft` skill. Read its [SKILL.md](../presentation-craft/SKILL.md) and run its Context Gathering Protocol. If `.slides/` is absent or incomplete, run /slides:teach-slides first, then resume here.
+Load the `presentation-craft` skill. Read its [SKILL.md](../presentation-craft/SKILL.md) and run its Context Gathering Protocol. If `.slides/` is absent or incomplete, set up the brand first, then resume here: offer the fast path (`scripts/init_brand.py` reads the fonts, colours, and a layout map straight from a template or an existing deck) or the fuller /slides:teach-slides interview.
 
 Read [deck-spec.md](../presentation-craft/reference/deck-spec.md) for the spec format and [slop.md](../presentation-craft/reference/slop.md) for the detector you run before rendering.
 
