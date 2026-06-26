@@ -54,6 +54,15 @@ class SloppyFixtureTest(unittest.TestCase):
         self.assertIn("grew 40%", self.text)
         self.assertIn("12%", self.text)
 
+    def test_carries_an_assistant_artifact(self):
+        # Layer 3 (AI-voice): a trailing "shall I draft..." offer, an
+        # absolute-fail tell like the em dash.
+        self.assertIn("Would you like me to", self.text)
+
+    def test_carries_a_claudism(self):
+        # Layer 3: an aphoristic closer ("That's the whole game.").
+        self.assertIn("That's the whole game", self.text)
+
 
 class CleanFixtureTest(unittest.TestCase):
     """clean-deck.md must carry none of the planted defects."""
@@ -73,6 +82,11 @@ class CleanFixtureTest(unittest.TestCase):
     def test_has_no_chart_prose_mismatch(self):
         # The clean deck's chart figures agree with its prose (REQ-007).
         self.assertNotIn("grew 40%", self.text)
+
+    def test_has_no_ai_voice_tells(self):
+        # The clean deck carries no Layer 3 assistant-artifact or Claudism.
+        self.assertNotIn("Would you like me to", self.text)
+        self.assertNotIn("That's the whole game", self.text)
 
 
 if __name__ == "__main__":

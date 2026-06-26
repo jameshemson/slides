@@ -133,12 +133,21 @@ throat-clearing; no "not X, it's Y" contrasts; sentence lengths vary; no em dash
 vague declaratives replaced with the specific thing; the reader is in the scene; no
 meta-joiners.
 
-### Scoring
+## Layer 3: AI-voice tells
+
+A narrower register slop than Layer 2: the analytical voice a language model
+slips into when it tries to sound insightful. Read [ai-voice.md](ai-voice.md) and
+scan the speaker notes and slide text for the Claudism catalogue (fifteen
+families, from performative pushback to the colon reveal to the aphoristic
+closer), the AI vocabulary watchlist, assistant-artifact slop (a trailing "shall
+I draft the next slide?" fails the draft, like an em dash), and uniform rhythm.
+
+## Score
 
 Rate the deck's written content 1 to 10 on each dimension: **Directness**
 (statements, not announcements), **Rhythm** (varied, not metronomic), **Trust**
-(respects the reader), **Authenticity** (sounds human), **Density** (nothing
-cuttable). Below 35 out of 50, revise.
+(respects the reader), **Authenticity** (sounds human, no AI-voice tells),
+**Density** (nothing cuttable). Below 35 out of 50, revise.
 
 ## The emotion line
 

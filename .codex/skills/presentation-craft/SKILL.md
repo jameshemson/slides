@@ -125,7 +125,10 @@ Six reference files carry the full craft. Read the one the task needs.
   or a concept that needs a picture.
 - **`reference/delivery.md`**: delivery and speaker notes. Read when writing the
   notes or the delivery primer.
-- **`reference/slop.md`**: the full slop detector, both layers and the score. Read
+- **`reference/slop.md`**: the full slop detector, three layers and the score. Read
   when running the slop check or when in doubt about a slop call.
+- **`reference/ai-voice.md`**: Layer 3 of the detector, the AI-voice tells (the
+  Claudism catalogue, vocabulary watchlist, assistant-artifact slop). Read with
+  `slop.md` when running the slop check.
 - **`reference/deck-spec.md`**: the deck spec format. Read when writing or reading
   a `.deck.md` file.
