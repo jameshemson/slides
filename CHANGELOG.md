@@ -4,6 +4,22 @@ All notable changes to the slides skill pack are recorded here. The format
 follows [Keep a Changelog](https://keepachangelog.com/), and the pack uses
 [semantic versioning](https://semver.org/).
 
+## [0.3.0] - 2026-06-26
+
+### Added
+
+- **Layer 3 of the slop detector: AI-voice tells.** A new reference file
+  `presentation-craft/reference/ai-voice.md` catches the analytical register a
+  language model slips into to sound insightful, which the prose-slop layer
+  misses. It holds the Claudism catalogue (fifteen families, from performative
+  pushback and the reframe announcement to the colon reveal and the aphoristic
+  closer), an AI vocabulary watchlist, assistant-artifact slop (a trailing
+  "shall I draft the next slide?" or model self-reference fails the draft
+  outright, like an em dash), and uniform-rhythm detection. `slop-check` and the
+  `presentation-craft` reference index are wired to it; the `slop-check`
+  fixtures gained planted Layer 3 tells, locked by `tests/test_fixtures.py`.
+  Adapted from the detector in the `pm-skills` repo.
+
 ## [0.2.0] - 2026-06-26
 
 ### Added
@@ -49,5 +65,6 @@ follows [Keep a Changelog](https://keepachangelog.com/), and the pack uses
 - A `python-pptx` renderer that fills the user's own template, and a two-layer
   (presentation + prose) slop detector.
 
+[0.3.0]: https://github.com/jameshemson/slides/releases/tag/v0.3.0
 [0.2.0]: https://github.com/jameshemson/slides/releases/tag/v0.2.0
 [0.1.0]: https://github.com/jameshemson/slides/releases/tag/v0.1.0

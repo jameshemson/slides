@@ -7,7 +7,7 @@ description: Run an adversarial slop review over a deck spec or a finished .pptx
 
 Load the `presentation-craft` skill. Read its [SKILL.md](../presentation-craft/SKILL.md).
 
-Read [slop.md](../presentation-craft/reference/slop.md) in full: the two layers, the banned phrases and structures, the emotion line, and the score. This skill runs that detector standalone.
+Read [slop.md](../presentation-craft/reference/slop.md) in full: the three layers, the banned phrases and structures, the emotion line, and the score. This skill runs that detector standalone. Read [ai-voice.md](../presentation-craft/reference/ai-voice.md) too — it holds Layer 3, the AI-voice tells.
 
 ---
 
@@ -38,13 +38,15 @@ for i, s in enumerate(p.slides, 1):
 "
 ```
 
-## Step 2: Run both layers of the detector
+## Step 2: Run all three layers of the detector
 
 Work through `slop.md` end to end.
 
 **Layer 1, presentation slop.** Check every slide for: the tacked-on strapline, the slide as a document, the slide as a script, bullet soup, title and body restating each other, the deck being about the presenter or the product, facts with no story, unearned hype and ad-copy voice, decoration that does not clarify, register mismatch, leftover scaffolding.
 
 **Layer 2, prose slop.** Check the speaker notes and any prose against the banned phrases and banned structures: throat-clearing openers, emphasis crutches, business jargon, adverbs, filler, binary contrasts, negative listing, dramatic fragmentation, passive voice, em dashes, lazy extremes.
+
+**Layer 3, AI-voice tells.** Scan notes and slide text against `ai-voice.md`: the Claudism catalogue (performative pushback, reframe announcements, naming the move, structural metaphor, the antithesis flip, false candor, the aphoristic closer, false universals, the clean mental model, the colon reveal, the conditions checklist, and the rest), the AI vocabulary watchlist, assistant-artifact slop (a trailing offer or model self-reference fails the draft outright, like an em dash), and uniform rhythm.
 
 Hold the emotion line. Earned emotion, grounded in something true and concrete, passes. Flag only the unearned kind.
 

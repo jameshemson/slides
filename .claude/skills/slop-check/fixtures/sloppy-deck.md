@@ -44,4 +44,4 @@ Notes: This matters because the future waits for no one. The dashboard actually 
 ## Slide 5
 layout: statement
 Statement: Don't get left behind — the revolution starts now.
-Notes: Close with maximum impact. Make them feel the fear of missing out.
+Notes: Close with maximum impact. Make them feel the fear of missing out. That's the whole game. Would you like me to draft a follow-up deck next?
