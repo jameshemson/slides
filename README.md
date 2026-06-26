@@ -9,7 +9,7 @@ A skill pack that takes you from a vague idea to a finished, on-brand, slop-free
 | `presentation-craft` | Shared knowledge base on presentation craft. Not invoked directly — the other four skills draw on it |
 | `/slides:teach-slides` | Onboards you to presentation craft: narrative, structure, design, and how to avoid slop |
 | `/slides:narrative` | Shapes a vague idea into a tight, audience-aware deck story |
-| `/slides:build-deck` | Renders an on-brand `.pptx` deck from a narrative and a template |
+| `/slides:build-deck` | Renders an on-brand `.pptx` deck from a narrative and a template, drawing native charts from chart data in the spec |
 | `/slides:slop-check` | Audits a deck for generic, AI-flavoured slop and reports fixes |
 
 Every user-invocable skill works standalone. Run `/slides:narrative pitch our Q3 roadmap` without the full pipeline, or chain them: shape the story, build the deck, then slop-check it.
@@ -37,6 +37,15 @@ Or via repo-local discovery: copy the `.agents/` directory into your project so 
 
 All five skills are available in every harness. Unlike a typical orchestrated pack, no skill depends on Claude-only sub-agent or Task tooling, so nothing is excluded from OpenCode or Codex output.
 
+## Requirements
+
+Only `/slides:build-deck` needs anything beyond the skill files:
+
+- **Python 3.9+** and **python-pptx** (`pip install python-pptx`) to render a `.pptx`.
+- **matplotlib** (`pip install matplotlib`) is optional, needed only to draw `Chart:` slides. Without it, chart slides fall back to a "VISUAL TO ADD" note and the rest of the deck renders normally.
+
+On a managed macOS Python, add `--break-system-packages` to the `pip install`, or use a virtualenv. The other four skills are prompt-only and need no dependencies.
+
 ## Compatibility
 
 | Skill | Claude Code | OpenCode | Codex |
@@ -55,7 +64,7 @@ The pack moves an idea through four stages:
 
 1. **Learn** — `/slides:teach-slides` grounds you in presentation craft: how to find the through-line, structure a deck, design slides that read, and recognise slop before it ships.
 2. **Shape** — `/slides:narrative` turns a vague brief into a concrete story: the audience, the one thing they should remember, the spine of the argument, and a slide-by-slide outline.
-3. **Build** — `/slides:build-deck` renders an on-brand `.pptx` from the narrative and a template, mapping content to layouts.
+3. **Build** — `/slides:build-deck` renders an on-brand `.pptx` from the narrative and a template, mapping content to layouts. A slide can carry a `Chart:` block (bar, column, pie, scatter, or line); the renderer draws it on-brand with matplotlib and places it on the slide. Without matplotlib installed, a chart slide degrades to a "VISUAL TO ADD" note, so the deck still builds.
 4. **Check** — `/slides:slop-check` audits a finished deck for generic, AI-flavoured slop — hollow phrasing, filler bullets, decorative-but-empty visuals — and reports concrete fixes.
 
 `presentation-craft` is the non-invocable knowledge base every other skill reads from. Editing craft guidance in one place keeps all four user-facing skills consistent.
