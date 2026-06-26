@@ -11,13 +11,17 @@ Chart drawing is a deliberately separate concern: it lives in `charts.py`
 (matplotlib) and is placed by render.py, which derives the picture's geometry
 from the template. pptxlib itself still adds no shape and holds no literals.
 
-Public surface — exactly five helpers:
+Public surface — six helpers:
 
     load_template(path)              -> pptx.Presentation
     list_layouts(prs)                -> list[dict]   (index, name, placeholders)
     resolve_role(prs, layout_map, role) -> SlideLayout
     fill_placeholders(slide, fields) -> None
     apply_theme(prs, brand)          -> None
+    read_theme(prs)                  -> dict   (fonts, colours — inverse of apply_theme)
+
+`read_theme` only reads the template's own theme values back out; it introduces
+no literal of its own, so the no-literals invariant holds.
 """
 from lxml import etree
 from pptx import Presentation
@@ -177,6 +181,51 @@ def apply_theme(prs, brand):
         )
 
 
+# The clrScheme slots read into a brand palette, and the brand.json name each
+# maps to. accent1 becomes the primary `accent` (the key the chart colour
+# resolver and teach-slides look for first); dk1/lt1 become ink/paper. The
+# other scheme slots (dk2/lt2/hlink/folHlink) are not brand-palette colours and
+# are skipped. Mirrors apply_theme, which writes accent1..6 and leaves dk/lt.
+_BRAND_COLOUR_SLOTS = (
+    ("accent1", "accent"),
+    ("accent2", "accent2"),
+    ("accent3", "accent3"),
+    ("accent4", "accent4"),
+    ("accent5", "accent5"),
+    ("accent6", "accent6"),
+    ("dk1", "ink"),
+    ("lt1", "paper"),
+)
+
+
+def read_theme(prs):
+    """Read brand fonts and colours back out of the template's theme XML.
+
+    The inverse of `apply_theme`: it navigates the same theme parts and elements
+    but reads instead of writes. Returns:
+
+        {"fonts": {"heading": str?, "body": str?},
+         "colours": {name: "#RRGGBB", ...}}
+
+    Fonts come from the theme's major/minor font scheme (heading/body); colours
+    from the colour scheme slots in `_BRAND_COLOUR_SLOTS`, reading either an
+    `srgbClr` or a `sysClr` child. Used by extract_brand.py so teach-slides can
+    pre-fill brand.json from a deck the user already has. Reads the first theme
+    part that carries themeElements (a package has one theme); no-ops to empty
+    maps if there is no theme.
+    """
+    for theme_part in _theme_parts(prs):
+        root = etree.fromstring(theme_part.blob)
+        theme_elements = root.find(f"{{{_A_NS}}}themeElements")
+        if theme_elements is None:
+            continue
+        return {
+            "fonts": _read_font_scheme(theme_elements),
+            "colours": _read_colour_scheme(theme_elements),
+        }
+    return {"fonts": {}, "colours": {}}
+
+
 # --- internal helpers --------------------------------------------------------
 
 
@@ -285,6 +334,59 @@ def _apply_colour_scheme(theme_elements, colours):
             slot_el.remove(child)
         srgb = slot_el.makeelement(f"{{{_A_NS}}}srgbClr", {"val": hex_value})
         slot_el.append(srgb)
+
+
+def _read_font_scheme(theme_elements):
+    """Read {heading, body} from the theme's major/minor Latin typefaces."""
+    fonts = {}
+    font_scheme = theme_elements.find(f"{{{_A_NS}}}fontScheme")
+    if font_scheme is None:
+        return fonts
+    for tag, key in (("majorFont", "heading"), ("minorFont", "body")):
+        font = font_scheme.find(f"{{{_A_NS}}}{tag}")
+        if font is None:
+            continue
+        latin = font.find(f"{{{_A_NS}}}latin")
+        if latin is not None and latin.get("typeface"):
+            fonts[key] = latin.get("typeface")
+    return fonts
+
+
+def _read_colour_scheme(theme_elements):
+    """Read named brand colours from the theme's colour-scheme slots.
+
+    Each slot in `_BRAND_COLOUR_SLOTS` is read to a `#RRGGBB` value; slots that
+    are absent or carry no parseable colour are skipped.
+    """
+    colours = {}
+    clr_scheme = theme_elements.find(f"{{{_A_NS}}}clrScheme")
+    if clr_scheme is None:
+        return colours
+    for slot, name in _BRAND_COLOUR_SLOTS:
+        slot_el = clr_scheme.find(f"{{{_A_NS}}}{slot}")
+        if slot_el is None:
+            continue
+        hex_value = _read_slot_hex(slot_el)
+        if hex_value:
+            colours[name] = "#" + hex_value
+    return colours
+
+
+def _read_slot_hex(slot_el):
+    """Hex (6 upper digits, no '#') from a clrScheme slot, or None.
+
+    Reads an `srgbClr val=` first, then falls back to a `sysClr lastClr=`
+    (used by dk1/lt1, which carry a system colour with a resolved hex).
+    """
+    srgb = slot_el.find(f"{{{_A_NS}}}srgbClr")
+    if srgb is not None:
+        normalised = _normalise_hex(srgb.get("val"))
+        if normalised:
+            return normalised
+    sys_clr = slot_el.find(f"{{{_A_NS}}}sysClr")
+    if sys_clr is not None:
+        return _normalise_hex(sys_clr.get("lastClr"))
+    return None
 
 
 def _normalise_hex(value):

@@ -38,8 +38,8 @@ Gather the brand. You need: a template source, heading and body fonts, brand col
 Ask the user these questions and wait for the answers before moving on:
 
 - **Template source.** Three paths, covered in Step 3.
-- **Fonts.** The heading typeface and the body typeface. The template carries them; record them anyway.
-- **Colours.** The brand colours as hex (`#1A1A2E`). Ask for a name per colour (`ink`, `accent`).
+- **Fonts.** The heading typeface and the body typeface. If the user is supplying a template or deck (paths a/b), do not ask blank: Step 3 reads the fonts from the file and you confirm them here. Only ask outright for the starter path (c).
+- **Colours.** The brand colours as hex (`#1A1A2E`), each with a name (`ink`, `accent`). Same as fonts: for a supplied template or deck, Step 3 reads the palette from the file and you confirm or adjust it rather than asking the user to type every hex.
 - **Logo.** Where the logo file sits, if there is one.
 - **Audience.** Who the user usually presents to: their role, what they know, what they walk in wanting.
 - **Voice.** How the user's decks should sound: plain and direct, warm, formal. Ask for one deck they think sounds right.
@@ -65,6 +65,14 @@ python3 ../build-deck/scripts/make_template.py --out .slides/template.pptx \
 It writes an 11-layout themed starter. Layouts 0/1/2/3/5 come role-named `title`, `title-content`, `section`, `two-column`, `statement`. Tell the user this is a starting point they can open and refine in PowerPoint.
 
 Copy the chosen file (a or b) to `.slides/template.pptx`. For path (c) the script already wrote it there.
+
+For paths (a) and (b), read the brand straight out of the file instead of making the user type it. Run `extract_brand.py` on the copied template:
+
+```
+python3 ../build-deck/scripts/extract_brand.py .slides/template.pptx
+```
+
+It prints JSON `{template, fonts:{heading,body}, colours:{name:#hex}, layouts:[...]}` — the theme's real heading/body fonts and its palette (accent1 as `accent`, then `accent2`..`accent6`, plus `ink` and `paper`), and the layouts for Step 4. Show the user what you read and let them **confirm or adjust** it: rename a colour, drop one they do not use, add a `muted` or `spend` the theme lacks. Use the confirmed values as the `fonts` and `colours` you write in Step 5. Because `extract_brand.py` already returns the layouts, paths (a)/(b) can skip the separate `inspect_template.py` call in Step 4 and map roles from this output. Path (c)'s starter was themed from the Step 2 answers, so it needs no extraction.
 
 ## Step 4: Map the layouts
 

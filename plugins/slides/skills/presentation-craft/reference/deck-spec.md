@@ -103,6 +103,8 @@ Any slide may carry `Notes:` — what the presenter says, or, for a read deck, t
 
 `render.py` validates all four keys and reports the missing or malformed one by name rather than emitting a broken file.
 
+`teach-slides` can fill `fonts` and `colours` automatically. Pointed at a template or an existing deck, `extract_brand.py` reads the heading and body fonts and the palette (accent colours plus `ink` and `paper`) straight from the file's theme, so the brand profile reflects the real deck instead of hand-typed values. The user confirms or adjusts what it read.
+
 ## Rules the spec must hold
 
 - Slides numbered 1..N with no gaps; every slide has a `layout:` line first.

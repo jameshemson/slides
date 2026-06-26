@@ -4,6 +4,23 @@ All notable changes to the slides skill pack are recorded here. The format
 follows [Keep a Changelog](https://keepachangelog.com/), and the pack uses
 [semantic versioning](https://semver.org/).
 
+## [0.4.0] - 2026-06-26
+
+### Added
+
+- **Brand extraction from a template deck.** A new `extract_brand.py` reads a
+  `.pptx`/`.potx` and prints its brand as the deck already carries it: heading
+  and body fonts and a named colour palette (accent colours plus `ink` and
+  `paper`) from the theme, alongside the layout list. It is a superset of
+  `inspect_template.py`. Backed by a new `pptxlib.read_theme(prs)`, the inverse
+  of `apply_theme` (reads the same `fontScheme`/`clrScheme`, handling both
+  `srgbClr` and `sysClr` colour children).
+- **teach-slides reads your brand instead of asking for it.** When you supply a
+  template or an existing deck (Step 3 paths a/b), teach-slides now runs
+  `extract_brand.py` and pre-fills `brand.json` fonts and colours; the interview
+  becomes confirm-and-adjust rather than typing every hex. The no-deck starter
+  path (c, `make_template`) is unchanged.
+
 ## [0.3.0] - 2026-06-26
 
 ### Added
@@ -65,6 +82,7 @@ follows [Keep a Changelog](https://keepachangelog.com/), and the pack uses
 - A `python-pptx` renderer that fills the user's own template, and a two-layer
   (presentation + prose) slop detector.
 
+[0.4.0]: https://github.com/jameshemson/slides/releases/tag/v0.4.0
 [0.3.0]: https://github.com/jameshemson/slides/releases/tag/v0.3.0
 [0.2.0]: https://github.com/jameshemson/slides/releases/tag/v0.2.0
 [0.1.0]: https://github.com/jameshemson/slides/releases/tag/v0.1.0
