@@ -61,6 +61,27 @@ class InitBrandTest(unittest.TestCase):
     def test_layout_map_is_canonical(self):
         self.assertEqual(self._data()["layout_map"], CANONICAL_MAP)
 
+    def test_each_role_layout_has_enough_placeholders(self):
+        # Self-documenting sufficiency: every mapped layout has at least the
+        # role's required_min content placeholders, so render never overflows.
+        sys.path.insert(0, SCRIPTS)
+        import pptxlib
+        import render
+        prs = pptxlib.load_template(TEMPLATE)
+        content = {t.name for t in pptxlib.CONTENT_PLACEHOLDER_TYPES}
+        counts = {
+            layout["index"]: sum(
+                1 for p in layout["placeholders"] if p["type"] in content)
+            for layout in pptxlib.list_layouts(prs)
+        }
+        for role, idx in self._data()["layout_map"].items():
+            required_min = (len(render.ROLE_FIELDS[role])
+                            - len(render.OPTIONAL_FIELDS.get(role, set())))
+            self.assertGreaterEqual(
+                counts[idx], required_min,
+                f"role {role!r} -> layout {idx} has {counts[idx]} content "
+                f"placeholders, needs >= {required_min}")
+
     def test_end_to_end_renders_sample_deck(self):
         # The generated brand.json must render the committed sample deck.
         data = self._data()
