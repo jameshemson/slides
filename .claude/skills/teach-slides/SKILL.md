@@ -80,7 +80,7 @@ It prints JSON `{template, fonts:{heading,body}, colours:{name:#hex}, layouts:[.
 
 ## Step 4: Map the layouts
 
-Run `inspect_template.py` on the chosen template:
+For paths (a)/(b) you already have the layouts from the Step 3 `extract_brand.py` output — use those. Only for path (c) run `inspect_template.py` on the chosen template:
 
 ```
 python3 ../build-deck/scripts/inspect_template.py .slides/template.pptx
