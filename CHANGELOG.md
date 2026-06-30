@@ -4,6 +4,41 @@ All notable changes to the slides skill pack are recorded here. The format
 follows [Keep a Changelog](https://keepachangelog.com/), and the pack uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **A third composition mode: compose from brand-locked atoms.** A new
+  `composed` deck-spec role draws *primitives* on the template's own grid
+  instead of filling fixed placeholders — invention in the arrangement,
+  consistency guaranteed by design tokens plus a mechanical lint. This release
+  ships one primitive, `stat-row` (a row of hero numbers with labels), and is
+  fully brand-agnostic: everything derives from the user's template and
+  `brand.json`.
+- **A design-token layer (`tokens.py`).** An optional `tokens` block in
+  `brand.json` carries a `grid` (margins, columns, gutter, baseline — derived
+  from the geometry of the template's own *mapped* layouts, so unused template
+  layouts can't pollute it), a `type_scale` (named point sizes), and
+  `colour_roles` (ink, paper, accent, muted — mapped from the palette by
+  luminance). `init_brand.py` and `extract_brand.py` now emit a starting block;
+  `build-deck` derives defaults at render time when it is absent.
+- **A load-bearing mechanical lint (`lint.py`).** Composed mode reopens the
+  "add a shape" door that the renderer used to close structurally, so a
+  deterministic lint is the new guarantee: every fill is a token colour, every
+  size a type-scale step, every element within the margins, nothing overlaps,
+  and the element count is under a cap — enforced at the render gate, failing
+  loudly by slide and element with no half-built `.pptx`.
+- **The literal quarantine (`primitives.py`).** Primitives are the only code
+  allowed to emit colour/coordinate literals, and only ever token-derived ones.
+  `render.py` and `pptxlib.py` keep their zero-literal, no-direct-shape
+  guarantee; the six fixed roles are unchanged and existing decks render
+  identically (the `tokens` key is optional).
+
+### Fixed
+
+- Removed stray `</content>`/`</invoke>` artifact lines accidentally committed
+  at the end of `presentation-craft/reference/deck-spec.md`.
+
 ## [0.5.0] - 2026-06-26
 
 ### Added

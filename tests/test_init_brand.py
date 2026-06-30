@@ -27,6 +27,7 @@ RENDER_PY = os.path.join(SCRIPTS, "render.py")
 CANONICAL_MAP = {
     "title": 0, "title-content": 1, "section": 2,
     "two-column": 3, "statement": 5, "quote": 2,
+    "composed": 5,
 }
 
 
@@ -55,7 +56,7 @@ class InitBrandTest(unittest.TestCase):
 
     def test_complete_brand_json(self):
         data = self._data()
-        for key in ("template", "fonts", "colours", "layout_map"):
+        for key in ("template", "fonts", "colours", "layout_map", "tokens"):
             self.assertIn(key, data)
 
     def test_layout_map_is_canonical(self):
@@ -64,6 +65,7 @@ class InitBrandTest(unittest.TestCase):
     def test_each_role_layout_has_enough_placeholders(self):
         # Self-documenting sufficiency: every mapped layout has at least the
         # role's required_min content placeholders, so render never overflows.
+        # "composed" is a canvas alias, not a render role; skip it here.
         sys.path.insert(0, SCRIPTS)
         import pptxlib
         import render
@@ -75,6 +77,8 @@ class InitBrandTest(unittest.TestCase):
             for layout in pptxlib.list_layouts(prs)
         }
         for role, idx in self._data()["layout_map"].items():
+            if role not in render.ROLE_FIELDS:
+                continue  # skip canvas aliases like "composed"
             required_min = (len(render.ROLE_FIELDS[role])
                             - len(render.OPTIONAL_FIELDS.get(role, set())))
             self.assertGreaterEqual(
@@ -100,6 +104,43 @@ class InitBrandTest(unittest.TestCase):
             f"render failed.\nstdout: {result.stdout}\nstderr: {result.stderr}")
         from pptx import Presentation
         self.assertEqual(len(Presentation(out_path).slides), 6)
+
+    def test_composed_layout_map_entry(self):
+        data = self._data()
+        layout_map = data["layout_map"]
+        self.assertIn("composed", layout_map,
+                      "layout_map must contain a 'composed' key")
+        # The fixture has a "statement" layout; composed should alias it.
+        self.assertEqual(
+            layout_map["composed"], layout_map["statement"],
+            "composed must equal statement index when statement is mapped",
+        )
+
+    def test_tokens_structure(self):
+        data = self._data()
+        self.assertIn("tokens", data, "brand JSON must contain a 'tokens' object")
+        tok = data["tokens"]
+
+        # grid: must have margin_x and columns
+        self.assertIn("grid", tok)
+        grid = tok["grid"]
+        self.assertIn("margin_x", grid)
+        self.assertIn("columns", grid)
+
+        # type_scale: must have display == 40.0
+        self.assertIn("type_scale", tok)
+        self.assertAlmostEqual(
+            tok["type_scale"]["display"], 40.0,
+            msg="type_scale.display must be 40.0",
+        )
+
+        # colour_roles: non-empty, must contain accent, ink, paper
+        self.assertIn("colour_roles", tok)
+        colour_roles = tok["colour_roles"]
+        self.assertTrue(colour_roles, "colour_roles must be non-empty")
+        for role in ("accent", "ink", "paper"):
+            self.assertIn(role, colour_roles,
+                          f"colour_roles must contain '{role}'")
 
     def test_template_ref_override(self):
         result = subprocess.run(

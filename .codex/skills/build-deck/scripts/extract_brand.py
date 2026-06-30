@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
-"""extract_brand.py — read a template's brand (theme fonts/colours) and layouts.
+"""extract_brand.py — read a template's brand (fonts/colours/layouts) and emit derived tokens.
 
 Given a .pptx/.potx, print JSON describing the brand the deck already carries:
-heading/body fonts and named colours read from the theme, plus the layout list.
-teach-slides uses this to pre-fill brand.json from a deck the user already has,
-so the interview becomes confirm-and-adjust instead of blank entry. It is a
-superset of inspect_template.py, which prints layouts only.
+heading/body fonts and named colours read from the theme, plus the layout list,
+plus a derived tokens block (grid, type_scale, colour_roles) computed via the
+tokens module. teach-slides uses this to pre-fill brand.json from a deck the
+user already has, so the interview becomes confirm-and-adjust instead of blank
+entry. It is a superset of inspect_template.py, which prints layouts only.
 
 Usage:
 
     python3 extract_brand.py <template.pptx>
 
 Output JSON: {"template": <abspath>, "fonts": {"heading","body"},
-"colours": {name: "#RRGGBB", ...}, "layouts": [...]}. fonts/colours come from
-pptxlib.read_theme (the inverse of apply_theme); layouts from list_layouts.
+"colours": {name: "#RRGGBB", ...}, "layouts": [...], "tokens": {...}}.
+fonts/colours come from pptxlib.read_theme (the inverse of apply_theme);
+layouts from list_layouts; tokens from tokens.resolve_tokens.
 
 Exit status: 0 on success (JSON to stdout); non-zero with a message on stderr if
 the file is missing or is not a readable presentation. Nothing is printed to
@@ -26,6 +28,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pptxlib import list_layouts, load_template, read_theme  # noqa: E402
+import tokens  # noqa: E402
 
 
 def main(argv=None):
@@ -51,6 +54,7 @@ def main(argv=None):
         "fonts": theme["fonts"],
         "colours": theme["colours"],
         "layouts": list_layouts(prs),
+        "tokens": tokens.resolve_tokens({"colours": theme["colours"]}, prs),
     }
     json.dump(report, sys.stdout, indent=2)
     sys.stdout.write("\n")

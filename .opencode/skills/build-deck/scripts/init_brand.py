@@ -2,10 +2,13 @@
 """init_brand.py — build a complete brand.json from a template or deck.
 
 One-step brand setup: given a .pptx/.potx, print a ready-to-use brand.json
-(template, fonts, colours, layout_map) so a deck comes out on-brand without the
-full teach-slides interview. Fonts and colours come from pptxlib.read_theme; the
-layout_map is a heuristic that maps each semantic role to one of the template's
-real layouts. teach-slides remains the authoritative, richer brand capture.
+(template, fonts, colours, layout_map, tokens) so a deck comes out on-brand
+without the full teach-slides interview. Fonts and colours come from
+pptxlib.read_theme; the layout_map is a heuristic that maps each semantic role
+to one of the template's real layouts and includes a "composed" entry for
+single-title canvas slides (aliased to statement, then title, then index 0);
+the tokens block carries the derived grid, type-scale, and colour-role
+assignments. teach-slides remains the authoritative, richer brand capture.
 
 Usage:
 
@@ -31,6 +34,7 @@ from pptxlib import (  # noqa: E402
     read_theme,
 )
 from render import OPTIONAL_FIELDS, ROLE_FIELDS  # noqa: E402
+import tokens  # noqa: E402
 
 # A role with no dedicated layout falls back to a sibling: a quote reads well on
 # a section layout. Every other role aliases only to itself.
@@ -121,6 +125,12 @@ def main(argv=None):
         "colours": theme["colours"],
         "layout_map": layout_map,
     }
+    # D-107: composed slides draw on the statement layout (single-title canvas),
+    # falling back to title, then index 0.
+    report["layout_map"]["composed"] = report["layout_map"].get(
+        "statement", report["layout_map"].get("title", 0)
+    )
+    report["tokens"] = tokens.resolve_tokens(report, prs)
     json.dump(report, sys.stdout, indent=2)
     sys.stdout.write("\n")
     return 0

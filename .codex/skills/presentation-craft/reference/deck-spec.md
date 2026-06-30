@@ -44,7 +44,7 @@ Each slide is a `## Slide N` heading, with `N` counting up from 1 with no gaps. 
 
 ## Layout roles
 
-A role is a *semantic* job, not a template layout. `build-deck` resolves each role to one of the user's own template layouts through `brand.json`'s `layout_map`, then fills that layout's placeholders. Six roles cover the decks this skill builds:
+A role is a *semantic* job, not a template layout. `build-deck` resolves each role to one of the user's own template layouts through `brand.json`'s `layout_map`, then fills that layout's placeholders. Six fixed roles cover most decks; a seventh mode, `composed`, composes brand-locked primitives on the grid (see [The composed role](#the-composed-role)).
 
 | Role | Job | Fields (in order) |
 |------|-----|-------------------|
@@ -56,6 +56,28 @@ A role is a *semantic* job, not a template layout. `build-deck` resolves each ro
 | `quote` | A quotation given room to breathe | `Quote`, `Attribution` (optional) |
 
 `Body`, `Left`, and `Right` are block fields: a tight bullet list, or one or two short paragraphs. One idea per slide still holds — a `title-content` slide carries one point and the few lines that earn it, not a wall.
+
+## The composed role
+
+`layout: composed` is a different mode. Instead of filling a fixed layout's placeholders, it composes brand-locked *primitives* on the template's own grid — invention in the arrangement, consistency guaranteed by the design tokens (below) and a mechanical lint. The six fixed roles stay the safe default; `composed` is for a bespoke arrangement that still cannot go off-brand.
+
+A composed slide carries an optional `Title:`, an optional `Notes:`, and one or more `Block:` lines — each naming a primitive, then its indented items:
+
+```
+## Slide 5
+layout: composed
+Title: What moved this quarter
+Block: stat-row
+56 | Days to close
+4% | Win rate
+120 | New deals
+```
+
+Primitives in this release:
+
+- `stat-row` — a row of hero numbers with labels, spread evenly across the content width and snapped to the grid margins. Each item is `value | label`.
+
+Every primitive draws only in the brand's token colours and type-scale sizes, snapped within the grid. A composed slide that would place an off-token colour, an off-scale size, an element outside the margins, overlapping elements, or more than the element cap fails the render with a named error rather than producing an off-brand slide — the mechanical lint is what makes free composition safe. `build-deck` draws `composed` on the layout named in `layout_map` (falling back to the `statement`, then `title` layout). Explicit grid placement (choosing rows and columns per block) and further primitives (card, table) are planned; this release auto-places one `stat-row`.
 
 ## The Visual field
 
@@ -99,9 +121,10 @@ Any slide may carry `Notes:` — what the presenter says, or, for a read deck, t
 - `template` — path to the user's `.pptx`/`.potx` template.
 - `fonts` — `{ "heading": "...", "body": "..." }`. Carried by the template; recorded here for reference and for `make_template.py`.
 - `colours` — named brand colours as hex. Same: the template owns them; this records them.
-- `layout_map` — maps each of the six roles to a layout index in the template. This is the join between a spec's semantic roles and the user's real layouts.
+- `layout_map` — maps each of the six roles (and, optionally, `composed`) to a layout index in the template. This is the join between a spec's semantic roles and the user's real layouts.
+- `tokens` (optional) — the design-token system the `composed` role draws from: `grid` (margins, columns, gutter, baseline — derived from the geometry of the template's own mapped layouts), `type_scale` (named point sizes: display, h1, body, caption), and `colour_roles` (ink, paper, accent, muted — mapped from the palette). Omit it and `build-deck` derives sensible defaults at render time; `init_brand.py`/`extract_brand.py` write a starting block you can edit. Fixed-role slides ignore `tokens`, so existing decks are unaffected.
 
-`render.py` validates all four keys and reports the missing or malformed one by name rather than emitting a broken file.
+`render.py` validates the four required keys (`tokens` is optional) and reports the missing or malformed one by name rather than emitting a broken file.
 
 `teach-slides` can fill `fonts` and `colours` automatically. Pointed at a template or an existing deck, `extract_brand.py` reads the heading and body fonts and the palette (accent colours plus `ink` and `paper`) straight from the file's theme, so the brand profile reflects the real deck instead of hand-typed values. The user confirms or adjusts what it read.
 
@@ -111,7 +134,5 @@ Any slide may carry `Notes:` — what the presenter says, or, for a read deck, t
 
 - Slides numbered 1..N with no gaps; every slide has a `layout:` line first.
 - Only the fields its role allows, plus optional `Visual:` and `Notes:`.
-- `render.py` fills only the template's existing placeholders. It never adds a text box, so a spec cannot smuggle a tacked-on strapline onto a slide — there is nowhere off-template for one to go.
+- For the six fixed roles, `render.py` fills only the template's existing placeholders and adds no shape — so a spec cannot smuggle a tacked-on strapline onto one. The `composed` role is the one carve-out: it draws token-bound primitives, but every element must pass the mechanical lint (token colour, scale size, within margins, no overlap, under the element cap) before it is added, so a composed slide cannot go off-brand either.
 - A malformed spec fails loudly: `render.py` exits non-zero naming the offending slide and line. It never emits a half-built `.pptx`.
-</content>
-</invoke>
