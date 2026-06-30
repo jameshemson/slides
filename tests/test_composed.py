@@ -211,3 +211,30 @@ class BackCompatTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CompositionAdvisoryTest(unittest.TestCase):
+    """The advisory composition layer surfaces non-blocking notes in the summary."""
+
+    def test_clean_composed_deck_has_no_advisory(self):
+        # The fixture composed deck is good by construction -> no advisory lines.
+        proc, out = _run_file(COMPOSED_SPEC)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertNotIn("advisory", (proc.stdout + proc.stderr).lower())
+
+    def test_weak_composed_deck_advises_without_blocking(self):
+        # 6 stats (system cap is 12 elements, so the gate passes) + 5-word
+        # labels -> stat-count + label-terseness advisories, render still succeeds.
+        spec = (
+            "---\ndeck: d\naudience: a\n---\n\n## Slide 1\nlayout: composed\n"
+            "Block: stat-row\n"
+            + "".join(f"{i} | this is a long label\n" for i in range(6))
+        )
+        proc, out = _run(spec)
+        self.assertEqual(proc.returncode, 0,
+                         f"advisory layer must not block: {proc.stderr}")
+        self.assertTrue(os.path.isfile(out), "a .pptx should still be written")
+        combined = proc.stdout + proc.stderr
+        self.assertIn("advisory", combined.lower())
+        self.assertIn("stat-count", combined)
+        self.assertIn("label-terseness", combined)

@@ -129,6 +129,19 @@ class TestPlanStatRow(unittest.TestCase):
         self.assertEqual(_normalise_hex("4f81bd"), "#4F81BD")
         self.assertIsNone(_normalise_hex("nope"))
 
+    def test_optical_centre_top_biased(self):
+        # Default placement sits at the optical centre (~45% from top): the row's
+        # vertical centre is ABOVE the band's geometric centre, but still in the
+        # middle band (not jammed to the top).
+        top = min(e["top"] for e in self.els)
+        bottom = max(e["top"] + e["height"] for e in self.els)
+        row_centre = (top + bottom) / 2
+        band_top = TOKENS["grid"]["margin_top"]
+        band_bottom = SLIDE_H - TOKENS["grid"]["margin_bottom"]
+        band_centre = (band_top + band_bottom) / 2
+        self.assertLess(row_centre, band_centre)
+        self.assertGreater(row_centre, band_top + 0.25 * (band_bottom - band_top))
+
 
 if __name__ == "__main__":
     unittest.main()
