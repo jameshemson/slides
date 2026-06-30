@@ -6,10 +6,17 @@ deck — see presentation-craft/reference/deck-spec.md) and a brand.json (which
 names the user's template and the role-to-layout map), then fills the
 template's existing placeholders to produce a .pptx.
 
-Decision D-002 is absolute: this script sets no fonts, colours, or
-coordinates. The template carries all visual design; render.py only fills the
-placeholders the chosen layout already defines and never adds a shape — so a
-spec cannot smuggle a tacked-on strapline onto a slide.
+Decision D-002 (refined as D-101): render.py itself still sets no fonts,
+colours, or coordinates and adds no shape directly — the template carries all
+visual design for the six fixed roles, and render.py only fills the placeholders
+the chosen layout already defines. The ONE carve-out is the `composed` role:
+there, render.py delegates drawing to primitives.py (the only module that emits
+literals, all of them derived from brand.json design tokens), and every drawn
+element must pass the mechanical lint (lint.py) before a shape is added. So the
+old structural guarantee — "nowhere off-template to put a shape" — is replaced
+for composed slides by a mechanical one: no element survives that is off-token,
+off-grid, overlapping, or over the element cap. A spec still cannot smuggle a
+tacked-on strapline onto a fixed-role slide.
 
 Usage:
 
@@ -233,7 +240,15 @@ def _split_slides(body):
 
 
 def _parse_slide(number, lines):
-    """Parse one slide's lines into role, fields, and meta. Raises SpecError."""
+    """Parse one slide's lines into role, fields, and meta. Raises SpecError.
+
+    A `layout: composed` slide is routed to _parse_composed_slide before the
+    field loop, so its repeated `Block:` lines never trip the stray-field guard.
+    The six fixed roles keep their original parse path below, unchanged.
+    """
+    if _prescan_layout(lines) == "composed":
+        return _parse_composed_slide(number, lines)
+
     role = None
     fields = {}
     order = []
@@ -329,6 +344,128 @@ def _parse_slide(number, lines):
         "fields": fields,
         "meta": {k: fields[k] for k in META_FIELDS if k in fields},
     }
+
+
+# --- composed role parsing ---------------------------------------------------
+
+
+def _prescan_layout(lines):
+    """Return the slide's declared layout role from its first `layout:` line.
+
+    Used to route a composed slide to its own parser before the field loop runs.
+    Returns None if no layout line is present (the main parser then raises the
+    usual "no 'layout:' line" error).
+    """
+    for raw in lines:
+        stripped = raw.strip()
+        if stripped.lower().startswith("layout:"):
+            return stripped.split(":", 1)[1].strip()
+    return None
+
+
+def _parse_composed_slide(number, lines):
+    """Parse a `composed` slide into title, blocks, and meta. Raises SpecError.
+
+    Recognises `Title:` (optional, inline), `Notes:` (optional, meta), and one
+    or more `Block: <type>` blocks, each followed by indented item lines up to
+    the next Title/Notes/Block. Returns:
+
+        {"number", "role": "composed", "fields": {"Title": str?},
+         "blocks": [parsed block dict, ...], "meta": {"Notes": str?}}
+    """
+    title = None
+    notes_lines = []
+    blocks = []
+    current = None  # None | "notes" | a raw block dict {"type", "items"}
+
+    for raw in lines:
+        stripped = raw.strip()
+        low = stripped.lower()
+        if low.startswith("layout:"):
+            continue
+        if low.startswith("title:"):
+            title = stripped.split(":", 1)[1].strip()
+            current = None
+            continue
+        if low.startswith("notes:"):
+            value = stripped.split(":", 1)[1].strip()
+            notes_lines = [value] if value else []
+            current = "notes"
+            continue
+        if low.startswith("block:"):
+            btype = stripped.split(":", 1)[1].strip().lower()
+            if not btype:
+                raise SpecError(
+                    f"slide {number}: 'Block:' needs a type "
+                    f"(e.g. 'Block: stat-row')"
+                )
+            current = {"type": btype, "items": []}
+            blocks.append(current)
+            continue
+        # continuation line
+        if not stripped:
+            continue
+        if current == "notes":
+            notes_lines.append(stripped)
+        elif isinstance(current, dict):
+            current["items"].append(stripped)
+        # else: a stray line before any Block/Title/Notes — ignored.
+
+    if not blocks:
+        raise SpecError(
+            f"slide {number}: composed slide has no 'Block:' (need at least "
+            f"one, e.g. 'Block: stat-row')"
+        )
+
+    parsed_blocks = [_parse_composed_block(number, b) for b in blocks]
+    fields = {"Title": title} if title else {}
+    meta = {"Notes": " ".join(notes_lines)} if notes_lines else {}
+    return {
+        "number": number,
+        "role": "composed",
+        "fields": fields,
+        "blocks": parsed_blocks,
+        "meta": meta,
+    }
+
+
+def _parse_composed_block(number, block):
+    """Parse one composed block's raw item lines by type. Raises SpecError.
+
+    stat-row: each item is `value | label` (a leading '-'/'*' bullet is
+    tolerated). Returns {"type": "stat-row", "stats": [{"value", "label"}, ...]}.
+    """
+    btype = block["type"]
+    if btype == "stat-row":
+        stats = []
+        for item in block["items"]:
+            text = item
+            if text[:1] in "-*":
+                text = text[1:].strip()
+            if "|" not in text:
+                raise SpecError(
+                    f"slide {number}: stat-row line {item!r} must be "
+                    f"'value | label'"
+                )
+            value, label = text.split("|", 1)
+            value = value.strip()
+            label = label.strip()
+            if not value:
+                raise SpecError(
+                    f"slide {number}: stat-row line {item!r} has an empty value"
+                )
+            stats.append({"value": value, "label": label})
+        if not stats:
+            raise SpecError(
+                f"slide {number}: stat-row block is empty (add 'value | label' "
+                f"lines)"
+            )
+        return {"type": "stat-row", "stats": stats}
+
+    raise SpecError(
+        f"slide {number}: unknown composed block type {btype!r}; expected one "
+        f"of: stat-row"
+    )
 
 
 def _field_label(line):
@@ -621,10 +758,18 @@ def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None):
     charts_mod = "unset"     # imported lazily once, on the first chart slide
     font_family = "unset"    # resolved lazily once, when first drawing a chart
     font_warning = None
+    composed_tokens = None   # resolved lazily once, on the first composed slide
 
     for spec in slides:
         number = spec["number"]
         role = spec["role"]
+
+        if role == "composed":
+            if composed_tokens is None:
+                import tokens  # noqa: PLC0415 — light; composed decks only
+                composed_tokens = tokens.resolve_tokens(brand, prs)
+            _render_composed_slide(prs, brand, spec, composed_tokens)
+            continue
 
         if role not in layout_map:
             raise SpecError(
@@ -776,6 +921,108 @@ def _drop_unused(placeholders):
         parent = element.getparent()
         if parent is not None:
             parent.remove(element)
+
+
+# --- composed role rendering (D-101 carve-out) -------------------------------
+
+
+def _resolve_composed_layout(prs, brand):
+    """Resolve the layout a composed slide draws on (D-107).
+
+    Prefer an explicit 'composed' mapping; fall back to the statement, then the
+    title layout, then index 0 — so a brand.json predating composed mode still
+    renders one without edits.
+    """
+    layout_map = brand.get("layout_map", {}) or {}
+    for key in ("composed", "statement", "title"):
+        idx = layout_map.get(key)
+        if isinstance(idx, int):
+            try:
+                return prs.slide_layouts[idx]
+            except IndexError:
+                continue
+    return prs.slide_layouts[0]
+
+
+def _drop_composed_placeholders(slide, keep_title):
+    """Remove the layout's content placeholders so no 'click to add' prompts show.
+
+    Keeps the title placeholder when keep_title is True (it holds the Title).
+    Furniture (date/footer/slide number) is never touched.
+    """
+    from pptxlib import CONTENT_PLACEHOLDER_TYPES  # noqa: PLC0415
+
+    title = slide.shapes.title
+    title_idx = title.placeholder_format.idx if title is not None else None
+    to_drop = []
+    for ph in slide.placeholders:
+        if ph.placeholder_format.type not in CONTENT_PLACEHOLDER_TYPES:
+            continue
+        if keep_title and ph.placeholder_format.idx == title_idx:
+            continue
+        to_drop.append(ph)
+    _drop_unused(to_drop)
+
+
+def _render_composed_slide(prs, brand, spec, tokens):
+    """Render a composed slide: fill an optional title, then draw token-bound
+    primitives that must pass the mechanical lint before any shape is added.
+
+    primitives.py is the only module that emits literals; lint.py is the gate
+    that replaces D-002's structural guarantee. A lint or shape failure becomes
+    a SpecError naming the slide, so no half-built deck is saved.
+    """
+    import primitives  # noqa: PLC0415 — composed decks only
+    import lint  # noqa: PLC0415
+
+    number = spec["number"]
+    layout = _resolve_composed_layout(prs, brand)
+    slide = prs.slides.add_slide(layout)
+
+    grid = tokens.get("grid", {}) or {}
+    slide_w, slide_h = prs.slide_width, prs.slide_height
+
+    title = spec.get("fields", {}).get("Title")
+    title_ph = slide.shapes.title
+    region = None
+    if title and title_ph is not None:
+        title_ph.text = title
+        _, tt, _, th = _geom(slide, title_ph)
+        if (None not in (tt, th) and "margin_x" in grid
+                and "margin_bottom" in grid):
+            top = tt + th
+            bottom = slide_h - grid["margin_bottom"]
+            if bottom - top > 0:
+                region = (grid["margin_x"], top,
+                          slide_w - 2 * grid["margin_x"], bottom - top)
+        _drop_composed_placeholders(slide, keep_title=True)
+    else:
+        _drop_composed_placeholders(slide, keep_title=False)
+
+    for block in spec.get("blocks", []):
+        btype = block.get("type")
+        if btype == "stat-row":
+            try:
+                elements = primitives.plan_stat_row(
+                    block["stats"], tokens, slide_w, slide_h, region
+                )
+            except primitives.ShapeError as exc:
+                raise SpecError(f"slide {number}: {exc}")
+        else:
+            raise SpecError(
+                f"slide {number}: unknown composed block type {btype!r}; "
+                f"expected one of: stat-row"
+            )
+        try:
+            lint.check(elements, tokens, slide_w, slide_h)
+        except lint.LintError as exc:
+            raise SpecError(
+                f"slide {number}: composed slide failed lint:\n{exc}"
+            )
+        primitives.draw(slide, elements)
+
+    _apply_meta(slide, spec.get("meta", {}))
+    return slide
 
 
 def _apply_meta(slide, meta, extra_visual=None):
