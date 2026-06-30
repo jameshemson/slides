@@ -181,6 +181,13 @@ class ComposedSpecErrorTest(unittest.TestCase):
                 "Block: pie-tower\n1 | a\n")
         self._assert_fails(spec, "pie-tower")
 
+    def test_multiple_blocks_rejected(self):
+        # This release takes one Block: per composed slide; stacking is a
+        # follow-up. A second block must fail loudly (no overlapping output).
+        spec = ("---\ndeck: d\naudience: a\n---\n\n## Slide 1\nlayout: composed\n"
+                "Block: stat-row\n1 | a\nBlock: stat-row\n2 | b\n")
+        self._assert_fails(spec, "one 'Block:'")
+
 
 class BackCompatTest(unittest.TestCase):
     """REQ-009: the existing six-role sample deck renders unchanged."""

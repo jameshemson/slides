@@ -61,7 +61,7 @@ A role is a *semantic* job, not a template layout. `build-deck` resolves each ro
 
 `layout: composed` is a different mode. Instead of filling a fixed layout's placeholders, it composes brand-locked *primitives* on the template's own grid — invention in the arrangement, consistency guaranteed by the design tokens (below) and a mechanical lint. The six fixed roles stay the safe default; `composed` is for a bespoke arrangement that still cannot go off-brand.
 
-A composed slide carries an optional `Title:`, an optional `Notes:`, and one or more `Block:` lines — each naming a primitive, then its indented items:
+A composed slide carries an optional `Title:`, an optional `Notes:`, and a `Block:` line — naming a primitive, then its indented items:
 
 ```
 ## Slide 5
@@ -77,7 +77,7 @@ Primitives in this release:
 
 - `stat-row` — a row of hero numbers with labels, spread evenly across the content width and snapped to the grid margins. Each item is `value | label`.
 
-Every primitive draws only in the brand's token colours and type-scale sizes, snapped within the grid. A composed slide that would place an off-token colour, an off-scale size, an element outside the margins, overlapping elements, or more than the element cap fails the render with a named error rather than producing an off-brand slide — the mechanical lint is what makes free composition safe. `build-deck` draws `composed` on the layout named in `layout_map` (falling back to the `statement`, then `title` layout). Explicit grid placement (choosing rows and columns per block) and further primitives (card, table) are planned; this release auto-places one `stat-row`.
+Every primitive draws only in the brand's token colours and type-scale sizes, snapped within the grid. A composed slide that would place an off-token colour, an off-scale size, an element outside the margins, overlapping elements, or more than the element cap fails the render with a named error rather than producing an off-brand slide — the mechanical lint is what makes free composition safe. `build-deck` draws `composed` on the layout named in `layout_map` (falling back to the `statement`, then `title` layout). This release takes one `Block:` per composed slide and auto-places it. Explicit grid placement (choosing rows and columns), stacking several blocks on one slide, and further primitives (card, table) are planned follow-ups.
 
 ## The Visual field
 

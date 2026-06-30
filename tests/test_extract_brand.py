@@ -69,10 +69,12 @@ class ExtractBrandTest(unittest.TestCase):
         names = [layout["name"] for layout in data["layouts"]]
         self.assertIn("title-content", names)
 
-    def test_tokens_grid_has_margin_x(self):
+    def test_tokens_omits_grid(self):
+        # extract_brand has no layout_map, so it deliberately omits the grid
+        # (a meaningful grid must be measured from the brand's mapped layouts —
+        # init_brand emits it; build-deck derives it at render time).
         data = self._data()
-        self.assertIn("grid", data["tokens"])
-        self.assertIn("margin_x", data["tokens"]["grid"])
+        self.assertNotIn("grid", data["tokens"])
 
     def test_tokens_type_scale_has_display(self):
         data = self._data()
