@@ -58,7 +58,7 @@ If the render fails, read the error. It names the fault: a slide numbered out of
 
 ## Step 4: Report
 
-Print the render summary. It states how many slides were written, which carry a native chart, which carry a `VISUAL TO ADD` note, and any matplotlib or brand-font fallback warning.
+Print the render summary. It states how many slides were written, which carry a native chart, which carry a `VISUAL TO ADD` note, any matplotlib or brand-font fallback warning, and any non-blocking composition advisory notes on `composed` slides (evidence-cited "what good looks like" — see [composition.md](../presentation-craft/reference/composition.md)). Surface advisories to the user as suggestions, not errors; the deck still rendered.
 
 A `Chart:` block is drawn natively and placed on the slide (PNGs are written to a `.charts/` folder beside the `.pptx` and embedded in it). A `Visual:` field is recorded in the slide's speaker notes, prefixed `VISUAL TO ADD:`, and is not drawn — tell the user which slides carry one and that placing it in PowerPoint is their step. If the summary reports a matplotlib fallback, tell the user that those chart slides became notes and that `pip install matplotlib` will draw them on the next run.
 
