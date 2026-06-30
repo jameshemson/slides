@@ -4,7 +4,14 @@ All notable changes to the slides skill pack are recorded here. The format
 follows [Keep a Changelog](https://keepachangelog.com/), and the pack uses
 [semantic versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.6.0] - 2026-06-30
+
+A third way to build a slide: compose from brand-locked atoms, with an
+evidence-cited sense of what good looks like. Two stacked slices — the
+`composed` deck-spec role (token system + `stat_row` primitive + load-bearing
+mechanical lint) and the advisory composition-quality layer over it. Fully
+brand-agnostic and back-compatible: existing decks and `brand.json` files render
+unchanged (the `tokens` key is optional; the six fixed roles are untouched).
 
 ### Added
 
