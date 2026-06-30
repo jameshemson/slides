@@ -171,14 +171,19 @@ def review(elements: list, tokens: dict, slide_w: int, slide_h: int) -> list:
     except Exception:  # noqa: BLE001 — a broken advisory module must never block
         return []
 
-    has_stat_row = any(
-        isinstance(el, dict) and str(el.get("role", "")).startswith("stat-")
-        for el in elements
-    )
+    def _family(name):
+        # An element's primitive family is the prefix of its role
+        # ("stat-number" -> "stat"); a rule's is the prefix of applies_to
+        # ("stat-row" -> "stat"). A rule runs only when its family is present.
+        return str(name).split("-", 1)[0]
+
+    present = {
+        _family(el.get("role", "")) for el in elements if isinstance(el, dict)
+    }
     findings = []
     for rule in getattr(composition, "RULES", []):
         try:
-            if rule.get("applies_to") == "stat-row" and not has_stat_row:
+            if _family(rule.get("applies_to", "")) not in present:
                 continue
             satisfied = rule["check"](elements, tokens, slide_w, slide_h)
         except Exception:  # noqa: BLE001 — a throwing advisory rule is skipped
