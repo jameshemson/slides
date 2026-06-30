@@ -1,6 +1,6 @@
 # Status
 
-A snapshot of where the slides skill pack stands. Last updated 2026-06-26.
+A snapshot of where the slides skill pack stands. Last updated 2026-06-30.
 
 ## Released
 
@@ -8,41 +8,22 @@ All on `main`, each git-tagged with a GitHub release (latest first):
 
 | Version | What it added |
 |---------|---------------|
+| v0.6.0 | A third composition mode + an advisory composition-quality layer. A new `composed` deck-spec role composes brand-locked primitives (`stat_row`) on a token grid derived from the template, behind a load-bearing mechanical lint (`tokens.py`, `primitives.py`, `lint.py`). Over it, `composition.py` (a 9-rule registry) + `lint.review` say "what good looks like" as non-blocking advisories — evidence-cited (deep research over Tufte/Duarte/Reynolds/Gestalt/WCAG/Cowan, reconciled with real decks). Brand-agnostic and back-compatible: the `tokens` key is optional, the six fixed roles unchanged. |
 | v0.5.0 | One-step brand onboarding: `init_brand.py` builds a complete `brand.json` (fonts, colours, and a heuristic `layout_map`) from a template or deck; `build-deck` and `narrative` offer it when `.slides/` is missing. |
 | v0.4.0 | Brand extraction: `pptxlib.read_theme` (inverse of `apply_theme`) and `extract_brand.py` read a deck's theme fonts and colours; `teach-slides` pre-fills `brand.json` from a supplied deck. |
 | v0.3.0 | AI-voice slop detection: `presentation-craft/reference/ai-voice.md` (the Claudism catalogue, vocabulary watchlist, assistant-artifact slop, uniform rhythm) as a third `slop-check` layer. |
 | v0.2.0 | Native charts: `build-deck` draws bar, column, pie, scatter, and line charts from a `Chart:` block (matplotlib), placed on-brand; degrades to a `VISUAL TO ADD` note when matplotlib is absent. |
 | v0.1.0 | Initial release: five skills, cross-harness pipeline, python-pptx renderer, two-layer slop detector. |
 
-Automated gates at this snapshot: `python3 -m unittest discover tests` 59 passing, `npm test` 44 passing, `npm run check-sync` in sync.
+Automated gates at this snapshot: `python3 -m unittest discover tests` 138 passing, `npm test` 44 passing, `npm run check-sync` in sync.
 
-## In progress (branch `build/compose-mode`, unmerged)
-
-A third composition mode: compose from brand-locked atoms. Built and tested, not
-yet released or version-bumped.
-
-- New brand-agnostic modules: `tokens.py` (grid/type-scale/colour-role
-  derivation, grid measured from the template's *mapped* layouts), `primitives.py`
-  (the `stat-row` primitive — the only literal-emitting module), `lint.py` (the
-  load-bearing mechanical gate), and a new `composed` deck-spec role wired into
-  `render.py` behind that gate. `init_brand.py`/`extract_brand.py` emit a starting
-  `tokens` block. The six fixed roles and existing decks are unchanged.
-- Follow-ups deferred by design: more primitives (card, table, funnel); explicit
-  grid placement (`Block: stat-row at row/cols`) and strict column-snap lint; the
-  render-to-PNG vision loop (needs LibreOffice); wiring the lint as a slop-check
-  layer.
-
-A second slice stacks on top (branch `build/composition-quality`, unmerged): an
-**advisory composition-quality layer** — `composition.py` (a 9-rule registry:
-hierarchy, count, contrast, terseness, breathing-room, one-accent, no-decoration,
-size-not-colour) + `lint.review` (advisory, never blocks) + optical-centre recipe
-defaults so a default stat_row is good by construction. Rules are evidence-cited
-(a deep-research pass over Tufte/Duarte/Reynolds/Gestalt/WCAG/Cowan reconciled
-with the user's own decks) and surface as non-blocking notes in the run summary;
-see `presentation-craft/reference/composition.md`. Owed manual check: confirm the
-advisory messages read as helpful, not noisy, on a real deck (folds into the
-composed-slide eyeball below). Concreteness is intentionally doc-only (authored
-judgement, not a mechanical test).
+Composed mode follow-ups deferred by design: more primitives (card, table,
+funnel); explicit grid placement (`Block: stat-row at row/cols`) and strict
+column-snap lint; stacking several blocks on one slide; the render-to-PNG vision
+loop (a pluggable rasteriser — local PowerPoint/Keynote if present, else
+LibreOffice headless, else degrade to the note); wiring the composition rules
+into `slop-check`; region-aware breathing-room and small-number contrast.
+Concreteness stays doc-only (authored judgement, not a mechanical test).
 
 ## Owed before a fully human-verified release
 
@@ -52,7 +33,7 @@ These could not run in the build environment; each needs a human in Claude Code 
 - [ ] Open a `build-deck`-rendered `.pptx` in **desktop PowerPoint**. Confirm it reads on-brand, with no strapline, ad copy, or sensational titles, and that `Chart:` slides' embedded pictures sit correctly. (Verified in-session via LibreOffice render, not PowerPoint.)
 - [ ] Smoke-test one skill in **Codex** and one in **opencode** (`codex exec`, `opencode run`).
 - [ ] Re-verify that Codex repo-local discovery is still `.agents/skills/` against current Codex docs.
-- [ ] **Eyeball a `composed` stat-row slide** rendered from a real template against a placeholder-filled slide from the same template (LibreOffice headless render). The lint guarantees on-brand-by-tokens, not beautiful; confirm the composed slide sits in the template's own rhythm and reads as the same deck. (The automated test confirms the row aligns to the derived margins; the eye confirms it looks right.)
+- [ ] **Eyeball a `composed` stat-row slide** rendered from a real template against a placeholder-filled slide from the same template (open in any viewer — PowerPoint, Keynote, or a LibreOffice/Keynote PNG export; no specific tool required). The lint guarantees on-brand-by-tokens, not beautiful; confirm the composed slide sits in the template's own rhythm and reads as the same deck. (The automated test confirms the row aligns to the derived margins; the eye confirms it looks right.) While there, confirm the **advisory composition notes read as helpful, not noisy** on a real deck.
 
 ## Deferred (next touch of those files)
 
