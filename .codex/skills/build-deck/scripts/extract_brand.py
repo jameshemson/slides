@@ -3,19 +3,26 @@
 
 Given a .pptx/.potx, print JSON describing the brand the deck already carries:
 heading/body fonts and named colours read from the theme, plus the layout list,
-plus a derived tokens block (grid, type_scale, colour_roles) computed via the
-tokens module. teach-slides uses this to pre-fill brand.json from a deck the
-user already has, so the interview becomes confirm-and-adjust instead of blank
-entry. It is a superset of inspect_template.py, which prints layouts only.
+plus a derived tokens block. teach-slides uses this to pre-fill brand.json from a
+deck the user already has, so the interview becomes confirm-and-adjust instead of
+blank entry. It is a superset of inspect_template.py, which prints layouts only.
+
+The tokens block here carries only `type_scale` and `colour_roles`. The `grid`
+is deliberately omitted: a meaningful grid must be measured from the layouts the
+brand actually uses (its layout_map), which extract_brand does not build —
+init_brand.py, which does build a layout_map, emits the grid. build-deck also
+derives the grid at render time. Emitting an all-layouts grid here would risk a
+polluted gutter winning as an explicit override.
 
 Usage:
 
     python3 extract_brand.py <template.pptx>
 
 Output JSON: {"template": <abspath>, "fonts": {"heading","body"},
-"colours": {name: "#RRGGBB", ...}, "layouts": [...], "tokens": {...}}.
+"colours": {name: "#RRGGBB", ...}, "layouts": [...],
+"tokens": {"type_scale": {...}, "colour_roles": {...}}}.
 fonts/colours come from pptxlib.read_theme (the inverse of apply_theme);
-layouts from list_layouts; tokens from tokens.resolve_tokens.
+layouts from list_layouts; tokens from the tokens module.
 
 Exit status: 0 on success (JSON to stdout); non-zero with a message on stderr if
 the file is missing or is not a readable presentation. Nothing is printed to
@@ -54,7 +61,10 @@ def main(argv=None):
         "fonts": theme["fonts"],
         "colours": theme["colours"],
         "layouts": list_layouts(prs),
-        "tokens": tokens.resolve_tokens({"colours": theme["colours"]}, prs),
+        "tokens": {
+            "type_scale": tokens.default_type_scale(),
+            "colour_roles": tokens.resolve_colour_roles(theme["colours"]),
+        },
     }
     json.dump(report, sys.stdout, indent=2)
     sys.stdout.write("\n")

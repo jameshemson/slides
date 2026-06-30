@@ -416,6 +416,12 @@ def _parse_composed_slide(number, lines):
             f"slide {number}: composed slide has no 'Block:' (need at least "
             f"one, e.g. 'Block: stat-row')"
         )
+    if len(blocks) > 1:
+        raise SpecError(
+            f"slide {number}: a composed slide takes one 'Block:' in this "
+            f"release; stacking multiple blocks on a slide is a planned "
+            f"follow-up"
+        )
 
     parsed_blocks = [_parse_composed_block(number, b) for b in blocks]
     fields = {"Title": title} if title else {}
@@ -988,23 +994,34 @@ def _render_composed_slide(prs, brand, spec, tokens):
     if title and title_ph is not None:
         title_ph.text = title
         _, tt, _, th = _geom(slide, title_ph)
-        if (None not in (tt, th) and "margin_x" in grid
-                and "margin_bottom" in grid):
-            top = tt + th
+        if None not in (tt, th):
+            title_bottom = tt + th
+        else:
+            # Title placeholder inherits geometry we cannot read; reserve a
+            # generic top band so the row never overlaps the title.
+            title_bottom = grid.get("margin_top", 0) + round(slide_h * 0.12)
+        if "margin_x" in grid and "margin_bottom" in grid:
             bottom = slide_h - grid["margin_bottom"]
-            if bottom - top > 0:
-                region = (grid["margin_x"], top,
-                          slide_w - 2 * grid["margin_x"], bottom - top)
+            if bottom - title_bottom > 0:
+                region = (grid["margin_x"], title_bottom,
+                          slide_w - 2 * grid["margin_x"],
+                          bottom - title_bottom)
         _drop_composed_placeholders(slide, keep_title=True)
     else:
         _drop_composed_placeholders(slide, keep_title=False)
 
+    # Plan every block, then lint the slide's FULL element list once before any
+    # shape is drawn — the gate is slide-level, so overlap and the element cap
+    # are enforced across all blocks together, not per block.
+    all_elements = []
     for block in spec.get("blocks", []):
         btype = block.get("type")
         if btype == "stat-row":
             try:
-                elements = primitives.plan_stat_row(
-                    block["stats"], tokens, slide_w, slide_h, region
+                all_elements.extend(
+                    primitives.plan_stat_row(
+                        block["stats"], tokens, slide_w, slide_h, region
+                    )
                 )
             except primitives.ShapeError as exc:
                 raise SpecError(f"slide {number}: {exc}")
@@ -1013,13 +1030,14 @@ def _render_composed_slide(prs, brand, spec, tokens):
                 f"slide {number}: unknown composed block type {btype!r}; "
                 f"expected one of: stat-row"
             )
-        try:
-            lint.check(elements, tokens, slide_w, slide_h)
-        except lint.LintError as exc:
-            raise SpecError(
-                f"slide {number}: composed slide failed lint:\n{exc}"
-            )
-        primitives.draw(slide, elements)
+
+    try:
+        lint.check(all_elements, tokens, slide_w, slide_h)
+    except lint.LintError as exc:
+        raise SpecError(
+            f"slide {number}: composed slide failed lint:\n{exc}"
+        )
+    primitives.draw(slide, all_elements)
 
     _apply_meta(slide, spec.get("meta", {}))
     return slide
