@@ -14,9 +14,14 @@ all literal-emitting work here so the rest of the renderer stays literal-free.
 from pptx.util import Emu, Pt
 from pptx.dml.color import RGBColor
 
-# Generic typography constants — the ONLY non-token numeric constants allowed.
+# Generic typography/layout constants — the ONLY non-token numeric constants
+# allowed (generic, not brand values).
 EMU_PER_PT = 12700
 LINE_HEIGHT = 1.2
+# Optical centre: place the row's vertical centre slightly above the geometric
+# centre (~45% from the top). Dead-centre reads as marginally low; the optical
+# centre is the conventional resting point for a single focal element.
+OPTICAL_CENTRE = 0.45
 
 
 class ShapeError(Exception):
@@ -81,7 +86,7 @@ def plan_stat_row(stats, tokens, slide_w, slide_h, region=None) -> list:
         band_top = t
         band_bottom = t + h
 
-    row_top = band_top + (band_bottom - band_top - row_block_h) // 2
+    row_top = band_top + round((band_bottom - band_top - row_block_h) * OPTICAL_CENTRE)
 
     elements = []
     for i in range(N):

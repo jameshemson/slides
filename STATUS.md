@@ -32,6 +32,18 @@ yet released or version-bumped.
   render-to-PNG vision loop (needs LibreOffice); wiring the lint as a slop-check
   layer.
 
+A second slice stacks on top (branch `build/composition-quality`, unmerged): an
+**advisory composition-quality layer** — `composition.py` (a 9-rule registry:
+hierarchy, count, contrast, terseness, breathing-room, one-accent, no-decoration,
+size-not-colour) + `lint.review` (advisory, never blocks) + optical-centre recipe
+defaults so a default stat_row is good by construction. Rules are evidence-cited
+(a deep-research pass over Tufte/Duarte/Reynolds/Gestalt/WCAG/Cowan reconciled
+with the user's own decks) and surface as non-blocking notes in the run summary;
+see `presentation-craft/reference/composition.md`. Owed manual check: confirm the
+advisory messages read as helpful, not noisy, on a real deck (folds into the
+composed-slide eyeball below). Concreteness is intentionally doc-only (authored
+judgement, not a mechanical test).
+
 ## Owed before a fully human-verified release
 
 These could not run in the build environment; each needs a human in Claude Code or desktop PowerPoint. The releases above shipped ahead of them by choice.

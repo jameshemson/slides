@@ -765,6 +765,7 @@ def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None):
     font_family = "unset"    # resolved lazily once, when first drawing a chart
     font_warning = None
     composed_tokens = None   # resolved lazily once, on the first composed slide
+    composed_advisories = []  # [(slide_number, [finding, ...])] — non-blocking
 
     for spec in slides:
         number = spec["number"]
@@ -774,7 +775,9 @@ def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None):
             if composed_tokens is None:
                 import tokens  # noqa: PLC0415 — light; composed decks only
                 composed_tokens = tokens.resolve_tokens(brand, prs)
-            _render_composed_slide(prs, brand, spec, composed_tokens)
+            advisories = _render_composed_slide(prs, brand, spec, composed_tokens)
+            if advisories:
+                composed_advisories.append((number, advisories))
             continue
 
         if role not in layout_map:
@@ -859,11 +862,12 @@ def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None):
     prs.save(out_path)
 
     return _summary(out_path, len(slides), visual_slides, chart_slides,
-                    fallback_slides, font_warning)
+                    fallback_slides, font_warning,
+                    composed_advisories=composed_advisories)
 
 
 def _summary(out_path, n_slides, visual_slides, chart_slides, fallback_slides,
-             font_warning):
+             font_warning, composed_advisories=None):
     """Compose the one-line run summary, naming charts, notes, and warnings."""
     parts = [f"rendered {n_slides} slide(s) to {out_path}"]
     if chart_slides:
@@ -887,6 +891,15 @@ def _summary(out_path, n_slides, visual_slides, chart_slides, fallback_slides,
         )
     if font_warning:
         parts.append(f" [warning: {font_warning}]")
+    if composed_advisories:
+        n = sum(len(f) for _, f in composed_advisories)
+        parts.append(
+            f"; {n} composition advisory note(s) (not blocking): "
+            + "; ".join(
+                f"slide {num} {', '.join(fd['rule_id'] for fd in finds)}"
+                for num, finds in composed_advisories
+            )
+        )
     return "".join(parts)
 
 
@@ -1037,10 +1050,19 @@ def _render_composed_slide(prs, brand, spec, tokens):
         raise SpecError(
             f"slide {number}: composed slide failed lint:\n{exc}"
         )
+
+    # Advisory composition review — non-blocking. Wrapped so a broken advisory
+    # layer can never change the render's exit code (the gate above already
+    # passed). Returns findings for the run summary.
+    try:
+        advisories = lint.review(all_elements, tokens, slide_w, slide_h)
+    except Exception:  # noqa: BLE001 — advisory must never block a render
+        advisories = []
+
     primitives.draw(slide, all_elements)
 
     _apply_meta(slide, spec.get("meta", {}))
-    return slide
+    return advisories
 
 
 def _apply_meta(slide, meta, extra_visual=None):

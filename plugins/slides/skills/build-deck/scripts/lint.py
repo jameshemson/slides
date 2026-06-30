@@ -154,3 +154,40 @@ def check(elements: list, tokens: dict, slide_w: int, slide_h: int) -> None:
         header = "Composed slide failed mechanical lint:"
         raise LintError(header + "\n" + "\n".join(messages))
     return None
+
+
+def review(elements: list, tokens: dict, slide_w: int, slide_h: int) -> list:
+    """Run the ADVISORY composition rules and return findings; NEVER raises.
+
+    This is the advisory tier — distinct from check(), the hard system gate.
+    Each finding is {"rule_id", "tier", "severity", "message"}. The advisory
+    layer can never change a render's exit code: a broken or missing composition
+    module yields [] (guarded lazy import), and a rule whose check raises is
+    skipped (per-rule try/except). Rules are run only when the slide contains
+    elements they apply to (applies_to gating) — so an empty slide yields [].
+    """
+    try:
+        import composition  # noqa: PLC0415 — lazy + guarded; advisory must not block
+    except Exception:  # noqa: BLE001 — a broken advisory module must never block
+        return []
+
+    has_stat_row = any(
+        isinstance(el, dict) and str(el.get("role", "")).startswith("stat-")
+        for el in elements
+    )
+    findings = []
+    for rule in getattr(composition, "RULES", []):
+        try:
+            if rule.get("applies_to") == "stat-row" and not has_stat_row:
+                continue
+            satisfied = rule["check"](elements, tokens, slide_w, slide_h)
+        except Exception:  # noqa: BLE001 — a throwing advisory rule is skipped
+            continue
+        if not satisfied:
+            findings.append({
+                "rule_id": rule["id"],
+                "tier": rule["tier"],
+                "severity": rule["severity"],
+                "message": rule["message"],
+            })
+    return findings

@@ -8,6 +8,21 @@ follows [Keep a Changelog](https://keepachangelog.com/), and the pack uses
 
 ### Added
 
+- **A composition-quality layer: say what good looks like.** An evidence-cited,
+  brand-agnostic advisory tier over composed slides. `composition.py` is a
+  9-rule registry (hierarchy-ratio, stat-count, contrast/WCAG, value- and
+  label-terseness, breathing-room, one-accent, no-decoration, emphasise-by-size)
+  modelled on impeccable's rule-registry pattern; `lint.review` runs it and
+  returns non-blocking findings (the existing `lint.check` system gate still
+  hard-fails). The `stat_row` recipe now places at the optical centre and is
+  good by construction — a default row trips no advisory. Every rule cites a
+  source from a deep-research pass (Tufte, Duarte, Reynolds, Gestalt, WCAG 2.2,
+  Cowan) reconciled with the user's own presentation decks; folklore (Dale's
+  Cone, Mehrabian 7-38-55, 6×6, raw Miller 7±2, "60,000× faster") is
+  deliberately excluded. Concreteness/story judgement is documented, not
+  mechanised. See `presentation-craft/reference/composition.md`. Advisory by
+  design (Bateman *Useful Junk?*: don't encode "maximise minimalism" as an
+  absolute).
 - **A third composition mode: compose from brand-locked atoms.** A new
   `composed` deck-spec role draws *primitives* on the template's own grid
   instead of filling fixed placeholders — invention in the arrangement,
