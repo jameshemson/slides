@@ -366,9 +366,9 @@ def _prescan_layout(lines):
 def _parse_composed_slide(number, lines):
     """Parse a `composed` slide into title, blocks, and meta. Raises SpecError.
 
-    Recognises `Title:` (optional, inline), `Notes:` (optional, meta), and one
-    or more `Block: <type>` blocks, each followed by indented item lines up to
-    the next Title/Notes/Block. Returns:
+    Recognises `Title:` (optional, inline), `Notes:` (optional, meta), and a
+    single `Block: <type>` block followed by indented item lines (multiple
+    blocks are rejected this release — stacking is a follow-up). Returns:
 
         {"number", "role": "composed", "fields": {"Title": str?},
          "blocks": [parsed block dict, ...], "meta": {"Notes": str?}}
