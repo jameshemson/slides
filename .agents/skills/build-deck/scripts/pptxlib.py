@@ -9,7 +9,10 @@ There are no font, colour, or coordinate literals anywhere in this file.
 
 Chart drawing is a deliberately separate concern: it lives in `charts.py`
 (matplotlib) and is placed by render.py, which derives the picture's geometry
-from the template. pptxlib itself still adds no shape and holds no literals.
+from the template. Composed-slide drawing is likewise separate: token-bound
+primitives live in `primitives.py` (the only module that emits literals, all of
+them from brand.json design tokens) and are gated by `lint.py`. pptxlib itself
+still adds no shape and holds no literals.
 
 Public surface — six helpers:
 

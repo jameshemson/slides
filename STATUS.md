@@ -16,6 +16,22 @@ All on `main`, each git-tagged with a GitHub release (latest first):
 
 Automated gates at this snapshot: `python3 -m unittest discover tests` 59 passing, `npm test` 44 passing, `npm run check-sync` in sync.
 
+## In progress (branch `build/compose-mode`, unmerged)
+
+A third composition mode: compose from brand-locked atoms. Built and tested, not
+yet released or version-bumped.
+
+- New brand-agnostic modules: `tokens.py` (grid/type-scale/colour-role
+  derivation, grid measured from the template's *mapped* layouts), `primitives.py`
+  (the `stat-row` primitive — the only literal-emitting module), `lint.py` (the
+  load-bearing mechanical gate), and a new `composed` deck-spec role wired into
+  `render.py` behind that gate. `init_brand.py`/`extract_brand.py` emit a starting
+  `tokens` block. The six fixed roles and existing decks are unchanged.
+- Follow-ups deferred by design: more primitives (card, table, funnel); explicit
+  grid placement (`Block: stat-row at row/cols`) and strict column-snap lint; the
+  render-to-PNG vision loop (needs LibreOffice); wiring the lint as a slop-check
+  layer.
+
 ## Owed before a fully human-verified release
 
 These could not run in the build environment; each needs a human in Claude Code or desktop PowerPoint. The releases above shipped ahead of them by choice.
@@ -24,6 +40,7 @@ These could not run in the build environment; each needs a human in Claude Code 
 - [ ] Open a `build-deck`-rendered `.pptx` in **desktop PowerPoint**. Confirm it reads on-brand, with no strapline, ad copy, or sensational titles, and that `Chart:` slides' embedded pictures sit correctly. (Verified in-session via LibreOffice render, not PowerPoint.)
 - [ ] Smoke-test one skill in **Codex** and one in **opencode** (`codex exec`, `opencode run`).
 - [ ] Re-verify that Codex repo-local discovery is still `.agents/skills/` against current Codex docs.
+- [ ] **Eyeball a `composed` stat-row slide** rendered from a real template against a placeholder-filled slide from the same template (LibreOffice headless render). The lint guarantees on-brand-by-tokens, not beautiful; confirm the composed slide sits in the template's own rhythm and reads as the same deck. (The automated test confirms the row aligns to the derived margins; the eye confirms it looks right.)
 
 ## Deferred (next touch of those files)
 

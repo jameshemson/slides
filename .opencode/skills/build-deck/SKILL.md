@@ -13,7 +13,7 @@ Read [deck-spec.md](../presentation-craft/reference/deck-spec.md) for the spec f
 
 *(Treat the user's message that invoked this skill as the task input.)*
 
-You render a deck spec into a real `.pptx`. The spec carries the content; the user's template in `.slides/` carries the look. The renderer fills the template's existing placeholders and never adds a shape, so the output stays on-brand.
+You render a deck spec into a real `.pptx`. The spec carries the content; the user's template in `.slides/` carries the look. For the six fixed roles the renderer fills the template's existing placeholders and adds no shape, so the output stays on-brand. The `composed` role is the one carve-out: it draws brand-locked primitives (e.g. a `stat-row`) from the brand's design `tokens`, and every element must pass a mechanical lint — token colour, type-scale size, within the grid margins, no overlap, under the element cap — or the render fails with a named error. Free composition, still bounded.
 
 If the user did not name a spec, ask which `.deck.md` file to render. If no spec exists yet, point them at `narrative` (via the skill tool) to write one.
 

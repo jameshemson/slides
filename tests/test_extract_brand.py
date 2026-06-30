@@ -44,7 +44,7 @@ class ExtractBrandTest(unittest.TestCase):
 
     def test_exits_zero_and_has_keys(self):
         data = self._data()
-        for key in ("template", "fonts", "colours", "layouts"):
+        for key in ("template", "fonts", "colours", "layouts", "tokens"):
             self.assertIn(key, data)
 
     def test_fonts_from_fontscheme(self):
@@ -68,6 +68,23 @@ class ExtractBrandTest(unittest.TestCase):
         self.assertEqual(len(data["layouts"]), 11)
         names = [layout["name"] for layout in data["layouts"]]
         self.assertIn("title-content", names)
+
+    def test_tokens_grid_has_margin_x(self):
+        data = self._data()
+        self.assertIn("grid", data["tokens"])
+        self.assertIn("margin_x", data["tokens"]["grid"])
+
+    def test_tokens_type_scale_has_display(self):
+        data = self._data()
+        self.assertIn("type_scale", data["tokens"])
+        self.assertIn("display", data["tokens"]["type_scale"])
+
+    def test_tokens_colour_roles_nonempty(self):
+        # The fixture has a full Office palette (accent/ink/paper), so colour_roles
+        # must be populated with at least the four canonical roles.
+        data = self._data()
+        self.assertIn("colour_roles", data["tokens"])
+        self.assertTrue(len(data["tokens"]["colour_roles"]) > 0)
 
 
 class ExtractBrandErrorTest(unittest.TestCase):
