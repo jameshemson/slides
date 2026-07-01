@@ -4,6 +4,37 @@ All notable changes to the slides skill pack are recorded here. The format
 follows [Keep a Changelog](https://keepachangelog.com/), and the pack uses
 [semantic versioning](https://semver.org/).
 
+## [0.13.0] - 2026-07-01
+
+Charts the recipient can edit, plus the chart follow-ups real decks kept
+asking for — a stacked composition, a goal line, a chart on a composed slide.
+Back-compatible: every bit of this is opt-in grammar.
+
+### Added
+
+- **Native editable charts.** `native: true` on a `Chart:` block draws a real
+  PowerPoint chart — a GraphicFrame with data the recipient can edit in
+  PowerPoint, not a picture — for `bar`, `column`, `pie`, `line`, and
+  `scatter`. It's styled to the house craft straight from brand colours: the
+  emphasis category in accent, the rest muted, no gridlines, the value axis
+  hidden, data labels on with `format:` mapped to an Excel number format, and
+  a legend below only when there's more than one series. What can't go
+  native — a `waterfall` (PowerPoint's is chartEx, which python-pptx can't
+  write) or any chart carrying a drawn annotation (`target:`, `callout:`,
+  `marker:`) — falls back to the image automatically, with a run-summary note
+  naming why, never an error. A deck where every chart is native no longer
+  needs matplotlib.
+- **Stacked bars.** `stacked: true` on a multi-series `bar`/`column` draws one
+  full-width bar per category instead of grouped bars, on both backends —
+  image and native — with one total label per stack on the image path.
+- **A goal line.** `target: <value> [| label]` draws a reference line on
+  `column`, `bar`, or `line` image charts, with the axis extending to include
+  it.
+- **Charts on composed slides.** `Block: chart` on a composed slide takes the
+  same `key: value` grammar as `Chart:` — including `data:` CSV and
+  `native:` — and places on the grid like any other block, counting as one
+  lint element.
+
 ## [0.12.0] - 2026-07-01
 
 Two forms board and finance decks kept needing that the pack couldn't express: a
