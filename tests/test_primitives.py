@@ -19,7 +19,7 @@ import lint
 from primitives import (
     plan_stat_row, plan_card_grid, plan_comparison, plan_process,
     plan_timeline, plan_freeform, plan_tree, plan_icon_list,
-    ShapeError, _normalise_hex,
+    plan_cycle, plan_matrix, ShapeError, _normalise_hex,
 )
 
 
@@ -284,6 +284,48 @@ class TestNewPrimitives(unittest.TestCase):
              "placement": {"cols": (1, 12), "rows": (1, 8)}},
         ], TOKENS, SLIDE_W, SLIDE_H)
         self.assertEqual(els[0]["fill"], "#4F81BD")  # role name -> brand hex
+
+    def test_cycle_ring(self):
+        for n in (2, 3, 4, 5, 6):
+            els = plan_cycle([{"label": f"S{i}"} for i in range(n)],
+                             TOKENS, SLIDE_W, SLIDE_H)
+            self._lint_clean(els)
+            self.assertEqual(_roles(els).count("cycle-node"), n)
+            self.assertEqual(_roles(els).count("cycle-edge"), n)  # closes the loop
+
+    def test_cycle_rejects_over_six(self):
+        with self.assertRaises(ShapeError):
+            plan_cycle([{"label": str(i)} for i in range(7)], TOKENS, SLIDE_W, SLIDE_H)
+
+    def test_matrix_quadrants(self):
+        spec = {"x": "Effort", "y": "Impact", "quadrants": [
+            {"label": "QW"}, {"label": "BB", "emphasis": True},
+            {"label": "DP"}, {"label": "FI"}]}
+        els = plan_matrix(spec, TOKENS, SLIDE_W, SLIDE_H)
+        self._lint_clean(els)
+        self.assertEqual(_roles(els).count("matrix-cell"), 4)
+        self.assertEqual(_roles(els).count("matrix-axis"), 2)  # x + y captions
+        self.assertIn("#4F81BD", _fills(els))  # emphasised quadrant
+
+    def test_matrix_needs_four(self):
+        with self.assertRaises(ShapeError):
+            plan_matrix({"quadrants": [{"label": "a"}, {"label": "b"}]},
+                        TOKENS, SLIDE_W, SLIDE_H)
+
+    def test_process_icon_replaces_number(self):
+        els = plan_process([{"label": "Plan", "icon": "idea"},
+                            {"label": "Ship", "icon": "fast"}],
+                           TOKENS, SLIDE_W, SLIDE_H)
+        self._lint_clean(els)
+        self.assertEqual(_roles(els).count("process-icon"), 2)
+        self.assertEqual(_roles(els).count("process-number"), 0)  # icon takes the slot
+
+    def test_comparison_icon(self):
+        els = plan_comparison([{"header": "Before", "body": "slow", "icon": "decline"},
+                               {"header": "After", "body": "fast", "icon": "growth",
+                                "emphasis": True}], TOKENS, SLIDE_W, SLIDE_H)
+        self._lint_clean(els)
+        self.assertEqual(_roles(els).count("comparison-icon"), 2)
 
     def test_icon_list_rows(self):
         rows = [{"icon": "growth", "text": "Up"}, {"icon": "team", "text": "Bigger"}]

@@ -434,3 +434,26 @@ class NewPrimitiveRenderTest(unittest.TestCase):
                  "[team] Serve | users\n")
         proc, out = self._render_block(block, "cardicon.pptx")
         self.assertEqual(proc.returncode, 0, proc.stderr)
+
+    def test_cycle_renders(self):
+        block = "Block: cycle\nPlan\nBuild\nMeasure\nLearn\n"
+        proc, out = self._render_block(block, "cycle.pptx")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        # 4 nodes + 4 labels + 4 ring edges = 12 shapes.
+        self.assertEqual(len(self._drawn(out)), 12)
+
+    def test_matrix_renders(self):
+        block = ("Block: matrix\nx: Effort\ny: Impact\n"
+                 "Quick wins | do now\n!Big bets | plan\n"
+                 "Deprioritise | skip\nFill-ins | maybe\n")
+        proc, out = self._render_block(block, "matrix.pptx")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        # 4 cells + 4 labels + 2 axis captions (+ up to 4 bodies if the region
+        # is tall enough — bodies are clamped to the cell under a title).
+        self.assertGreaterEqual(len(self._drawn(out)), 10)
+
+    def test_matrix_wrong_count_fails(self):
+        block = "Block: matrix\nOnly | one\nTwo | two\n"
+        proc, out = self._render_block(block, "matbad.pptx")
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("exactly four", proc.stderr + proc.stdout)

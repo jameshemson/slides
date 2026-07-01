@@ -516,7 +516,7 @@ def _parse_composed_slide(number, lines):
 # is the vocabulary a composed slide may draw from; render dispatches on it too.
 COMPOSED_BLOCK_TYPES = (
     "stat-row", "card-grid", "comparison", "process", "timeline", "tree",
-    "icon-list", "freeform",
+    "cycle", "matrix", "icon-list", "freeform",
 )
 
 # Freeform vocabulary — the escape hatch. Colours are role names and sizes are
@@ -789,6 +789,7 @@ def _parse_composed_block(number, block):
         sides = []
         for item in items:
             emph, text = _clean_item(item)
+            icon, text = _extract_icon(number, text)
             fields = _pipe_fields(text)
             if not fields[0]:
                 raise SpecError(
@@ -798,6 +799,7 @@ def _parse_composed_block(number, block):
                 "header": fields[0],
                 "body": fields[1] if len(fields) > 1 else "",
                 "emphasis": emph,
+                "icon": icon,
             })
         return {"type": "comparison", "sides": sides}
 
@@ -805,6 +807,7 @@ def _parse_composed_block(number, block):
         steps = []
         for item in items:
             _emph, text = _clean_item(item)
+            icon, text = _extract_icon(number, text)
             fields = _pipe_fields(text)
             if not fields[0]:
                 raise SpecError(
@@ -813,6 +816,7 @@ def _parse_composed_block(number, block):
             steps.append({
                 "label": fields[0],
                 "detail": fields[1] if len(fields) > 1 else "",
+                "icon": icon,
             })
         return {"type": "process", "steps": steps}
 
@@ -822,6 +826,49 @@ def _parse_composed_block(number, block):
 
     if btype == "tree":
         return {"type": "tree", "root": _parse_tree_items(number, items)}
+
+    if btype == "cycle":
+        stages = []
+        for item in items:
+            _emph, text = _clean_item(item)
+            label = _pipe_fields(text)[0]
+            if not label:
+                raise SpecError(
+                    f"slide {number}: cycle line {item!r} needs a stage label"
+                )
+            stages.append({"label": label})
+        return {"type": "cycle", "stages": stages}
+
+    if btype == "matrix":
+        xlab = ylab = None
+        quads = []
+        for item in items:
+            low = item.strip().lower()
+            if low.startswith("x:"):
+                xlab = item.split(":", 1)[1].strip()
+                continue
+            if low.startswith("y:"):
+                ylab = item.split(":", 1)[1].strip()
+                continue
+            emph, text = _clean_item(item)
+            fields = _pipe_fields(text)
+            if not fields[0]:
+                raise SpecError(
+                    f"slide {number}: matrix quadrant {item!r} needs a label"
+                )
+            quads.append({
+                "label": fields[0],
+                "body": fields[1] if len(fields) > 1 else "",
+                "emphasis": emph,
+            })
+        if len(quads) != 4:
+            raise SpecError(
+                f"slide {number}: matrix needs exactly four quadrant lines "
+                f"(top-left, top-right, bottom-left, bottom-right), got "
+                f"{len(quads)}"
+            )
+        return {"type": "matrix",
+                "spec": {"x": xlab, "y": ylab, "quadrants": quads}}
 
     if btype == "icon-list":
         rows = []
@@ -1504,6 +1551,8 @@ def _render_composed_slide(prs, brand, spec, tokens, charts_dir):
         "process": (primitives.plan_process, "steps"),
         "timeline": (primitives.plan_timeline, "nodes"),
         "tree": (primitives.plan_tree, "root"),
+        "cycle": (primitives.plan_cycle, "stages"),
+        "matrix": (primitives.plan_matrix, "spec"),
         "icon-list": (primitives.plan_icon_list, "rows"),
         "freeform": (primitives.plan_freeform, "elements"),
     }

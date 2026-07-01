@@ -289,6 +289,24 @@ def _check_iconlist_count(elements, tokens, slide_w, slide_h):
     return 2 <= len(_by_role(elements, "iconlist-icon")) <= 6
 
 
+# --- cycle / matrix ----------------------------------------------------------
+
+def _check_cycle_count(elements, tokens, slide_w, slide_h):
+    return 2 <= len(_by_role(elements, "cycle-node")) <= 6
+
+
+def _check_cycle_terseness(elements, tokens, slide_w, slide_h):
+    return _all_terse((e["text"] for e in _by_role(elements, "cycle-label")), 3)
+
+
+def _check_matrix_terseness(elements, tokens, slide_w, slide_h):
+    return _all_terse((e["text"] for e in _by_role(elements, "matrix-label")), 3)
+
+
+def _check_matrix_one_accent(elements, tokens, slide_w, slide_h):
+    return _accent_boxes(_by_role(elements, "matrix-cell"), tokens) <= 1
+
+
 # ---------------------------------------------------------------------------
 # RULES registry
 # ---------------------------------------------------------------------------
@@ -546,5 +564,43 @@ RULES = [
         "source": "report#4 (Cowan)",
         "message": "Keep an icon list to ~3-6 rows.",
         "check": _check_iconlist_count,
+    },
+    # --- cycle ---------------------------------------------------------------
+    {
+        "id": "cycle-count",
+        "tier": "quality",
+        "severity": "advisory",
+        "applies_to": "cycle",
+        "source": "report#4 (Cowan)",
+        "message": "Keep a cycle to ~3-6 stages.",
+        "check": _check_cycle_count,
+    },
+    {
+        "id": "cycle-label-terseness",
+        "tier": "quality",
+        "severity": "advisory",
+        "applies_to": "cycle",
+        "source": "report#3 (terse labels)",
+        "message": "Cycle stage labels stay to <=3 words.",
+        "check": _check_cycle_terseness,
+    },
+    # --- matrix --------------------------------------------------------------
+    {
+        "id": "matrix-label-terseness",
+        "tier": "quality",
+        "severity": "advisory",
+        "applies_to": "matrix",
+        "source": "report#3 (terse labels)",
+        "message": "Matrix quadrant labels stay to <=3 words.",
+        "check": _check_matrix_terseness,
+    },
+    {
+        "id": "matrix-one-accent",
+        "tier": "slop",
+        "severity": "advisory",
+        "applies_to": "matrix",
+        "source": "report#7 (grey-push, one accent)",
+        "message": "At most one quadrant leads (accent); the rest are the grey field.",
+        "check": _check_matrix_one_accent,
     },
 ]

@@ -141,6 +141,12 @@ EXPECTED_IDS = [
     "tree-one-accent",
     # icon-list
     "iconlist-count",
+    # cycle
+    "cycle-count",
+    "cycle-label-terseness",
+    # matrix
+    "matrix-label-terseness",
+    "matrix-one-accent",
 ]
 
 REQUIRED_KEYS = {"id", "tier", "severity", "applies_to", "message", "source", "check"}
@@ -365,7 +371,7 @@ if __name__ == "__main__":
 import lint  # noqa: E402
 from primitives import (  # noqa: E402
     plan_stat_row, plan_card_grid, plan_comparison, plan_process, plan_timeline,
-    plan_freeform, plan_tree, plan_icon_list,
+    plan_freeform, plan_tree, plan_icon_list, plan_cycle, plan_matrix,
 )
 
 _INTEG_STATS = [
@@ -476,6 +482,16 @@ class TestNewPrimitiveReview(unittest.TestCase):
             {"label": "Ops", "emphasis": False, "icon": None, "children": []},
         ]}
         self.assertIn("tree-one-accent", self._ids(plan_tree(root, TOKENS, SLIDE_W, SLIDE_H)))
+
+    def test_cycle_clean(self):
+        els = plan_cycle([{"label": "Plan"}, {"label": "Build"}, {"label": "Learn"}],
+                         TOKENS, SLIDE_W, SLIDE_H)
+        self.assertEqual(self._ids(els), set())
+
+    def test_matrix_clean(self):
+        spec = {"quadrants": [{"label": "QW"}, {"label": "BB", "emphasis": True},
+                              {"label": "DP"}, {"label": "FI"}]}
+        self.assertEqual(self._ids(plan_matrix(spec, TOKENS, SLIDE_W, SLIDE_H)), set())
 
     def test_icon_list_clean(self):
         rows = [{"icon": "growth", "text": "Up"}, {"icon": "team", "text": "Bigger"},
