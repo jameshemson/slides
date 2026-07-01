@@ -13,7 +13,7 @@ all literal-emitting work here so the rest of the renderer stays literal-free.
 
 from pptx.util import Emu, Pt
 from pptx.dml.color import RGBColor
-from pptx.enum.shapes import MSO_SHAPE
+from pptx.enum.shapes import MSO_SHAPE, MSO_CONNECTOR
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 
 # Generic typography/layout constants — the ONLY non-token numeric constants
@@ -30,7 +30,7 @@ OPTICAL_CENTRE = 0.45
 # overlap only because the box is a container (see lint.check_no_overlap), and
 # draw() must paint the box first or the text would be hidden. Elements with an
 # equal z keep their planned order (stable sort).
-_Z_BY_KIND = {"box": 0, "connector": 1, "text": 2}
+_Z_BY_KIND = {"box": 0, "edge": 1, "connector": 1, "icon": 2, "text": 2}
 
 
 class ShapeError(Exception):
@@ -579,6 +579,16 @@ def plan_freeform(elements, tokens, slide_w, slide_h, region=None) -> list:
                 "left": l, "top": t + (h - lh) // 2, "width": w, "height": lh,
                 "fill": roles[el["colour"]],
             })
+        elif kind == "icon":
+            # A square icon centred in its placement cell. render.py resolves the
+            # element to a recoloured PNG after the lint clears its token colour.
+            side = min(w, h)
+            out.append({
+                "role": "freeform-icon", "kind": "icon", "name": el["name"],
+                "left": l + (w - side) // 2, "top": t + (h - side) // 2,
+                "width": side, "height": side,
+                "colour": roles[el["colour"]],
+            })
     return out
 
 
@@ -625,11 +635,49 @@ def draw(slide, elements) -> list:
     )
     added = []
     for el in ordered:
-        if el.get("kind") in ("box", "connector"):
+        kind = el.get("kind")
+        if kind in ("box", "connector"):
             added.append(_add_box(slide, el))
+        elif kind == "edge":
+            added.append(_add_edge(slide, el))
+        elif kind == "icon":
+            shp = _add_icon(slide, el)
+            if shp is not None:
+                added.append(shp)
         else:
             added.append(_add_text(slide, el))
     return added
+
+
+def _add_edge(slide, el):
+    """Draw one tree edge as a single elbow connector, parent -> child.
+
+    An elbow connector is ONE shape per edge (so a tree stays under the element
+    cap), routed by PowerPoint between the two points. The line colour is a
+    token; the lint exempts connectors/edges from the overlap rule because a
+    1-D line crossing a box is not a composition fault."""
+    conn = slide.shapes.add_connector(
+        MSO_CONNECTOR.ELBOW,
+        Emu(el["x1"]), Emu(el["y1"]), Emu(el["x2"]), Emu(el["y2"]),
+    )
+    conn.line.color.rgb = RGBColor.from_string(el["colour"].lstrip("#"))
+    if el.get("stroke_w"):
+        conn.line.width = Emu(int(el["stroke_w"]))
+    return conn
+
+
+def _add_icon(slide, el):
+    """Place a pre-rendered icon PNG on the grid. render.py recolours + rasterises
+    the icon to `el['png']` after the lint clears it; an icon whose rasteriser was
+    absent has no `png` and is dropped by render.py before draw, so this only ever
+    places a real file. Returns None defensively if `png` is missing."""
+    png = el.get("png")
+    if not png:
+        return None
+    return slide.shapes.add_picture(
+        png, Emu(el["left"]), Emu(el["top"]),
+        width=Emu(el["width"]), height=Emu(el["height"]),
+    )
 
 
 def _add_text(slide, el):

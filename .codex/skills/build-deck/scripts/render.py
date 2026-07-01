@@ -520,7 +520,7 @@ COMPOSED_BLOCK_TYPES = (
 # scale names (never hex/pt), so a freeform element is on-token by construction;
 # the mechanical lint enforces the rest. These name sets are the canonical token
 # keys, so they can be validated at parse time without the resolved tokens.
-_FREEFORM_KINDS = {"box", "panel", "text", "arrow", "dot", "line"}
+_FREEFORM_KINDS = {"box", "panel", "text", "arrow", "dot", "line", "icon"}
 _FREEFORM_COLOURS = {"ink", "paper", "accent", "muted"}
 _FREEFORM_SCALES = {"display", "h1", "body", "caption"}
 
@@ -618,6 +618,23 @@ def _parse_freeform_element(number, item):
                 )
             _require_name(number, style[2].lower(), _FREEFORM_COLOURS, "colour")
             el["stroke"] = style[2].lower()
+    elif kind == "icon":
+        if len(style) != 2:
+            raise SpecError(
+                f"slide {number}: freeform icon needs '<name> <colour>' "
+                f"(e.g. 'growth accent'), got "
+                f"{' '.join(style) or '(nothing)'!r}"
+            )
+        name, colour = style[0].lower(), style[1].lower()
+        import icons as _icons  # noqa: PLC0415 — light, only on an icon line
+        if name not in _icons.available():
+            raise SpecError(
+                f"slide {number}: unknown icon {name!r}; see the bundled "
+                f"assets/icons for the available names"
+            )
+        _require_name(number, colour, _FREEFORM_COLOURS, "colour")
+        el["name"] = name
+        el["colour"] = colour
     else:  # arrow, dot, line
         if len(style) != 1:
             raise SpecError(
@@ -1035,6 +1052,7 @@ def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None):
     font_warning = None
     composed_tokens = None   # resolved lazily once, on the first composed slide
     composed_advisories = []  # [(slide_number, [finding, ...])] — non-blocking
+    icon_fallback_slides = []  # [(slide_number, [icon name, ...])] — rasteriser absent
 
     for spec in slides:
         number = spec["number"]
@@ -1044,9 +1062,13 @@ def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None):
             if composed_tokens is None:
                 import tokens  # noqa: PLC0415 — light; composed decks only
                 composed_tokens = tokens.resolve_tokens(brand, prs)
-            advisories = _render_composed_slide(prs, brand, spec, composed_tokens)
+            advisories, dropped_icons = _render_composed_slide(
+                prs, brand, spec, composed_tokens, charts_dir
+            )
             if advisories:
                 composed_advisories.append((number, advisories))
+            if dropped_icons:
+                icon_fallback_slides.append((number, dropped_icons))
             continue
 
         if role not in layout_map:
@@ -1132,11 +1154,12 @@ def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None):
 
     return _summary(out_path, len(slides), visual_slides, chart_slides,
                     fallback_slides, font_warning,
-                    composed_advisories=composed_advisories)
+                    composed_advisories=composed_advisories,
+                    icon_fallback_slides=icon_fallback_slides)
 
 
 def _summary(out_path, n_slides, visual_slides, chart_slides, fallback_slides,
-             font_warning, composed_advisories=None):
+             font_warning, composed_advisories=None, icon_fallback_slides=None):
     """Compose the one-line run summary, naming charts, notes, and warnings."""
     parts = [f"rendered {n_slides} slide(s) to {out_path}"]
     if chart_slides:
@@ -1157,6 +1180,13 @@ def _summary(out_path, n_slides, visual_slides, chart_slides, fallback_slides,
             f"slide(s) fell back to VISUAL TO ADD notes "
             f"(slides {', '.join(map(str, fallback_slides))}); "
             f"pip install matplotlib to draw them"
+        )
+    if icon_fallback_slides:
+        n = sum(len(names) for _, names in icon_fallback_slides)
+        parts.append(
+            f"; cairosvg not installed — {n} icon(s) not drawn "
+            f"(slides {', '.join(str(s) for s, _ in icon_fallback_slides)}); "
+            f"pip install cairosvg to draw them"
         )
     if font_warning:
         parts.append(f" [warning: {font_warning}]")
@@ -1317,7 +1347,13 @@ def _drop_composed_placeholders(slide, keep_title):
     _drop_unused(to_drop)
 
 
-def _render_composed_slide(prs, brand, spec, tokens):
+def _icon_px(el):
+    """Raster size (px) for an icon element: ~200 dpi at its placed width, clamped."""
+    px = round(el["width"] / 914400 * 200)
+    return max(48, min(px, 512))
+
+
+def _render_composed_slide(prs, brand, spec, tokens, charts_dir):
     """Render a composed slide: fill an optional title, then draw token-bound
     primitives that must pass the mechanical lint before any shape is added.
 
@@ -1401,10 +1437,33 @@ def _render_composed_slide(prs, brand, spec, tokens):
     except Exception:  # noqa: BLE001 — advisory must never block a render
         advisories = []
 
+    # Resolve icon elements to recoloured PNGs — AFTER the lint has cleared their
+    # token colour, so the planners stay pure (the charts pattern). A missing
+    # rasteriser drops the icon and is reported; the deck still builds (D-011).
+    dropped_icons = []
+    icon_elements = [el for el in all_elements if el.get("kind") == "icon"]
+    if icon_elements:
+        import icons as icons_mod  # noqa: PLC0415 — composed icon slides only
+        os.makedirs(charts_dir, exist_ok=True)
+        for el in icon_elements:
+            png = os.path.join(
+                charts_dir, f"icon-{el['name']}-{el['colour'].lstrip('#')}.png"
+            )
+            try:
+                icons_mod.render_png(el["name"], el["colour"], _icon_px(el), png)
+                el["png"] = png
+            except icons_mod.IconError:
+                dropped_icons.append(el["name"])
+        if dropped_icons:
+            all_elements = [
+                el for el in all_elements
+                if el.get("kind") != "icon" or el.get("png")
+            ]
+
     primitives.draw(slide, all_elements)
 
     _apply_meta(slide, spec.get("meta", {}))
-    return advisories
+    return advisories, dropped_icons
 
 
 def _apply_meta(slide, meta, extra_visual=None):
