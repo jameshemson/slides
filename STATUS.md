@@ -8,6 +8,7 @@ All on `main`, each git-tagged with a GitHub release (latest first):
 
 | Version | What it added |
 |---------|---------------|
+| v0.8.0 | A brand-constrained visual vocabulary. Icons (44 curated iconoir line icons, recoloured to a token colour, as an `icon-list`, a `[icon]` prefix on cards/tree, or in `freeform`; optional `cairosvg`, else skipped + noted). A hierarchy/`tree` primitive (indented list → tidy org chart / decomposition, elbow-connector edges, capped). The brand's **real type scale** read from the template master (`pptxlib.read_type_scale` → a hero display, monotonic, generic fallback) and a **shape-language** token (rounded/sharp), so composed slides read as the brand without copying its layouts. The Design philosophy is now in CLAUDE.md. Back-compatible; new tokens optional. |
 | v0.7.0 | Boxes, not bullets. The `composed` role grows from one primitive to five — `card-grid`, `comparison`, `process`, `timeline` alongside `stat-row` — drawn as real filled boxes, plus a `freeform` block that places token-bound boxes/text/arrows on the grid for anything the named shapes don't cover. Multi-block slides stack or place on a 12×12 grid; the mechanical lint is shape-aware; `composition.py` grows to 20 advisory rules. `narrative` now reaches for compositions (the fix for decks that came out as headings over bullets), and a committed `design-research.md` records the evidence base (the user's own decks + the canon) so it can't be lost to a scratchpad again. |
 | v0.6.0 | A third composition mode + an advisory composition-quality layer. A new `composed` deck-spec role composes brand-locked primitives (`stat_row`) on a token grid derived from the template, behind a load-bearing mechanical lint (`tokens.py`, `primitives.py`, `lint.py`). Over it, `composition.py` (a 9-rule registry) + `lint.review` say "what good looks like" as non-blocking advisories — evidence-cited (deep research over Tufte/Duarte/Reynolds/Gestalt/WCAG/Cowan, reconciled with real decks). Brand-agnostic and back-compatible: the `tokens` key is optional, the six fixed roles unchanged. |
 | v0.5.0 | One-step brand onboarding: `init_brand.py` builds a complete `brand.json` (fonts, colours, and a heuristic `layout_map`) from a template or deck; `build-deck` and `narrative` offer it when `.slides/` is missing. |
@@ -16,7 +17,15 @@ All on `main`, each git-tagged with a GitHub release (latest first):
 | v0.2.0 | Native charts: `build-deck` draws bar, column, pie, scatter, and line charts from a `Chart:` block (matplotlib), placed on-brand; degrades to a `VISUAL TO ADD` note when matplotlib is absent. |
 | v0.1.0 | Initial release: five skills, cross-harness pipeline, python-pptx renderer, two-layer slop detector. |
 
-Automated gates at this snapshot: `python3 -m unittest discover tests` 182 passing, `npm test` 44 passing, `npm run check-sync` in sync.
+Automated gates at this snapshot: `python3 -m unittest discover tests` 219 passing (2 skipped — `cairosvg`-gated icon raster; recolour + degradation paths covered), `npm test` 44 passing, `npm run check-sync` in sync.
+
+Visual-vocabulary follow-ups deferred by design (v0.8.0): **logo capture** —
+python-pptx cannot write pictures to a master/layout, so a positive fixture/test
+can't be built cleanly and detect-only is low value; `[icon]` on process and
+comparison items (it lands in freeform, icon-list, card, and tree); shape
+**auto-inference** from the template's own shapes (the `shape` token defaults +
+explicit override ship now). Icons need the optional `cairosvg` to rasterise,
+like `matplotlib` for charts.
 
 Composed mode follow-ups shipped in v0.7.0: four more primitives, a `freeform`
 block, explicit grid placement (`Block: … at cols/rows`), stacking several blocks
@@ -37,6 +46,7 @@ These could not run in the build environment; each needs a human in Claude Code 
 - [ ] Re-verify that Codex repo-local discovery is still `.agents/skills/` against current Codex docs.
 - [ ] **Eyeball a `composed` stat-row slide** rendered from a real template against a placeholder-filled slide from the same template (open in any viewer — PowerPoint, Keynote, or a LibreOffice/Keynote PNG export; no specific tool required). The lint guarantees on-brand-by-tokens, not beautiful; confirm the composed slide sits in the template's own rhythm and reads as the same deck. (The automated test confirms the row aligns to the derived margins; the eye confirms it looks right.) While there, confirm the **advisory composition notes read as helpful, not noisy** on a real deck.
 - [ ] **Eyeball the v0.7.0 primitives** — `card-grid`, `comparison`, `process`, `timeline`, and a `freeform` slide — rendered from a real template. Confirm the boxes read on-brand and the compositions look intentional, not templated (the lint proves on-brand, not well-composed, especially for `freeform`). Confirm `narrative` actually reaches for a composition (and `freeform` when an idea fits none of the five) rather than defaulting to bullets.
+- [ ] **Eyeball the v0.8.0 vocabulary** with `cairosvg` installed: a `tree`, an `icon-list`, and a card/tree with a `[icon]` — confirm the icons recolour to the brand accent and sit crisply, the tree reads as an org chart, and the brand-derived type scale looks right (composed slides should feel like the brand). The raster path is skip-guarded in tests; this is the human confirmation.
 
 ## Deferred (next touch of those files)
 
