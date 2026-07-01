@@ -230,5 +230,150 @@ class TestShapeElements(unittest.TestCase):
         self.assertTrue(lint.check_no_overlap([box, text]))
 
 
+# --- Table-aware lint (T-004, REQ-004, decision D-008) --------------------
+#
+# A native pptx table is ONE element (kind "table"), so its colours and sizes
+# travel as vectors rather than one-per-pseudo-element: `fills`, `text_colours`,
+# and `font_pts`. The hairline colour rides the existing scalar `stroke` key.
+# check_colours / check_sizes must validate every entry of those vectors; the
+# margins/overlap/count rules treat the table as the single rectangle it is.
+
+
+def good_table(left=457200, top=1600200, width=3000000, height=1200000):
+    """A fully on-brand table element: every fill/text colour a token, every
+    font size on the type scale, stroke a token, inside the grid margins."""
+    return {
+        "role": "table-grid",
+        "kind": "table",
+        "text": "table: A | B",
+        "left": left,
+        "top": top,
+        "width": width,
+        "height": height,
+        # header ink, data paper, emphasis accent — all in colour_roles
+        "fills": ["#000000", "#FFFFFF", "#4F81BD"],
+        # paper-on-ink header, ink-on-paper body — all in colour_roles
+        "text_colours": ["#FFFFFF", "#000000"],
+        "font_pts": [18.0],          # body, on the type scale
+        "stroke": "#C0504D",         # muted hairline, a token colour
+    }
+
+
+def stacked_with_table(n):
+    """`n` clean, non-overlapping, within-margin elements; element 0 is a
+    table. Used to prove a table counts as exactly ONE element for the cap."""
+    els = []
+    for i in range(n):
+        top = 1600200 + i * 50000
+        if i == 0:
+            els.append(good_table(left=457200, top=top, width=500000, height=40000))
+        else:
+            els.append({
+                "role": f"item-{i}",
+                "text": str(i),
+                "left": 457200,
+                "top": top,
+                "width": 500000,
+                "height": 40000,
+                "font_pt": 12.0,
+                "colour": "#000000",
+            })
+    return els
+
+
+class TestTableColours(unittest.TestCase):
+    """check_colours must hold every entry of a table's fills / text_colours
+    vectors to the token palette (D-008), and still trip on the scalar stroke."""
+
+    def test_off_token_fill_flagged(self):
+        # RED until T-009: check_colours ignores `fills` today.
+        t = good_table()
+        t["fills"] = ["#000000", "#ABCDEF", "#4F81BD"]  # #ABCDEF off-token
+        violations = lint.check_colours([t], TOKENS)
+        self.assertTrue(violations, "expected a [colour] violation for the off-token fill")
+        self.assertTrue(any("[colour]" in v for v in violations))
+        self.assertTrue(
+            any("#ABCDEF" in v for v in violations),
+            "the violation should name the off-token hex",
+        )
+
+    def test_off_token_text_colour_flagged(self):
+        # RED until T-009: check_colours ignores `text_colours` today.
+        t = good_table()
+        t["text_colours"] = ["#FFFFFF", "#123456"]  # #123456 off-token
+        violations = lint.check_colours([t], TOKENS)
+        self.assertTrue(violations, "expected a [colour] violation for the off-token text colour")
+        self.assertTrue(any("[colour]" in v for v in violations))
+        self.assertTrue(
+            any("#123456" in v for v in violations),
+            "the violation should name the off-token hex",
+        )
+
+    def test_off_token_stroke_still_flagged(self):
+        # Already green: `stroke` is a scalar key the existing rule checks.
+        t = good_table()
+        t["stroke"] = "#00FF00"  # off-token
+        violations = lint.check_colours([t], TOKENS)
+        self.assertTrue(any("stroke" in v and "[colour]" in v for v in violations))
+
+
+class TestTableSizes(unittest.TestCase):
+    def test_off_scale_font_pt_flagged(self):
+        # RED until T-009: check_sizes ignores the `font_pts` vector today.
+        t = good_table()
+        t["font_pts"] = [18.0, 99.0]  # 99.0 not on the type scale
+        violations = lint.check_sizes([t], TOKENS)
+        self.assertTrue(violations, "expected a [size] violation for the off-scale font_pts entry")
+        self.assertTrue(any("[size]" in v for v in violations))
+        self.assertTrue(any("99" in v for v in violations))
+
+
+class TestTableClean(unittest.TestCase):
+    def test_clean_table_passes(self):
+        # Already green now (vectors ignored); must STAY green after T-009.
+        t = good_table()
+        self.assertEqual(lint.check_colours([t], TOKENS), [])
+        self.assertEqual(lint.check_sizes([t], TOKENS), [])
+        self.assertEqual(
+            lint.check_within_margins([t], TOKENS, SLIDE_W, SLIDE_H), []
+        )
+        self.assertIsNone(lint.check([t], TOKENS, SLIDE_W, SLIDE_H))
+
+
+class TestTableMargins(unittest.TestCase):
+    def test_out_of_margin_names_text_key(self):
+        # Already green: the table carries a `text` key, so the margins message
+        # formats without a KeyError (lint.py line ~115 reads el['text']).
+        t = good_table()
+        t["left"] = 0  # left of margin_x
+        violations = lint.check_within_margins([t], TOKENS, SLIDE_W, SLIDE_H)
+        self.assertTrue(violations)
+        self.assertTrue(any("[margins]" in v for v in violations))
+        self.assertTrue(
+            any(t["text"] in v for v in violations),
+            "the margins message must include the element's text key",
+        )
+
+
+class TestTableCount(unittest.TestCase):
+    """A table is a single native GraphicFrame — one element for the cap (D-001)."""
+
+    def test_table_at_cap_passes(self):
+        # Already green: ELEMENT_CAP elements, one of them a table, is legal.
+        els = stacked_with_table(lint.ELEMENT_CAP)
+        self.assertEqual(len(els), lint.ELEMENT_CAP)
+        self.assertEqual(lint.check_count(els), [])
+        self.assertIsNone(lint.check(els, TOKENS, SLIDE_W, SLIDE_H))
+
+    def test_table_over_cap_fails(self):
+        els = stacked_with_table(lint.ELEMENT_CAP + 1)
+        violations = lint.check_count(els)
+        self.assertTrue(violations)
+        self.assertIn("[count]", violations[0])
+        with self.assertRaises(lint.LintError) as ctx:
+            lint.check(els, TOKENS, SLIDE_W, SLIDE_H)
+        self.assertIn("[count]", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -163,5 +163,102 @@ class TestCsvChartRender(unittest.TestCase):
         self.assertIn("not found", proc.stderr + proc.stdout)
 
 
+# --- waterfall (T-003, REQ-006) ----------------------------------------------
+#
+# These pin the contracts the waterfall implementer (T-008) must satisfy. Two
+# pure helpers keep the maths and the sign-colouring unit-testable without
+# reaching into matplotlib internals:
+#
+#   charts._waterfall_segments(values) -> (bottoms, heights, running)
+#       Floating-bar geometry for a running-total waterfall. For a delta series
+#       the i-th bar starts at `bottoms[i]` and has vertical extent
+#       `heights[i]` (always >= 0). `running` is the cumulative total AFTER each
+#       delta, so `running[-1]` is the end value. A falling (negative) delta
+#       drops the bottom below the previous total; a net-negative run pushes a
+#       bottom below zero.
+#
+#   charts._waterfall_colours(values, emphasis, muted, spend, ink) -> [colour]
+#       One colour per delta bar PLUS a trailing colour for the appended total
+#       bar, so len == len(values) + 1. Rises (delta >= 0) use `emphasis`;
+#       falls use `spend`, EXCEPT when the brand has no distinct spend colour
+#       (i.e. `spend == emphasis`, per _resolve_colours' fallback) in which case
+#       falls use `muted` so a rise and a fall never share a colour (D-005).
+#       The trailing total bar uses `ink`.
+
+
+class TestWaterfallSegments(unittest.TestCase):
+    def test_running_total_segments(self):
+        # Deltas +40, -15, +25 -> running 40, 25, 50. A rise starts at the
+        # prior total; a fall's bar spans down from the prior total.
+        bottoms, heights, running = charts._waterfall_segments([40, -15, 25])
+        self.assertEqual(bottoms, [0, 25, 25])
+        self.assertEqual(heights, [40, 15, 25])
+        self.assertEqual(running, [40, 25, 50])
+        self.assertEqual(running[-1], 50)
+
+    def test_net_negative_dips_below_zero(self):
+        # +10 then -30 ends at -20, so the falling bar's bottom is below zero.
+        bottoms, heights, running = charts._waterfall_segments([10, -30])
+        self.assertEqual(bottoms, [0, -20])
+        self.assertEqual(heights, [10, 30])
+        self.assertEqual(running[-1], -20)
+        self.assertLess(min(bottoms), 0)
+        self.assertTrue(any(b < 0 for b in bottoms))
+
+
+class TestWaterfallColours(unittest.TestCase):
+    PAPER = "#FFFFFF"
+
+    def test_no_spend_key_falls_use_muted(self):
+        # BRAND has no 'spend': _resolve_colours falls spend back to emphasis,
+        # so falls must use muted instead (rise and fall never share a colour).
+        emphasis, muted, spend, ink = charts._resolve_colours(BRAND["colours"])
+        self.assertEqual(spend, emphasis)  # precondition for this branch
+        cols = charts._waterfall_colours([40, -15, 25], emphasis, muted, spend, ink)
+        self.assertEqual(len(cols), 4)          # 3 deltas + appended total bar
+        self.assertEqual(cols[0], emphasis)     # rise
+        self.assertEqual(cols[2], emphasis)     # rise
+        self.assertEqual(cols[-1], ink)         # computed total bar
+        fall = cols[1]
+        self.assertEqual(fall, muted)           # fall degrades to muted
+        self.assertNotEqual(fall, emphasis)     # ... and differs from a rise
+        self.assertNotEqual(
+            charts._normalise_hex(fall), charts._normalise_hex(self.PAPER))
+
+    def test_spend_key_falls_use_spend(self):
+        # A brand with an explicit 'spend' colours falls in spend, rises in
+        # emphasis; the two differ and neither fall is paper.
+        colours = {"accent": "#4F81BD", "spend": "#C0504D",
+                   "ink": "#000000", "paper": self.PAPER}
+        emphasis, muted, spend, ink = charts._resolve_colours(colours)
+        self.assertNotEqual(spend, emphasis)  # precondition for this branch
+        cols = charts._waterfall_colours([40, -15, 25], emphasis, muted, spend, ink)
+        self.assertEqual(len(cols), 4)
+        self.assertEqual(cols[0], emphasis)
+        self.assertEqual(cols[-1], ink)
+        fall = cols[1]
+        self.assertEqual(fall, spend)
+        self.assertNotEqual(fall, emphasis)
+        self.assertNotEqual(
+            charts._normalise_hex(fall), charts._normalise_hex(self.PAPER))
+
+
+class TestWaterfallRender(unittest.TestCase):
+    def test_render_writes_png(self):
+        chart = {
+            "type": "waterfall",
+            "categories": ["Start", "Q1", "Q2"],
+            "series": [{"name": "Cash", "values": [40, -15, 25]}],
+            "total_label": "Total",
+            "callout": None,
+            "fmt": {},
+        }
+        fd, out = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        charts.render_png(chart, BRAND["colours"], None, out)
+        self.assertTrue(os.path.isfile(out))
+        self.assertGreater(os.path.getsize(out), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

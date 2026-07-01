@@ -398,5 +398,145 @@ class TestNewPrimitives(unittest.TestCase):
         self._lint_clean(els)
 
 
+# A small header + two data rows: one text column, two money/percent columns.
+TABLE = {
+    "header": ["Metric", "Q1", "Q2"],
+    "rows": [
+        {"cells": ["Revenue", "$1.2M", "$1.5M"], "emphasis": False},
+        {"cells": ["Growth", "4%", "9%"], "emphasis": False},
+    ],
+}
+
+
+class TestPlanTable(unittest.TestCase):
+    """plan_table (D-001/D-002/D-004/D-008/D-009): ONE native-table element that
+    carries its colours/sizes as vectors and per-column alignment; hard caps and
+    a band-fit guard raise ShapeError.
+
+    Contract pinned here (the implementer follows these exact keys):
+      element keys : kind "table", role "table-grid", text, left/top/width/height,
+                     fills [hex], text_colours [hex], font_pts [pt], stroke (hairline),
+                     col_aligns [ "left" | "right" ]  (per column, header order)
+      alignment key: col_aligns
+    """
+
+    # Grid/band geometry the existing token fixture implies.
+    MARGIN_X = 457200
+    CONTENT_LEFT = 457200
+    CONTENT_RIGHT = SLIDE_W - 457200        # 8686800
+    BAND_TOP = 1600200
+    BAND_BOTTOM = SLIDE_H - 731837          # 6126163
+
+    def _plan(self, table, region=None):
+        return primitives.plan_table(table, TOKENS, SLIDE_W, SLIDE_H, region)
+
+    def test_returns_single_table_element(self):
+        els = self._plan(TABLE)
+        self.assertEqual(len(els), 1)          # D-001: one GraphicFrame, not per-cell boxes
+        el = els[0]
+        self.assertEqual(el["kind"], "table")
+        self.assertEqual(el["role"], "table-grid")
+        # A text key so a lint margins violation can name the element.
+        self.assertIn("text", el)
+        self.assertIsInstance(el["text"], str)
+        # D-008 vector keys the lint validates.
+        self.assertIsInstance(el["fills"], list)
+        self.assertIsInstance(el["text_colours"], list)
+        self.assertIsInstance(el["font_pts"], list)
+
+    def test_geometry_within_content_span_and_band(self):
+        el = self._plan(TABLE)[0]
+        # Spans margin to margin (the _content_span rule the other planners use).
+        self.assertEqual(el["left"], self.CONTENT_LEFT)
+        self.assertEqual(el["left"] + el["width"], self.CONTENT_RIGHT)
+        # Sits inside the band.
+        self.assertGreaterEqual(el["top"], self.BAND_TOP)
+        self.assertLessEqual(el["top"] + el["height"], self.BAND_BOTTOM)
+        self.assertGreater(el["width"], 0)
+        self.assertGreater(el["height"], 0)
+
+    def test_optical_centre_top(self):
+        # Same optical-centre placement as plan_card_grid: the block's vertical
+        # centre sits above the band centre, but not jammed to the top.
+        el = self._plan(TABLE)[0]
+        band_centre = (self.BAND_TOP + self.BAND_BOTTOM) / 2
+        row_centre = el["top"] + el["height"] / 2
+        self.assertLess(row_centre, band_centre)
+        self.assertGreater(
+            row_centre, self.BAND_TOP + 0.25 * (self.BAND_BOTTOM - self.BAND_TOP))
+
+    def test_default_fills_text_colours_and_font(self):
+        # D-002: header = ink fill + paper text; data = paper fill + ink text;
+        # a muted bottom hairline rides the scalar `stroke` key (D-008).
+        el = self._plan(TABLE)[0]
+        ink = TOKENS["colour_roles"]["ink"]
+        paper = TOKENS["colour_roles"]["paper"]
+        muted = TOKENS["colour_roles"]["muted"]
+        self.assertIn(ink, el["fills"])       # header band
+        self.assertIn(paper, el["fills"])     # data band
+        self.assertIn(ink, el["text_colours"])
+        self.assertIn(paper, el["text_colours"])
+        self.assertEqual(el["stroke"], muted)  # row hairline
+        # Body type-scale size throughout (no shrink-to-fit).
+        self.assertIn(TOKENS["type_scale"]["body"], el["font_pts"])
+        self.assertTrue(all(p == TOKENS["type_scale"]["body"] for p in el["font_pts"]))
+
+    def test_rejects_nine_data_rows(self):
+        table = {"header": ["A", "B", "C"],
+                 "rows": [{"cells": [str(i), "x", "y"], "emphasis": False}
+                          for i in range(9)]}          # cap is 8 data rows
+        with self.assertRaises(ShapeError):
+            self._plan(table)
+
+    def test_rejects_six_columns(self):
+        table = {"header": ["A", "B", "C", "D", "E", "F"],
+                 "rows": [{"cells": ["1", "2", "3", "4", "5", "6"],
+                           "emphasis": False}]}          # cap is 5 columns
+        with self.assertRaises(ShapeError):
+            self._plan(table)
+
+    def test_rejects_one_column(self):
+        table = {"header": ["Only"],
+                 "rows": [{"cells": ["a"], "emphasis": False},
+                          {"cells": ["b"], "emphasis": False}]}  # a list, not a table
+        with self.assertRaises(ShapeError):
+            self._plan(table)
+
+    def test_band_overflow_raises_named(self):
+        # A short placed region: (1 + n_rows) * row_h cannot fit, so the band-fit
+        # guard fires before drawing and the message names how many rows fit /
+        # tells the author to cut rows or split the slide (D-004).
+        short = (self.MARGIN_X, self.BAND_TOP,
+                 SLIDE_W - 2 * self.MARGIN_X, 400000)
+        table = {"header": ["A", "B", "C"],
+                 "rows": [{"cells": [str(i), "x", "y"], "emphasis": False}
+                          for i in range(3)]}
+        with self.assertRaises(ShapeError) as cm:
+            self._plan(table, region=short)
+        self.assertIn("row", str(cm.exception).lower())
+
+    def test_emphasis_row_accent_fill_paper_text(self):
+        # REQ-002 / D-002: an emphasised row fills with accent and reverses to
+        # paper text.
+        table = {"header": ["Metric", "Q1", "Q2"],
+                 "rows": [
+                     {"cells": ["Revenue", "$1.2M", "$1.5M"], "emphasis": False},
+                     {"cells": ["Total", "$2.7M", "$3.0M"], "emphasis": True},
+                 ]}
+        el = self._plan(table)[0]
+        self.assertIn(TOKENS["colour_roles"]["accent"], el["fills"])
+        self.assertIn(TOKENS["colour_roles"]["paper"], el["text_colours"])
+
+    def test_numeric_columns_right_text_left(self):
+        # D-009: a column whose data cells are all numeric (money/percent) is
+        # right-aligned; a text column stays left. col_aligns is header order.
+        el = self._plan(TABLE)[0]
+        aligns = el["col_aligns"]
+        self.assertEqual(len(aligns), 3)
+        self.assertEqual(aligns[0], "left")    # "Revenue" / "Growth" — text
+        self.assertEqual(aligns[1], "right")   # "$1.2M" / "4%"      — numeric
+        self.assertEqual(aligns[2], "right")   # "$1.5M" / "9%"      — numeric
+
+
 if __name__ == "__main__":
     unittest.main()
