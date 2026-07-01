@@ -145,14 +145,20 @@ def _label(el: dict) -> str:
     return f"role={el['role']!r}"
 
 
+# 1-D line elements (connectors, tree edges) are exempt from the overlap rule: a
+# line crossing a box is not a composition fault, and a tree's elbow edges must be
+# free to route between rows. Filled elements (box/text/icon) still may not overlap.
+_LINE_KINDS = frozenset({"connector", "edge"})
+
+
 def check_no_overlap(elements: list) -> list:
     """
     Return violation messages for every pair of elements whose rectangles intersect
     with positive area — UNLESS one is a `container` box that wholly holds the
-    other. A card lays its text on top of its panel, and a panel may nest inside
-    a larger panel; that stacking is legal only when the outer element is marked
-    `container: True`. Two free elements (a stat number over a stat label, two
-    sibling panels) that intersect are still a fault.
+    other, or one is a 1-D line (connector/edge). A card lays its text on top of
+    its panel, and a panel may nest inside a larger panel; that stacking is legal
+    only when the outer element is `container: True`. Two free FILLED elements (a
+    stat number over a stat label, two sibling panels) that intersect are a fault.
 
     Tag: [overlap]
     """
@@ -163,6 +169,9 @@ def check_no_overlap(elements: list) -> list:
         for j in range(i + 1, n):
             b = elements[j]
             if not _intersects(a, b):
+                continue
+            # Lines never count as overlapping anything.
+            if a.get("kind") in _LINE_KINDS or b.get("kind") in _LINE_KINDS:
                 continue
             # Legal nesting: a container that wholly holds its partner.
             if (a.get("container") and _within(b, a)) or (

@@ -1,0 +1,140 @@
+{
+  "copyright": "Copyright (c) 2021 Luca Burgio",
+  "icons": {
+    "alert": {
+      "iconoir": "bell"
+    },
+    "announce": {
+      "iconoir": "megaphone"
+    },
+    "award": {
+      "iconoir": "medal"
+    },
+    "bank": {
+      "iconoir": "bank"
+    },
+    "calendar": {
+      "iconoir": "calendar"
+    },
+    "care": {
+      "iconoir": "heart"
+    },
+    "chat": {
+      "iconoir": "chat-bubble"
+    },
+    "check": {
+      "iconoir": "check"
+    },
+    "city": {
+      "iconoir": "city"
+    },
+    "cloud": {
+      "iconoir": "cloud"
+    },
+    "community": {
+      "iconoir": "community"
+    },
+    "company": {
+      "iconoir": "building"
+    },
+    "compute": {
+      "iconoir": "cpu"
+    },
+    "cost": {
+      "iconoir": "hand-cash"
+    },
+    "data": {
+      "iconoir": "database"
+    },
+    "decline": {
+      "iconoir": "graph-down"
+    },
+    "direction": {
+      "iconoir": "compass"
+    },
+    "done": {
+      "iconoir": "check-circle"
+    },
+    "fast": {
+      "iconoir": "flash"
+    },
+    "filter": {
+      "iconoir": "filter"
+    },
+    "fit": {
+      "iconoir": "puzzle"
+    },
+    "folder": {
+      "iconoir": "folder"
+    },
+    "gift": {
+      "iconoir": "gift"
+    },
+    "global": {
+      "iconoir": "globe"
+    },
+    "growth": {
+      "iconoir": "graph-up"
+    },
+    "guide": {
+      "iconoir": "book"
+    },
+    "idea": {
+      "iconoir": "light-bulb"
+    },
+    "key": {
+      "iconoir": "key"
+    },
+    "link": {
+      "iconoir": "link"
+    },
+    "mail": {
+      "iconoir": "mail"
+    },
+    "map": {
+      "iconoir": "map"
+    },
+    "message": {
+      "iconoir": "message-text"
+    },
+    "money": {
+      "iconoir": "coins"
+    },
+    "network": {
+      "iconoir": "network"
+    },
+    "next": {
+      "iconoir": "arrow-right"
+    },
+    "percent": {
+      "iconoir": "percentage"
+    },
+    "phone": {
+      "iconoir": "phone"
+    },
+    "revenue": {
+      "iconoir": "dollar-circle"
+    },
+    "secure": {
+      "iconoir": "lock"
+    },
+    "support": {
+      "iconoir": "headset"
+    },
+    "team": {
+      "iconoir": "group"
+    },
+    "time": {
+      "iconoir": "clock"
+    },
+    "up": {
+      "iconoir": "arrow-up"
+    },
+    "verified": {
+      "iconoir": "clipboard-check"
+    }
+  },
+  "license": "MIT",
+  "source": "iconoir (https://iconoir.com)",
+  "style": "regular (line, 24x24, currentColor)"
+}
