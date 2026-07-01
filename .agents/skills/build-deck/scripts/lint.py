@@ -13,7 +13,10 @@ purely mechanical — if every violation message list is empty, the slide is
 cleared; otherwise a LintError is raised with a human-readable summary.
 """
 
-ELEMENT_CAP = 12
+# The slide-level backstop against a wall of shapes. Sized to admit the richest
+# single well-formed primitive (a 5-step process with detail lines ~ 24
+# elements); the advisory count rules (3-5 items) are the real quality guard.
+ELEMENT_CAP = 24
 
 
 class LintError(Exception):
@@ -25,20 +28,34 @@ def _norm(h: str) -> str:
     return "#" + h.lstrip("#").upper()
 
 
+# Every key on an element that carries a colour. Text elements colour their
+# `colour`; box/connector elements colour their `fill` and (optionally) `stroke`.
+# Whichever are present must all be token colours — the gate is the same.
+_COLOUR_KEYS = ("colour", "fill", "stroke")
+
+
 def check_colours(elements: list, tokens: dict) -> list:
     """
     Return violation messages for elements whose colour is not in the token palette.
+
+    Checks every colour-bearing key present on the element (`colour` for text,
+    `fill`/`stroke` for boxes) — a card panel's fill is held to the token
+    palette exactly like a stat number's text colour.
 
     Tag: [colour]
     """
     allowed = {_norm(v) for v in tokens["colour_roles"].values()}
     messages = []
     for el in elements:
-        if _norm(el["colour"]) not in allowed:
-            messages.append(
-                f"[colour] element role={el['role']!r} text={el['text']!r} "
-                f"has colour {el['colour']!r} which is not in colour_roles"
-            )
+        for key in _COLOUR_KEYS:
+            value = el.get(key)
+            if value is None:
+                continue
+            if _norm(value) not in allowed:
+                messages.append(
+                    f"[colour] element {_label(el)} "
+                    f"has {key}={value!r} which is not in colour_roles"
+                )
     return messages
 
 
@@ -46,15 +63,21 @@ def check_sizes(elements: list, tokens: dict) -> list:
     """
     Return violation messages for elements whose font_pt is not in the type scale.
 
+    Box and connector elements carry no `font_pt` (they hold no text) and are
+    skipped — only text is held to the type scale.
+
     Tag: [size]
     """
     allowed = set(tokens["type_scale"].values())
     messages = []
     for el in elements:
-        if el["font_pt"] not in allowed:
+        font_pt = el.get("font_pt")
+        if font_pt is None:
+            continue
+        if font_pt not in allowed:
             messages.append(
-                f"[size] element role={el['role']!r} text={el['text']!r} "
-                f"has font_pt={el['font_pt']} which is not in type_scale"
+                f"[size] element role={el['role']!r} text={el.get('text')!r} "
+                f"has font_pt={font_pt} which is not in type_scale"
             )
     return messages
 
@@ -95,14 +118,43 @@ def check_within_margins(elements: list, tokens: dict, slide_w: int, slide_h: in
     return messages
 
 
+def _intersects(a: dict, b: dict) -> bool:
+    """True if rectangles a and b overlap with positive area."""
+    return (
+        a["left"] < b["left"] + b["width"]
+        and b["left"] < a["left"] + a["width"]
+        and a["top"] < b["top"] + b["height"]
+        and b["top"] < a["top"] + a["height"]
+    )
+
+
+def _within(inner: dict, outer: dict) -> bool:
+    """True if `inner`'s rectangle sits wholly inside `outer`'s (edges may touch)."""
+    return (
+        inner["left"] >= outer["left"]
+        and inner["top"] >= outer["top"]
+        and inner["left"] + inner["width"] <= outer["left"] + outer["width"]
+        and inner["top"] + inner["height"] <= outer["top"] + outer["height"]
+    )
+
+
+def _label(el: dict) -> str:
+    """A short identifier for a violation message (text elements carry text)."""
+    if el.get("text") is not None:
+        return f"role={el['role']!r} text={el['text']!r}"
+    return f"role={el['role']!r}"
+
+
 def check_no_overlap(elements: list) -> list:
     """
     Return violation messages for every pair of elements whose rectangles intersect
-    with positive area.
+    with positive area — UNLESS one is a `container` box that wholly holds the
+    other. A card lays its text on top of its panel, and a panel may nest inside
+    a larger panel; that stacking is legal only when the outer element is marked
+    `container: True`. Two free elements (a stat number over a stat label, two
+    sibling panels) that intersect are still a fault.
 
     Tag: [overlap]
-    Intersection test: (a.left < b.left+b.width) and (b.left < a.left+a.width)
-                       and (a.top < b.top+b.height) and (b.top < a.top+a.height)
     """
     messages = []
     n = len(elements)
@@ -110,17 +162,16 @@ def check_no_overlap(elements: list) -> list:
         a = elements[i]
         for j in range(i + 1, n):
             b = elements[j]
-            if (
-                a["left"] < b["left"] + b["width"]
-                and b["left"] < a["left"] + a["width"]
-                and a["top"] < b["top"] + b["height"]
-                and b["top"] < a["top"] + a["height"]
+            if not _intersects(a, b):
+                continue
+            # Legal nesting: a container that wholly holds its partner.
+            if (a.get("container") and _within(b, a)) or (
+                b.get("container") and _within(a, b)
             ):
-                messages.append(
-                    f"[overlap] elements overlap: "
-                    f"role={a['role']!r} text={a['text']!r} "
-                    f"and role={b['role']!r} text={b['text']!r}"
-                )
+                continue
+            messages.append(
+                f"[overlap] elements overlap: {_label(a)} and {_label(b)}"
+            )
     return messages
 
 
@@ -174,18 +225,24 @@ def review(elements: list, tokens: dict, slide_w: int, slide_h: int) -> list:
     def _family(name):
         # An element's primitive family is the prefix of its role
         # ("stat-number" -> "stat"); a rule's is the prefix of applies_to
-        # ("stat-row" -> "stat"). A rule runs only when its family is present.
+        # ("stat-row" -> "stat"). A rule runs only against its own family.
         return str(name).split("-", 1)[0]
 
-    present = {
-        _family(el.get("role", "")) for el in elements if isinstance(el, dict)
-    }
+    # Group elements by primitive family, so a rule judges ONLY its own block's
+    # elements. On a multi-block slide a stat-row rule must not see the process
+    # boxes stacked below it (that would false-flag decoration/breathing-room).
+    by_family = {}
+    for el in elements:
+        if isinstance(el, dict):
+            by_family.setdefault(_family(el.get("role", "")), []).append(el)
+
     findings = []
     for rule in getattr(composition, "RULES", []):
+        subset = by_family.get(_family(rule.get("applies_to", "")))
+        if not subset:
+            continue
         try:
-            if _family(rule.get("applies_to", "")) not in present:
-                continue
-            satisfied = rule["check"](elements, tokens, slide_w, slide_h)
+            satisfied = rule["check"](subset, tokens, slide_w, slide_h)
         except Exception:  # noqa: BLE001 — a throwing advisory rule is skipped
             continue
         if not satisfied:

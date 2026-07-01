@@ -4,6 +4,60 @@ All notable changes to the slides skill pack are recorded here. The format
 follows [Keep a Changelog](https://keepachangelog.com/), and the pack uses
 [semantic versioning](https://semver.org/).
 
+## [0.7.0] - 2026-07-01
+
+Boxes, not bullets. The `composed` role grows from one primitive to five and
+learns to arrange them, so a deck can carry real designed compositions — card
+grids, comparisons, processes, timelines — instead of headings over bullet
+lists. Grounded in a committed evidence base drawn from the user's own decks and
+the design canon. Back-compatible: the six fixed roles, `stat-row`, and existing
+`brand.json` files are untouched.
+
+### Added
+
+- **Four new composed primitives, drawn as real boxes.** `card-grid` (3–5
+  sibling panels), `comparison` (two panels that resolve to a winner),
+  `process` (3–5 numbered steps joined by arrows — not a chevron ribbon), and
+  `timeline` (dated milestones on a rail with one beat emphasised) join
+  `stat-row`. `primitives.py` now draws filled shapes (cards, panels, steps,
+  connectors, dots) from token colours, flat and shadow-free, with text layered
+  on top. Every primitive is good by construction and grounded in the research.
+- **Multi-block slides and explicit grid placement.** A composed slide takes up
+  to four blocks: with no placement they stack top to bottom; or place each on a
+  12×12 band grid with `at cols 1-6` / `at left` / `at top` / a quadrant. A
+  leading `!` marks the one element that leads (hero card, winning panel, the
+  turn).
+- **A `freeform` composed block — compose anything the named shapes don't
+  cover.** Place token-bound boxes, text, arrows, dots, and dividers on the grid
+  to build a matrix, a quadrant, a node graph, or an annotated layout. Colours are
+  role names and sizes scale names (never hex/pt), and every element passes the
+  same mechanical lint — freedom in the arrangement, the guardrails held. The
+  named primitives are reframed as a *palette*, not a taxonomy: `narrative` now
+  teaches composing freeform (or describing a `Visual:`) rather than force-fitting
+  an idea into the nearest shape — which would only swap bullet-slop for box-slop.
+- **Advisory rules for every new primitive.** `composition.py` grows from 9 to
+  20 rules — count bands (Cowan ~3–5), terseness, one-accent, the cliché
+  guards (a comparison must resolve; a timeline needs a turn), and freeform's one
+  guardrail (grey-push). `lint.review` now
+  judges each block's family in isolation, so a multi-block slide is reviewed
+  primitive by primitive with no cross-family false flags.
+- **A committed design-research evidence base.** `presentation-craft/reference/
+  design-research.md` records why the compositions are shaped as they are —
+  the design system (hierarchy, type scale, imagery, colour, data display), the
+  four primitives, the user's own vocabulary, and the myths kept out — cited to
+  the user's decks (Powerful Presenting, Bluey, Telling Sticky Stories), the
+  Visme *Non-Designer's Guide*, and the canon (Tufte, Cowan, Gestalt Common
+  Region, WCAG/APCA, FT Visual Vocabulary, Okabe–Ito).
+
+### Changed
+
+- **`narrative` now reaches for compositions.** The authoring skill teaches
+  matching each beat to its form and reaching for `layout: composed` — the
+  root-cause fix for decks that came out as headings over bullets.
+- The mechanical lint is shape-aware (box fills/strokes held to the token
+  palette; overlap permitted only inside a declared `container`), and the
+  element cap is 24 to admit the richest single primitive.
+
 ## [0.6.0] - 2026-06-30
 
 A third way to build a slide: compose from brand-locked atoms, with an

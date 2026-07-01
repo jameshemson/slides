@@ -85,6 +85,27 @@ def _labels(elements):
     return [e for e in elements if e["role"] == "stat-label"]
 
 
+def _by_role(elements, role):
+    return [e for e in elements if e.get("role") == role]
+
+
+def _accent_boxes(elements, tokens):
+    """How many box elements are filled with the accent colour (the emphasis)."""
+    accent = tokens["colour_roles"].get("accent")
+    if not accent:
+        return 0
+    accent = _norm(accent)
+    return sum(
+        1 for e in elements
+        if e.get("kind") == "box" and _norm(e.get("fill", "#")) == accent
+    )
+
+
+def _all_terse(texts, max_words):
+    """True if every text is at most `max_words` words (blank strings ignored)."""
+    return all(len(str(t).split()) <= max_words for t in texts if str(t).strip())
+
+
 # ---------------------------------------------------------------------------
 # Rule implementations
 # ---------------------------------------------------------------------------
@@ -169,6 +190,83 @@ def _check_emphasis_colour_only(elements, tokens, slide_w, slide_h):
     if not nums or not labs:
         return True
     return nums[0]["font_pt"] > labs[0]["font_pt"]
+
+
+# --- card-grid ---------------------------------------------------------------
+
+def _check_card_count(elements, tokens, slide_w, slide_h):
+    return 2 <= len(_by_role(elements, "card-panel")) <= 5
+
+
+def _check_card_label_terseness(elements, tokens, slide_w, slide_h):
+    return _all_terse((e["text"] for e in _by_role(elements, "card-label")), 3)
+
+
+def _check_card_one_accent(elements, tokens, slide_w, slide_h):
+    return _accent_boxes(_by_role(elements, "card-panel"), tokens) <= 1
+
+
+# --- comparison --------------------------------------------------------------
+
+def _check_comparison_resolves(elements, tokens, slide_w, slide_h):
+    panels = _by_role(elements, "comparison-panel")
+    if not panels:
+        return True
+    return _accent_boxes(panels, tokens) == 1
+
+
+def _check_comparison_header_terseness(elements, tokens, slide_w, slide_h):
+    return _all_terse(
+        (e["text"] for e in _by_role(elements, "comparison-header")), 3)
+
+
+# --- process -----------------------------------------------------------------
+
+def _check_process_count(elements, tokens, slide_w, slide_h):
+    return 2 <= len(_by_role(elements, "process-step")) <= 5
+
+
+def _check_process_label_terseness(elements, tokens, slide_w, slide_h):
+    return _all_terse((e["text"] for e in _by_role(elements, "process-label")), 3)
+
+
+# --- timeline ----------------------------------------------------------------
+
+def _check_timeline_count(elements, tokens, slide_w, slide_h):
+    return 2 <= len(_by_role(elements, "timeline-dot")) <= 6
+
+
+def _check_timeline_emphasis(elements, tokens, slide_w, slide_h):
+    dots = _by_role(elements, "timeline-dot")
+    if not dots:
+        return True
+    return _accent_boxes(dots, tokens) >= 1
+
+
+def _check_timeline_terseness(elements, tokens, slide_w, slide_h):
+    # A timeline label is "date\nevent"; judge the event line's terseness.
+    events = [
+        str(e["text"]).split("\n")[-1]
+        for e in _by_role(elements, "timeline-label")
+    ]
+    return _all_terse(events, 3)
+
+
+# --- freeform ----------------------------------------------------------------
+
+def _check_freeform_one_accent(elements, tokens, slide_w, slide_h):
+    # Freeform trades good-by-construction for freedom, so it carries only one
+    # advisory guardrail: grey-push the field, spend the accent on one or two
+    # marks. Counts any element (fill or text colour) using the accent.
+    accent = tokens["colour_roles"].get("accent")
+    if not accent:
+        return True
+    accent = _norm(accent)
+    used = sum(
+        1 for e in elements
+        if _norm(str(e.get("fill") or e.get("colour") or "#")) == accent
+    )
+    return used <= 2
 
 
 # ---------------------------------------------------------------------------
@@ -272,5 +370,121 @@ RULES = [
             "Emphasise by size, not colour alone."
         ),
         "check": _check_emphasis_colour_only,
+    },
+    # --- card-grid -----------------------------------------------------------
+    {
+        "id": "card-count",
+        "tier": "quality",
+        "severity": "advisory",
+        "applies_to": "card-grid",
+        "source": "report#4 (Cowan); PP s75 'three or five topics / MECE'",
+        "message": "Keep a card grid to 3-5 cards; 6+ is a wall, 1 isn't a grid.",
+        "check": _check_card_count,
+    },
+    {
+        "id": "card-label-terseness",
+        "tier": "quality",
+        "severity": "advisory",
+        "applies_to": "card-grid",
+        "source": "report#3 (decks §F); Visme p118 lorem anti-pattern",
+        "message": "Card labels stay to <=3 words; one line of body at most.",
+        "check": _check_card_label_terseness,
+    },
+    {
+        "id": "card-one-accent",
+        "tier": "slop",
+        "severity": "advisory",
+        "applies_to": "card-grid",
+        "source": "report#7 (grey-push, one accent; decks §D)",
+        "message": (
+            "At most one card leads (accent fill); the rest are siblings, "
+            "not a rainbow."
+        ),
+        "check": _check_card_one_accent,
+    },
+    # --- comparison ----------------------------------------------------------
+    {
+        "id": "comparison-resolves",
+        "tier": "slop",
+        "severity": "advisory",
+        "applies_to": "comparison",
+        "source": "PP s79-82 / Bluey s45-48 ('order for impact'; end on the turn)",
+        "message": (
+            "A comparison should resolve, not balance — mark the winning side "
+            "(the turn), don't leave both equal."
+        ),
+        "check": _check_comparison_resolves,
+    },
+    {
+        "id": "comparison-header-terseness",
+        "tier": "quality",
+        "severity": "advisory",
+        "applies_to": "comparison",
+        "source": "report#3 (decks §F)",
+        "message": "Comparison headers stay to <=3 words (a one-word verdict).",
+        "check": _check_comparison_header_terseness,
+    },
+    # --- process -------------------------------------------------------------
+    {
+        "id": "process-count",
+        "tier": "quality",
+        "severity": "advisory",
+        "applies_to": "process",
+        "source": "report#4 (Cowan); PP s14 3-step 'Plan/Create/Deliver'",
+        "message": "Keep a process to 3-5 steps; his signature is three.",
+        "check": _check_process_count,
+    },
+    {
+        "id": "process-label-terseness",
+        "tier": "quality",
+        "severity": "advisory",
+        "applies_to": "process",
+        "source": "report#3 (terse verb / 1-3-word step)",
+        "message": "Step labels stay to <=3 words (a terse verb).",
+        "check": _check_process_label_terseness,
+    },
+    # --- timeline ------------------------------------------------------------
+    {
+        "id": "timeline-count",
+        "tier": "quality",
+        "severity": "advisory",
+        "applies_to": "timeline",
+        "source": "report#4 (Cowan ~3-5)",
+        "message": "Keep a timeline to ~3-6 milestones; more is a table on a rail.",
+        "check": _check_timeline_count,
+    },
+    {
+        "id": "timeline-emphasis",
+        "tier": "slop",
+        "severity": "advisory",
+        "applies_to": "timeline",
+        "source": "report#7 (grey-push, one accent); Visme p91 (hierarchy)",
+        "message": (
+            "Emphasise one milestone (the turn); an even dotted rule has no "
+            "hierarchy."
+        ),
+        "check": _check_timeline_emphasis,
+    },
+    {
+        "id": "timeline-terseness",
+        "tier": "quality",
+        "severity": "advisory",
+        "applies_to": "timeline",
+        "source": "report#3; Evergreen (date + <=3-word event)",
+        "message": "Each milestone is a date + a <=3-word event, not a paragraph.",
+        "check": _check_timeline_terseness,
+    },
+    # --- freeform ------------------------------------------------------------
+    {
+        "id": "freeform-one-accent",
+        "tier": "slop",
+        "severity": "advisory",
+        "applies_to": "freeform",
+        "source": "report#7 (grey-push, one accent; decks §D)",
+        "message": (
+            "Grey-push the field — keep the accent to one or two marks, "
+            "not a rainbow."
+        ),
+        "check": _check_freeform_one_accent,
     },
 ]

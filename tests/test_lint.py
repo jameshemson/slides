@@ -139,10 +139,10 @@ class TestOverlapRule(unittest.TestCase):
 
 class TestCountRule(unittest.TestCase):
     def test_over_cap(self):
-        # Build 13 elements for the count rule.
+        # Build one more than the cap for the count rule.
         # We only need check_count to fire; we don't require all other rules to pass.
         thirteen = []
-        for i in range(13):
+        for i in range(lint.ELEMENT_CAP + 1):
             thirteen.append({
                 "role": f"item-{i}",
                 "text": str(i),
@@ -163,6 +163,71 @@ class TestCountRule(unittest.TestCase):
         with self.assertRaises(lint.LintError) as ctx:
             lint.check(thirteen, TOKENS, SLIDE_W, SLIDE_H)
         self.assertIn("[count]", str(ctx.exception))
+
+
+def container_box(left=457200, top=1600200, width=3000000, height=2000000,
+                  fill="#4F81BD"):
+    return {
+        "role": "card-panel", "kind": "box", "container": True,
+        "fill": fill, "left": left, "top": top, "width": width, "height": height,
+    }
+
+
+class TestShapeElements(unittest.TestCase):
+    """Box/panel elements: fill is token-checked, size is skipped, and a
+    container may hold its text without tripping the overlap rule."""
+
+    def test_box_fill_is_token_checked(self):
+        box = container_box(fill="#123456")  # not in colour_roles
+        violations = lint.check_colours([box], TOKENS)
+        self.assertTrue(violations)
+        self.assertIn("[colour]", violations[0])
+        self.assertIn("fill", violations[0])
+
+    def test_box_valid_fill_passes(self):
+        self.assertEqual(lint.check_colours([container_box()], TOKENS), [])
+
+    def test_box_has_no_size_to_check(self):
+        # A box carries no font_pt; check_sizes must not flag (or crash on) it.
+        self.assertEqual(lint.check_sizes([container_box()], TOKENS), [])
+
+    def test_stroke_is_token_checked(self):
+        box = container_box()
+        box["stroke"] = "#00FF00"  # off-token
+        violations = lint.check_colours([box], TOKENS)
+        self.assertTrue(any("stroke" in v for v in violations))
+
+    def test_container_holds_text_no_overlap(self):
+        box = container_box()
+        text = {
+            "role": "card-title", "text": "On brand",
+            "left": 600000, "top": 1700000, "width": 2000000, "height": 400000,
+            "font_pt": 18.0, "colour": "#FFFFFF",
+        }
+        # Text sits wholly inside the container box -> legal, no overlap flag.
+        self.assertEqual(lint.check_no_overlap([box, text]), [])
+        # And the whole gate passes.
+        self.assertIsNone(lint.check([box, text], TOKENS, SLIDE_W, SLIDE_H))
+
+    def test_text_spilling_out_of_container_flagged(self):
+        box = container_box(width=1000000)
+        text = {
+            "role": "card-title", "text": "spills",
+            "left": 600000, "top": 1700000, "width": 3000000, "height": 400000,
+            "font_pt": 18.0, "colour": "#000000",
+        }
+        self.assertTrue(lint.check_no_overlap([box, text]))
+
+    def test_non_container_overlap_still_flagged(self):
+        # A plain box (no container flag) overlapping text is still a fault.
+        box = container_box()
+        box["container"] = False
+        text = {
+            "role": "card-title", "text": "over",
+            "left": 600000, "top": 1700000, "width": 2000000, "height": 400000,
+            "font_pt": 18.0, "colour": "#000000",
+        }
+        self.assertTrue(lint.check_no_overlap([box, text]))
 
 
 if __name__ == "__main__":
