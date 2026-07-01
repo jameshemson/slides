@@ -139,6 +139,8 @@ EXPECTED_IDS = [
     "tree-count",
     "tree-label-terseness",
     "tree-one-accent",
+    # icon-list
+    "iconlist-count",
 ]
 
 REQUIRED_KEYS = {"id", "tier", "severity", "applies_to", "message", "source", "check"}
@@ -363,7 +365,7 @@ if __name__ == "__main__":
 import lint  # noqa: E402
 from primitives import (  # noqa: E402
     plan_stat_row, plan_card_grid, plan_comparison, plan_process, plan_timeline,
-    plan_freeform, plan_tree,
+    plan_freeform, plan_tree, plan_icon_list,
 )
 
 _INTEG_STATS = [
@@ -474,6 +476,12 @@ class TestNewPrimitiveReview(unittest.TestCase):
             {"label": "Ops", "emphasis": False, "icon": None, "children": []},
         ]}
         self.assertIn("tree-one-accent", self._ids(plan_tree(root, TOKENS, SLIDE_W, SLIDE_H)))
+
+    def test_icon_list_clean(self):
+        rows = [{"icon": "growth", "text": "Up"}, {"icon": "team", "text": "Bigger"},
+                {"icon": "fast", "text": "Faster"}]
+        els = plan_icon_list(rows, TOKENS, SLIDE_W, SLIDE_H)
+        self.assertEqual(self._ids(els), set())
 
     def test_multiblock_rules_isolated(self):
         # A stat-row stacked with a process: stat rules see only stat elements,

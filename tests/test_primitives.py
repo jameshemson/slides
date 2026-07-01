@@ -18,7 +18,8 @@ import primitives
 import lint
 from primitives import (
     plan_stat_row, plan_card_grid, plan_comparison, plan_process,
-    plan_timeline, plan_freeform, plan_tree, ShapeError, _normalise_hex,
+    plan_timeline, plan_freeform, plan_tree, plan_icon_list,
+    ShapeError, _normalise_hex,
 )
 
 
@@ -283,6 +284,23 @@ class TestNewPrimitives(unittest.TestCase):
              "placement": {"cols": (1, 12), "rows": (1, 8)}},
         ], TOKENS, SLIDE_W, SLIDE_H)
         self.assertEqual(els[0]["fill"], "#4F81BD")  # role name -> brand hex
+
+    def test_icon_list_rows(self):
+        rows = [{"icon": "growth", "text": "Up"}, {"icon": "team", "text": "Bigger"}]
+        els = plan_icon_list(rows, TOKENS, SLIDE_W, SLIDE_H)
+        self._lint_clean(els)
+        self.assertEqual(_roles(els).count("iconlist-icon"), 2)
+        self.assertEqual(_roles(els).count("iconlist-text"), 2)
+        icon = next(e for e in els if e["role"] == "iconlist-icon")
+        self.assertEqual(icon["kind"], "icon")
+        self.assertEqual(icon["colour"], "#4F81BD")  # accent marker
+
+    def test_card_with_icon_lint_clean(self):
+        cards = [{"label": "Grow", "icon": "growth"},
+                 {"label": "Serve", "icon": "team"}]
+        els = plan_card_grid(cards, TOKENS, SLIDE_W, SLIDE_H)
+        self._lint_clean(els)
+        self.assertEqual(_roles(els).count("card-icon"), 2)
 
     def test_panel_corner_honours_shape_token(self):
         # Default (no shape token) -> rounded; a sharp brand -> plain rectangle.

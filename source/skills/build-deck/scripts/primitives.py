@@ -241,8 +241,11 @@ def plan_card_grid(cards, tokens, slide_w, slide_h, region=None) -> list:
     label_h = _line_h(label_pt)
     has_body = any((c.get("body") or "").strip() for c in cards)
     body_alloc = 2 * _line_h(body_pt) if has_body else 0
+    has_icons = any(c.get("icon") for c in cards)
+    icon_side = label_h if has_icons else 0
 
-    inner_h = label_h + (baseline + body_alloc if has_body else 0)
+    inner_h = ((icon_side + baseline) if has_icons else 0) + label_h \
+        + (baseline + body_alloc if has_body else 0)
     card_h = min(inner_h + 2 * pad, band_h)
     card_top = band_top + round((band_h - card_h) * OPTICAL_CENTRE)
 
@@ -260,9 +263,19 @@ def plan_card_grid(cards, tokens, slide_w, slide_h, region=None) -> list:
             panel["stroke_w"] = _STROKE_EMU
         elements.append(panel)
         text_colour = roles["paper"] if emph else roles["ink"]
+        y = card_top + pad
+        if has_icons:
+            if c.get("icon"):
+                elements.append({
+                    "role": "card-icon", "kind": "icon", "name": c["icon"],
+                    "left": cl + (cw - icon_side) // 2, "top": y,
+                    "width": icon_side, "height": icon_side,
+                    "colour": roles["paper"] if emph else roles["accent"],
+                })
+            y += icon_side + baseline
         elements.append({
             "role": "card-label", "text": str(c.get("label", "")),
-            "left": cl + pad, "top": card_top + pad,
+            "left": cl + pad, "top": y,
             "width": cw - 2 * pad, "height": label_h,
             "font_pt": label_pt, "colour": text_colour, "bold": True,
         })
@@ -270,7 +283,7 @@ def plan_card_grid(cards, tokens, slide_w, slide_h, region=None) -> list:
         if has_body and body:
             elements.append({
                 "role": "card-body", "text": _split_body(body),
-                "left": cl + pad, "top": card_top + pad + label_h + baseline,
+                "left": cl + pad, "top": y + label_h + baseline,
                 "width": cw - 2 * pad, "height": body_alloc,
                 "font_pt": body_pt, "colour": text_colour,
             })
@@ -707,6 +720,55 @@ def plan_tree(root, tokens, slide_w, slide_h, region=None) -> list:
                 "left": min(pc, cc), "top": y1,
                 "width": max(1, abs(cc - pc)), "height": max(1, ct - y1),
             })
+    return elements
+
+
+# --- icon-list (icons as bullets) --------------------------------------------
+
+
+def plan_icon_list(rows, tokens, slide_w, slide_h, region=None) -> list:
+    """A list where an accent icon replaces the bullet: icon left, text right.
+
+    rows: list of {"icon": name, "text": str}. Icons are the one accent (a
+    consistent marker, not a rainbow); the text is ink. Up to 6 rows stacked in
+    the band. Icons resolve to PNGs in render.py after the lint clears them.
+    """
+    grid, ts, roles = _require(tokens, ("body",))
+    n = len(rows)
+    if n == 0:
+        raise ShapeError("icon-list needs at least one row")
+    if n > 6:
+        raise ShapeError("icon-list takes at most 6 rows")
+
+    content_left, content_w = _content_span(tokens, slide_w, region)
+    band_top, band_bottom = _band(tokens, slide_h, region)
+    band_h = band_bottom - band_top
+    baseline, gutter = grid["baseline"], grid["gutter"]
+    text_pt = ts["body"]
+    line_h = _line_h(text_pt)
+    row_h = line_h + baseline
+    if row_h * n > band_h:
+        row_h = band_h // n
+    block_h = row_h * n
+    top0 = band_top + round((band_h - block_h) * OPTICAL_CENTRE)
+    icon_side = max(1, min(line_h, row_h - baseline))
+    text_left = content_left + icon_side + gutter
+    text_w = content_w - icon_side - gutter
+
+    elements = []
+    for i, r in enumerate(rows):
+        rt = top0 + i * row_h
+        elements.append({
+            "role": "iconlist-icon", "kind": "icon", "name": r["icon"],
+            "left": content_left, "top": rt + (row_h - icon_side) // 2,
+            "width": icon_side, "height": icon_side, "colour": roles["accent"],
+        })
+        elements.append({
+            "role": "iconlist-text", "text": str(r["text"]),
+            "left": text_left, "top": rt + (row_h - line_h) // 2,
+            "width": text_w, "height": line_h,
+            "font_pt": text_pt, "colour": roles["ink"], "anchor": "middle",
+        })
     return elements
 
 
