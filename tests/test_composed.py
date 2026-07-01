@@ -16,6 +16,7 @@ import tempfile
 import unittest
 
 from pptx import Presentation
+from pptx.enum.shapes import MSO_SHAPE_TYPE
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FIXTURES = os.path.join(REPO_ROOT, "tests", "fixtures")
@@ -457,3 +458,145 @@ class NewPrimitiveRenderTest(unittest.TestCase):
         proc, out = self._render_block(block, "matbad.pptx")
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn("exactly four", proc.stderr + proc.stdout)
+
+
+class TableRenderTest(unittest.TestCase):
+    """T-011 (REQ-001/002/004): a `Block: table` composed slide renders a native
+    pptx GraphicFrame table, styled entirely from brand tokens; the hard caps fail
+    loudly. The render path is exercised via the render.py subprocess and read back
+    with python-pptx, matching the end-to-end style of the classes above.
+    """
+
+    # Header `Metric | Q1 | Q2`, three data rows, one `!` emphasis row (Total).
+    TABLE_SPEC = (
+        "---\ndeck: d\naudience: a\n---\n\n## Slide 1\nlayout: composed\n"
+        "Title: Results\n"
+        "Block: table\n"
+        "Metric | Q1 | Q2\n"
+        "Revenue | $1.2M | $1.5M\n"
+        "Users | 4% | 9%\n"
+        "!Total | $2.7M | $3.0M\n"
+    )
+
+    @classmethod
+    def setUpClass(cls):
+        cls.proc, cls.out = _run(cls.TABLE_SPEC, out_name="table.pptx")
+
+    def _table(self):
+        """Reopen the rendered deck; assert exactly one GraphicFrame table and
+        return (presentation, table)."""
+        prs = Presentation(self.out)
+        slide = prs.slides[0]
+        tables = [s for s in slide.shapes
+                  if s.shape_type == MSO_SHAPE_TYPE.TABLE]
+        self.assertEqual(len(tables), 1,
+                         "expected exactly one GraphicFrame table on the slide")
+        return prs, tables[0].table
+
+    def test_table_slide_renders(self):
+        self.assertEqual(self.proc.returncode, 0,
+                         f"render failed: {self.proc.stderr}\n{self.proc.stdout}")
+        self.assertTrue(os.path.isfile(self.out), "no .pptx written")
+
+    def test_single_graphicframe_with_expected_cells(self):
+        # One native table with the header and cells exactly as specified; the
+        # `!` emphasis grammar does not alter cell text, only styling.
+        _prs, tbl = self._table()
+        self.assertEqual(len(tbl.rows), 4)      # header + 3 data rows
+        self.assertEqual(len(tbl.columns), 3)
+        header = [tbl.cell(0, c).text for c in range(3)]
+        self.assertEqual(header, ["Metric", "Q1", "Q2"])
+        data = [[tbl.cell(r, c).text for c in range(3)] for r in range(1, 4)]
+        self.assertEqual(data, [
+            ["Revenue", "$1.2M", "$1.5M"],
+            ["Users", "4%", "9%"],
+            ["Total", "$2.7M", "$3.0M"],
+        ])
+
+    def test_every_cell_fill_is_a_token_colour(self):
+        # D-003: theme banding is stripped, so every cell is an explicit SOLID
+        # token fill from the brand palette (ink header / paper data rows / accent
+        # emphasis row) — never the pptx default blue banding.
+        sys.path.insert(0, SCRIPTS)
+        import tokens
+        from pptx.enum.dml import MSO_FILL
+        palette = {v.lstrip("#").upper()
+                   for v in tokens.resolve_colour_roles(BRAND["colours"]).values()}
+        _prs, tbl = self._table()
+        for r in range(len(tbl.rows)):
+            for c in range(len(tbl.columns)):
+                cell = tbl.cell(r, c)
+                self.assertEqual(
+                    cell.fill.type, MSO_FILL.SOLID,
+                    f"cell ({r},{c}) is not a solid fill (theme banding leaked)")
+                rgb = str(cell.fill.fore_color.rgb).upper()
+                self.assertIn(rgb, palette,
+                              f"cell ({r},{c}) fill {rgb} is off-palette {palette}")
+
+    def test_nine_data_rows_fails_with_row_cap(self):
+        # D-004 (pinned in tests/test_primitives.py TestPlanTable): the cap allows
+        # 8 data rows and rejects 9. A full band (no Title) isolates the row-count
+        # cap as the failure mode, distinct from the band-fit guard below.
+        spec = (
+            "---\ndeck: d\naudience: a\n---\n\n## Slide 1\nlayout: composed\n"
+            "Block: table\nMetric | Q1 | Q2\n"
+            + "".join(f"r{i} | {i} | {i}\n" for i in range(9))
+        )
+        proc, out = _run(spec, out_name="ninerow.pptx")
+        self.assertNotEqual(proc.returncode, 0)
+        combined = proc.stderr + proc.stdout
+        self.assertIn("error:", combined)
+        self.assertIn("row", combined.lower())            # names the row cap
+        # The row-count cap message, not the band-fit guard ("band fits only").
+        self.assertIn("at most 8 data rows", combined)
+        self.assertFalse(os.path.isfile(out),
+                         "a half-built .pptx was written")
+
+    def test_eight_data_rows_under_title_hits_band_fit_guard(self):
+        # A separate, legitimate failure mode (D-004 band-fit guard): under a
+        # Title the fixture's band is short, so even 8 data rows overflow it and
+        # the guard fires naming how many rows fit — distinct from the row cap.
+        spec = (
+            "---\ndeck: d\naudience: a\n---\n\n## Slide 1\nlayout: composed\n"
+            "Title: Big\nBlock: table\nMetric | Q1 | Q2\n"
+            + "".join(f"r{i} | {i} | {i}\n" for i in range(8))
+        )
+        proc, out = _run(spec, out_name="eightrow.pptx")
+        self.assertNotEqual(proc.returncode, 0)
+        combined = proc.stderr + proc.stdout
+        self.assertIn("error:", combined)
+        self.assertIn("row", combined.lower())
+        self.assertIn("band fits only", combined)
+        self.assertFalse(os.path.isfile(out))
+
+    def test_table_beside_stat_row_places_and_lints_clean(self):
+        # Region placement for tables: a table `at left` beside a stat-row `at
+        # right` renders exit 0 (lint clean — the render gate blocks on any lint
+        # violation) with the table in the left half and the stats in the right.
+        spec = (
+            "---\ndeck: d\naudience: a\n---\n\n## Slide 1\nlayout: composed\n"
+            "Title: Split\n"
+            "Block: table at left\nMetric | Q1 | Q2\n"
+            "Revenue | $1.2M | $1.5M\n!Total | $2.7M | $3.0M\n"
+            "Block: stat-row at right\n56 | Days\n4% | Rate\n"
+        )
+        proc, out = _run(spec, out_name="tablesplit.pptx")
+        self.assertEqual(proc.returncode, 0,
+                         f"placed table failed: {proc.stderr}\n{proc.stdout}")
+        self.assertTrue(os.path.isfile(out), "no .pptx written")
+        self.assertNotIn("error:", proc.stderr + proc.stdout)
+        prs = Presentation(out)
+        slide = prs.slides[0]
+        mid = prs.slide_width // 2
+        tables = [s for s in slide.shapes
+                  if s.shape_type == MSO_SHAPE_TYPE.TABLE]
+        self.assertEqual(len(tables), 1)
+        tbl_shape = tables[0]
+        self.assertLessEqual(tbl_shape.left + tbl_shape.width, mid + 10000,
+                             "table should sit in the left half")
+        stats = [s for s in slide.shapes
+                 if not s.is_placeholder
+                 and s.shape_type != MSO_SHAPE_TYPE.TABLE]
+        self.assertTrue(stats, "no stat-row shapes drawn")
+        self.assertTrue(all(s.left >= mid - 10000 for s in stats),
+                        "stat-row should sit in the right half")
