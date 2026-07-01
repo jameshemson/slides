@@ -19,6 +19,7 @@ sys.path.insert(0, SCRIPTS)
 
 import charts  # noqa: E402
 import render  # noqa: E402
+import matplotlib.pyplot as plt  # noqa: E402 (backend set to Agg by charts import above)
 
 BRAND = {
     "template": TEMPLATE,
@@ -258,6 +259,145 @@ class TestWaterfallRender(unittest.TestCase):
         charts.render_png(chart, BRAND["colours"], None, out)
         self.assertTrue(os.path.isfile(out))
         self.assertGreater(os.path.getsize(out), 0)
+
+
+# --- stacked bars (T-002, REQ-004, D-007) -------------------------------------
+#
+# charts._stack_bottoms(series_values) -> list[list[float]] is the pure
+# per-series stacking helper (D-007). `series_values` is a list of per-series
+# value lists (one list per series, same length each, one entry per category);
+# the return is, per series, that series' bar BOTTOMS = the elementwise
+# cumulative sum of every PRIOR series (so the first series sits on the zero
+# baseline, and each later series' bottom is the running total below it).
+# Mirrors TestWaterfallSegments above: pins the maths with no matplotlib.
+
+
+class TestStackBottoms(unittest.TestCase):
+    def test_two_series_accumulate(self):
+        self.assertEqual(
+            charts._stack_bottoms([[10, 20], [5, 5]]),
+            [[0, 0], [10, 20]])
+
+    def test_three_series_accumulate(self):
+        self.assertEqual(
+            charts._stack_bottoms([[1, 1], [2, 2], [3, 3]]),
+            [[0, 0], [1, 1], [3, 3]])
+
+
+# Fixtures for the stacked render tests below: two series, `stacked: True`,
+# no emphasis (REQ-004 makes emphasis+stacked a SpecError at parse — that
+# cross-validation is render.py/test_render.py's contract, not charts.py's).
+_STACKED_COLUMN = {
+    "type": "column",
+    "stacked": True,
+    "categories": ["Q1", "Q2"],
+    "series": [{"name": "Revenue", "values": [10, 20]},
+               {"name": "Cost", "values": [5, 5]}],
+    "emphasis": None,
+    "callout": None,
+    "fmt": {},
+}
+
+_STACKED_BAR = dict(_STACKED_COLUMN, type="bar")
+
+
+class TestStackedRender(unittest.TestCase):
+    """render_png must draw a stacked composition (D-007) for both bar
+    orientations. The plain "writes a PNG" assertions alone do NOT fail red
+    today: render_png/_draw_bars silently ignore an unrecognised `stacked`
+    key and still produce a valid (wrongly grouped, not stacked) PNG. So each
+    orientation also pins the bar GEOMETRY directly via a real Axes: stacked
+    bars for N categories must collapse to exactly N distinct bar centres
+    (one stack per category), not N * len(series) grouped offsets."""
+
+    def test_stacked_column_writes_png(self):
+        fd, out = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        charts.render_png(_STACKED_COLUMN, BRAND["colours"], None, out)
+        self.assertTrue(os.path.isfile(out))
+        self.assertGreater(os.path.getsize(out), 0)
+
+    def test_stacked_column_bars_share_one_x_per_category(self):
+        # Fails red now: _draw_bars offsets each series to its own x
+        # position regardless of `stacked`, so today there are 4 distinct
+        # bar centres (2 series x 2 categories), not 2 (1 per category).
+        fig, ax = plt.subplots()
+        try:
+            charts._draw_bars(ax, _STACKED_COLUMN, "#4F81BD", "#BFBFBF",
+                               "#4F81BD", "#333333", vertical=True)
+            centres = {round(p.get_x() + p.get_width() / 2, 6)
+                       for p in ax.patches}
+            self.assertEqual(len(centres), len(_STACKED_COLUMN["categories"]))
+        finally:
+            plt.close(fig)
+
+    def test_stacked_bar_writes_png(self):
+        fd, out = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        charts.render_png(_STACKED_BAR, BRAND["colours"], None, out)
+        self.assertTrue(os.path.isfile(out))
+        self.assertGreater(os.path.getsize(out), 0)
+
+    def test_stacked_bar_bars_share_one_y_per_category(self):
+        # Horizontal counterpart: same grouping bug, on the category (y) axis.
+        fig, ax = plt.subplots()
+        try:
+            charts._draw_bars(ax, _STACKED_BAR, "#4F81BD", "#BFBFBF",
+                               "#4F81BD", "#333333", vertical=False)
+            centres = {round(p.get_y() + p.get_height() / 2, 6)
+                       for p in ax.patches}
+            self.assertEqual(len(centres), len(_STACKED_BAR["categories"]))
+        finally:
+            plt.close(fig)
+
+
+# --- target line (T-002, REQ-005, D-008/D-009) --------------------------------
+#
+# `target:` (D-009) is stored on the chart dict as
+# {"value": float, "label": str|None}. D-008 wires a `_draw_target` helper
+# into bar/column/line drawing: a hairline in `spend` (muted when
+# spend == emphasis) with a right-edge label, drawn under the bars
+# (zorder 2), with axis limits extended to `max(data, target) * headroom`.
+
+_TARGET_COLUMN = {
+    "type": "column",
+    "categories": ["Q1", "Q2", "Q3"],
+    "series": [{"name": "Revenue", "values": [40, 55, 60]}],
+    "emphasis": None,
+    "callout": None,
+    "fmt": {},
+    "target": {"value": 100.0, "label": "goal"},
+}
+
+
+class TestTargetRender(unittest.TestCase):
+    def test_draw_target_helper_exists_and_render_writes_png(self):
+        # Fails red now via AssertionError: charts._draw_target (D-008/D-009)
+        # does not exist yet, so hasattr is False before render_png is ever
+        # exercised. Kept red-first without guessing _draw_target's eventual
+        # call signature (that's T-008's decision) — see the sibling test
+        # below for the limits contract, which only needs _draw_bars
+        # (already exists) called directly with a real Axes.
+        self.assertTrue(hasattr(charts, "_draw_target"),
+                        "charts._draw_target (D-008/D-009) not implemented")
+        fd, out = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        charts.render_png(_TARGET_COLUMN, BRAND["colours"], None, out)
+        self.assertTrue(os.path.isfile(out))
+        self.assertGreater(os.path.getsize(out), 0)
+
+    def test_target_extends_ylim_beyond_data_max(self):
+        # REQ-005: axis limits extend to include the target even when it
+        # exceeds every data point (data max 60, target 100). Fails red now:
+        # _draw_bars ignores `target` today, so ylim tops out near the data
+        # max * 1.18 (~70.8), well under 100 * 1.1 (110).
+        fig, ax = plt.subplots()
+        try:
+            charts._draw_bars(ax, _TARGET_COLUMN, "#4F81BD", "#BFBFBF",
+                               "#4F81BD", "#333333", vertical=True)
+            self.assertGreaterEqual(ax.get_ylim()[1], 100 * 1.1)
+        finally:
+            plt.close(fig)
 
 
 if __name__ == "__main__":

@@ -600,3 +600,148 @@ class TableRenderTest(unittest.TestCase):
         self.assertTrue(stats, "no stat-row shapes drawn")
         self.assertTrue(all(s.left >= mid - 10000 for s in stats),
                         "stat-row should sit in the right half")
+
+
+class ComposedChartTest(unittest.TestCase):
+    """REQ-006 / D-006: `Block: chart` on a composed slide reuses
+    `_parse_chart_block`'s `key: value` grammar (D-006) and renders into the
+    block's region — a picture via `_place_picture` by default, or a native
+    GraphicFrame chart with `native: true`. The chart element is planned
+    inline, linted like any other element, then removed before `primitives.draw`
+    and fulfilled afterwards — it must never reach `_add_text`.
+
+    Red-first: today 'chart' is not a member of COMPOSED_BLOCK_TYPES, so every
+    case below fails at parse with "unknown composed block type 'chart'"
+    (exit 1, no .pptx written). Each assertion below pins the END-STATE
+    (post-implementation) behaviour, so these are red now and green once
+    render.py/native_charts.py land (T-006/T-007).
+    """
+
+    # The same `key: value` grammar `Chart:` already parses via
+    # _parse_chart_block (a category chart: type/categories/series).
+    CHART_ITEMS = (
+        "type: column\n"
+        "categories: Q1, Q2, Q3\n"
+        "series Rev: 10, 20, 30\n"
+    )
+
+    @classmethod
+    def setUpClass(cls):
+        spec = (
+            "---\ndeck: d\naudience: a\n---\n\n## Slide 1\nlayout: composed\n"
+            "Title: Chart slide\n"
+            "Block: chart\n" + cls.CHART_ITEMS
+        )
+        cls.proc, cls.out = _run(spec, out_name="composed-chart.pptx")
+
+    def _grid(self):
+        """The fixture's derived grid tokens (margin_x/margin_top/margin_bottom),
+        the same content-band margins ComposedRenderTest measures via MARGIN_X."""
+        sys.path.insert(0, SCRIPTS)
+        import tokens
+        prs = Presentation(TEMPLATE)
+        return tokens.resolve_tokens(BRAND, prs)["grid"]
+
+    def test_chart_block_renders_as_picture(self):
+        # Image path (native: absent): exit 0, exactly one picture, sitting
+        # inside the content band (matplotlib is installed dev-side, so the
+        # PNG draws for real rather than degrading to a note).
+        self.assertEqual(self.proc.returncode, 0,
+                         f"render failed: {self.proc.stderr}\n{self.proc.stdout}")
+        prs = Presentation(self.out)
+        slide = prs.slides[0]
+        pics = [s for s in slide.shapes if s.shape_type == MSO_SHAPE_TYPE.PICTURE]
+        self.assertEqual(len(pics), 1, "expected exactly one picture (the chart)")
+        pic = pics[0]
+        grid = self._grid()
+        self.assertGreaterEqual(pic.left, grid["margin_x"])
+        self.assertGreaterEqual(pic.top, grid["margin_top"])
+        self.assertLessEqual(pic.left + pic.width,
+                              prs.slide_width - grid["margin_x"])
+        self.assertLessEqual(pic.top + pic.height,
+                              prs.slide_height - grid["margin_bottom"])
+
+    def test_chart_element_is_not_drawn_as_text(self):
+        # D-006 guard: the composed render plans one inline element
+        # ({"kind": "chart", "text": "chart: <type>", ...}) purely so lint can
+        # see a bbox; it must be removed before primitives.draw and fulfilled
+        # afterwards. It must never reach `_add_text` and leave a stray
+        # textbox literally reading "chart: column".
+        self.assertEqual(self.proc.returncode, 0,
+                         f"render failed: {self.proc.stderr}\n{self.proc.stdout}")
+        prs = Presentation(self.out)
+        slide = prs.slides[0]
+        for shape in slide.shapes:
+            if shape.has_text_frame:
+                self.assertNotIn(
+                    "chart:", shape.text_frame.text.lower(),
+                    "the chart plan element leaked into draw() as a textbox")
+
+    def test_chart_block_native_renders_graphicframe(self):
+        # `native: true` on the same block: exit 0, and the shape drawn for
+        # the chart is a real GraphicFrame with an editable chart part
+        # (REQ-001), not a picture.
+        spec = (
+            "---\ndeck: d\naudience: a\n---\n\n## Slide 1\nlayout: composed\n"
+            "Title: Native chart slide\n"
+            "Block: chart\n" + self.CHART_ITEMS + "native: true\n"
+        )
+        proc, out = _run(spec, out_name="composed-chart-native.pptx")
+        self.assertEqual(proc.returncode, 0,
+                         f"render failed: {proc.stderr}\n{proc.stdout}")
+        prs = Presentation(out)
+        slide = prs.slides[0]
+        chart_frames = [s for s in slide.shapes if s.has_chart]
+        self.assertEqual(len(chart_frames), 1,
+                         "expected exactly one native GraphicFrame chart")
+        self.assertTrue(chart_frames[0].has_chart)
+
+    def test_chart_block_placed_region(self):
+        # `Block: chart at left` beside `Block: stat-row at right`: the
+        # dashboard case (D-006's "who uses this" — a stat-row up top, chart
+        # beside it) — both regions tile the grid, lint stays clean, and each
+        # block's shapes stay on its own side of the slide midline.
+        spec = (
+            "---\ndeck: d\naudience: a\n---\n\n## Slide 1\nlayout: composed\n"
+            "Title: Split\n"
+            "Block: chart at left\n" + self.CHART_ITEMS +
+            "Block: stat-row at right\n56 | Days\n4% | Rate\n"
+        )
+        proc, out = _run(spec, out_name="composed-chart-split.pptx")
+        self.assertEqual(proc.returncode, 0,
+                         f"render failed: {proc.stderr}\n{proc.stdout}")
+        prs = Presentation(out)
+        slide = prs.slides[0]
+        mid = prs.slide_width // 2
+        pics = [s for s in slide.shapes if s.shape_type == MSO_SHAPE_TYPE.PICTURE]
+        self.assertEqual(len(pics), 1, "expected exactly one picture (the chart)")
+        pic = pics[0]
+        self.assertLessEqual(pic.left + pic.width, mid + 10000,
+                             "chart picture should sit in the left half")
+        stats = [s for s in slide.shapes
+                 if not s.is_placeholder
+                 and s.shape_type != MSO_SHAPE_TYPE.PICTURE]
+        self.assertTrue(stats, "no stat-row shapes drawn")
+        self.assertTrue(all(s.left >= mid - 10000 for s in stats),
+                        "stat-row should sit in the right half")
+
+    def test_chart_block_missing_type_fails(self):
+        # Failure grammar: `Block: chart` reuses `_parse_chart_block`'s own
+        # "no 'type'" error rather than inventing a new one. Asserting only
+        # the substring "type" would pass vacuously today too (the current
+        # "unknown composed block type 'chart'" message also contains the
+        # word "type"), so the negative assertion below pins that this is
+        # genuinely `_parse_chart_block`'s error, not the generic
+        # unknown-block-type one — genuinely red until 'chart' is a
+        # recognised composed block type.
+        spec = (
+            "---\ndeck: d\naudience: a\n---\n\n## Slide 1\nlayout: composed\n"
+            "Block: chart\ncategories: Q1, Q2, Q3\nseries Rev: 10, 20, 30\n"
+        )
+        proc, out = _run(spec, out_name="composed-chart-no-type.pptx")
+        self.assertNotEqual(proc.returncode, 0)
+        combined = proc.stderr + proc.stdout
+        self.assertIn("error:", combined)
+        self.assertIn("type", combined)
+        self.assertNotIn("unknown composed block type", combined)
+        self.assertFalse(os.path.isfile(out), "a half-built .pptx was written")
