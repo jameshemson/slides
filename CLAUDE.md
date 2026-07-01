@@ -2,6 +2,18 @@
 
 A skill pack that takes someone from a vague idea to a finished, on-brand, slop-free PowerPoint deck. Five skills: `presentation-craft` (shared knowledge, non-invocable) plus four user-invocable skills — `teach-slides`, `narrative`, `build-deck`, `slop-check`.
 
+## Design philosophy
+
+The pack constrains to a brand's *identity*, not to a house style, and leaves *composition* to the model. Guardrails and freedom are separated on purpose — changes should preserve that separation:
+
+- **Identity is the constraint.** Colour, type, and grid come from the user's own brand, captured as design tokens (with logo and shape language to follow). Every drawn element must resolve to a token; a mechanical lint enforces it, so nothing goes off-brand.
+- **Composition is the craft.** How a slide is arranged is the model's judgement, per deck. We never impose a "slides-skill look" — a finished deck should read as *the brand*, not as this tool.
+- **Extract identity, not layout.** Faithfully filling a template's placeholders reproduces its layouts *and its design debt*. The `composed`/`freeform` path — brand-constrained free composition — is where good slides come from; the six fixed placeholder roles are the conservative fallback.
+- **No generated imagery, no slop.** Visual meaning is built from structured, on-token elements (the composed primitives and the freeform placer), never AI-generated images; a `Visual:` note defers real photography to a human. An adversarial slop-check guards the prose.
+- **The lint is the only rigidity.** On-token colour, type-scale size, on-grid, no overlap, and the element cap are absolute; composition quality is advisory. Constrain what is unsafe; leave the rest free.
+
+The craft behind this lives in `source/skills/presentation-craft/reference/` (`slides.md`, `composition.md`, `design-research.md`).
+
 ## Structure
 
 ### Source (single source of truth)
