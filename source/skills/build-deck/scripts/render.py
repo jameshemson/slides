@@ -1773,6 +1773,7 @@ def _render_composed_slide(prs, brand, spec, tokens, charts_dir):
         "tree": (primitives.plan_tree, "root"),
         "cycle": (primitives.plan_cycle, "stages"),
         "matrix": (primitives.plan_matrix, "spec"),
+        "table": (primitives.plan_table, "table"),
         "icon-list": (primitives.plan_icon_list, "rows"),
         "freeform": (primitives.plan_freeform, "elements"),
     }

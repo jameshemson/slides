@@ -32,7 +32,7 @@ OPTICAL_CENTRE = 0.45
 # overlap only because the box is a container (see lint.check_no_overlap), and
 # draw() must paint the box first or the text would be hidden. Elements with an
 # equal z keep their planned order (stable sort).
-_Z_BY_KIND = {"box": 0, "edge": 1, "connector": 1, "icon": 2, "text": 2}
+_Z_BY_KIND = {"box": 0, "table": 0, "edge": 1, "connector": 1, "icon": 2, "text": 2}
 
 
 class ShapeError(Exception):
@@ -954,6 +954,142 @@ def plan_matrix(spec, tokens, slide_w, slide_h, region=None) -> list:
     return elements
 
 
+# --- table (native pptx GraphicFrame) ----------------------------------------
+
+# Characters stripped before deciding a data cell is numeric: currency, percent,
+# thousands separators, decimal points, and both a plain hyphen and the Unicode
+# minus sign. Generic formatting glyphs, not brand values.
+_NUM_STRIP = "$%,.+-−"
+# Trailing magnitude suffixes that still leave a value numeric ("$1.2M", "40k").
+_MAG_SUFFIX = "kmb"
+
+
+def _is_numeric_cell(value) -> bool:
+    """True when a data cell reads as a number (money/percent/magnitude).
+
+    Strips currency/percent/sign/separator glyphs and one trailing magnitude
+    suffix (k/M/B, case-insensitive); what remains must be all digits and
+    non-empty. '$1.2M' and '4%' are numeric; 'Revenue' is not."""
+    t = str(value).strip()
+    for ch in _NUM_STRIP:
+        t = t.replace(ch, "")
+    if t and t[-1].lower() in _MAG_SUFFIX:
+        t = t[:-1]
+    return bool(t) and t.isdigit()
+
+
+def plan_table(table, tokens, slide_w, slide_h, region=None) -> list:
+    """A native PowerPoint table (ONE GraphicFrame), styled entirely from tokens.
+
+    `table`: {"header": [str], "rows": [{"cells": [str], "emphasis": bool}, ...]}.
+    Returns EXACTLY ONE element dict (kind "table", role "table-grid"): unlike the
+    box/text primitives it is not exploded into per-cell shapes (D-001) — a 5x8
+    table would eat the whole element cap and lose native editability. Its colours
+    and sizes therefore travel as vectors (`fills`, `text_colours`, `font_pts`)
+    for the lint (D-008), and per-column alignment as `col_aligns` (D-009).
+
+    Styling (D-002): header = ink fill + paper bold text; data rows = paper fill +
+    ink text with a muted bottom hairline (except the last); an emphasis row = accent
+    fill + paper text. Hard caps (D-004): 2-5 columns, 1-8 data rows, and a band-fit
+    guard — all raise ShapeError, which render.py turns into a named SpecError.
+    """
+    grid, ts, roles = _require(tokens, ("body",))
+    header = list(table.get("header", []))
+    rows = list(table.get("rows", []))
+    ncols = len(header)
+    nrows = len(rows)
+
+    # Hard caps (D-004). A one-column table is a list; 6+ columns / 9+ data rows
+    # do not fit a slide legibly.
+    if ncols < 2:
+        raise ShapeError(
+            "a one-column table is a list, not a table; use icon-list or bullets"
+        )
+    if ncols > 5:
+        raise ShapeError("table takes at most 5 columns; split the slide")
+    if nrows < 1:
+        raise ShapeError("table needs at least one data row")
+    if nrows > 8:
+        raise ShapeError(
+            "table takes at most 8 data rows; cut rows or split the slide"
+        )
+
+    ink, paper, accent = roles["ink"], roles["paper"], roles["accent"]
+    stroke = roles.get("muted") or ink  # the row hairline (D-008 scalar key)
+    body_pt = ts["body"]
+
+    # Row height: one body line box plus a baseline of vertical padding.
+    row_h = _line_h(body_pt) + grid["baseline"]
+
+    content_left, content_w = _content_span(tokens, slide_w, region)
+    band_top, band_bottom = _band(tokens, slide_h, region)
+    band_h = band_bottom - band_top
+
+    # Band-fit guard (D-004): header + data rows must fit the vertical band.
+    total_h = (1 + nrows) * row_h
+    if total_h > band_h:
+        fits = max(0, band_h // row_h - 1)
+        raise ShapeError(
+            f"table needs {1 + nrows} rows but the band fits only {fits} rows; "
+            f"cut rows or split the slide"
+        )
+
+    # Optical-centre placement, same as the box primitives.
+    top = band_top + round((band_h - total_h) * OPTICAL_CENTRE)
+
+    # Per-column numeric alignment (D-009): every data cell numeric -> right.
+    col_aligns = []
+    for c in range(ncols):
+        column = [r.get("cells", [])[c] for r in rows if c < len(r.get("cells", []))]
+        numeric = bool(column) and all(_is_numeric_cell(v) for v in column)
+        col_aligns.append("right" if numeric else "left")
+
+    # Colour/size vectors the lint validates (D-008): list every distinct value.
+    fills, text_colours = [], []
+
+    def _add(lst, v):
+        if v not in lst:
+            lst.append(v)
+
+    _add(fills, ink)          # header band
+    _add(text_colours, paper)  # header text
+    emphasis_rows = []
+    for i, r in enumerate(rows):
+        if r.get("emphasis"):
+            emphasis_rows.append(i)
+            _add(fills, accent)
+            _add(text_colours, paper)
+        else:
+            _add(fills, paper)
+            _add(text_colours, ink)
+
+    return [{
+        "role": "table-grid",
+        "kind": "table",
+        "text": "table: " + " | ".join(header),
+        "left": content_left,
+        "top": top,
+        "width": content_w,
+        "height": total_h,
+        # D-008 vector keys (the lint checks every entry on a table element).
+        "fills": fills,
+        "text_colours": text_colours,
+        "font_pts": [body_pt],
+        "stroke": stroke,          # scalar hairline colour (existing lint checks it)
+        "col_aligns": col_aligns,
+        # Advisory-rule fields (T-010 reads these) + payload the draw path needs.
+        "header": header,
+        "rows": [list(r.get("cells", [])) for r in rows],
+        "emphasis_rows": emphasis_rows,
+        # Explicit draw colours/size so _add_table needs only this element.
+        "header_fill": ink, "header_text": paper,
+        "row_fill": paper, "row_text": ink,
+        "emph_fill": accent, "emph_text": paper,
+        "cell_pt": body_pt,
+        "cell_margin": grid["gutter"] // 2,
+    }]
+
+
 # Autoshape names a box element may request via its "shape" key. Generic
 # geometry, not brand values. Default is a rounded rectangle (the card/panel).
 _SHAPE_BY_NAME = {
@@ -1000,6 +1136,8 @@ def draw(slide, elements) -> list:
         kind = el.get("kind")
         if kind in ("box", "connector"):
             added.append(_add_box(slide, el))
+        elif kind == "table":
+            added.append(_add_table(slide, el))
         elif kind == "edge":
             added.append(_add_edge(slide, el))
         elif kind == "icon":
@@ -1102,3 +1240,127 @@ def _add_box(slide, el):
     except Exception:  # noqa: BLE001 — some shapes lack a shadow element
         pass
     return shp
+
+
+# Order of the leading child elements inside an <a:tcPr>: the border lines come
+# first (lnL, lnR, lnT, lnB), then diagonals/3-D/fill/headers/ext. We insert our
+# <a:lnB> before the first element that must follow it, so the cell XML stays
+# schema-ordered (a solidFill written by python-pptx's cell.fill.solid() already
+# sits later in the sequence). Generic OOXML schema order, not a brand value.
+_TCPR_AFTER_LNB = (
+    "a:lnTlToBr", "a:lnBlToTr", "a:cell3D",
+    "a:noFill", "a:solidFill", "a:gradFill", "a:blipFill", "a:pattFill",
+    "a:grpFill", "a:headers", "a:extLst",
+)
+
+
+def _set_cell_bottom_border(cell, hex_colour, width_emu):
+    """Draw a solid bottom border (a:lnB) on a table cell via raw XML.
+
+    python-pptx exposes cell fills and text but NOT cell borders, so we write the
+    <a:lnB> element directly (lxml, already a python-pptx dependency). Inserted in
+    schema order so PowerPoint accepts it. Colour is a token hex; width the caller's
+    hairline EMU. Kept isolated so, per A-002, dropping the call degrades cleanly to
+    fills-only without touching the rest of the table."""
+    from pptx.oxml.ns import qn  # noqa: PLC0415 — table draw only
+    tcPr = cell._tc.get_or_add_tcPr()
+    for existing in tcPr.findall(qn("a:lnB")):
+        tcPr.remove(existing)
+    lnB = tcPr.makeelement(
+        qn("a:lnB"), {"w": str(int(width_emu)), "cap": "flat", "cmpd": "sng"}
+    )
+    solid = tcPr.makeelement(qn("a:solidFill"), {})
+    clr = tcPr.makeelement(qn("a:srgbClr"), {"val": hex_colour.lstrip("#").upper()})
+    solid.append(clr)
+    lnB.append(solid)
+    after = {qn(t) for t in _TCPR_AFTER_LNB}
+    insert_idx = len(tcPr)
+    for i, child in enumerate(tcPr):
+        if child.tag in after:
+            insert_idx = i
+            break
+    tcPr.insert(insert_idx, lnB)
+
+
+def _add_table(slide, el):
+    """Draw the ONE table element as a native pptx GraphicFrame table.
+
+    Theme table styling is stripped (D-003: first_row/horz_banding off) so the
+    default blue-banded look never leaks; every cell fill/text/size/alignment is
+    set explicitly from the token element dict (D-002), and a muted bottom hairline
+    is written per data row except the last. Columns are equal width and rows equal
+    height, with the last of each absorbing the rounding remainder so the frame's
+    edges land exactly where planned."""
+    header = el["header"]
+    data_rows = el["rows"]                      # list of list of cell strings
+    emphasis = set(el.get("emphasis_rows", []))
+    col_aligns = el.get("col_aligns", [])
+    ncols = len(header)
+    nrows = 1 + len(data_rows)
+    left, top = el["left"], el["top"]
+    width, height = el["width"], el["height"]
+
+    gf = slide.shapes.add_table(
+        nrows, ncols, Emu(left), Emu(top), Emu(width), Emu(height)
+    )
+    tbl = gf.table
+    # D-003: kill the built-in banded table style.
+    tbl.first_row = False
+    tbl.horz_banding = False
+
+    # Equal column widths / row heights; last absorbs the remainder.
+    col_w = width // ncols
+    for c in range(ncols):
+        tbl.columns[c].width = Emu(
+            col_w if c < ncols - 1 else width - col_w * (ncols - 1)
+        )
+    row_h = height // nrows
+    for r in range(nrows):
+        tbl.rows[r].height = Emu(
+            row_h if r < nrows - 1 else height - row_h * (nrows - 1)
+        )
+
+    pt = el["cell_pt"]
+    margin = int(el.get("cell_margin", 0))
+    stroke = el.get("stroke")
+    stroke_w = _STROKE_EMU
+
+    def _style(cell, fill_hex, text_hex, text, align, bold):
+        cell.fill.solid()
+        cell.fill.fore_color.rgb = RGBColor.from_string(fill_hex.lstrip("#"))
+        cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+        cell.margin_left = Emu(margin)
+        cell.margin_right = Emu(margin)
+        cell.margin_top = Emu(margin)
+        cell.margin_bottom = Emu(margin)
+        tf = cell.text_frame
+        tf.word_wrap = True
+        p = tf.paragraphs[0]
+        p.alignment = PP_ALIGN.RIGHT if align == "right" else PP_ALIGN.LEFT
+        run = p.add_run()
+        run.text = str(text)
+        run.font.size = Pt(pt)
+        run.font.color.rgb = RGBColor.from_string(text_hex.lstrip("#"))
+        run.font.bold = bold
+
+    # Header row.
+    for c in range(ncols):
+        align = col_aligns[c] if c < len(col_aligns) else "left"
+        _style(tbl.cell(0, c), el["header_fill"], el["header_text"],
+               header[c], align, True)
+
+    # Data rows.
+    last = len(data_rows) - 1
+    for di, cells in enumerate(data_rows):
+        emph = di in emphasis
+        fill_hex = el["emph_fill"] if emph else el["row_fill"]
+        text_hex = el["emph_text"] if emph else el["row_text"]
+        for c in range(ncols):
+            align = col_aligns[c] if c < len(col_aligns) else "left"
+            value = cells[c] if c < len(cells) else ""
+            cell = tbl.cell(di + 1, c)
+            _style(cell, fill_hex, text_hex, value, align, False)
+            # A muted bottom hairline on every data row except the last (D-002).
+            if stroke and di < last:
+                _set_cell_bottom_border(cell, stroke, stroke_w)
+    return gf
