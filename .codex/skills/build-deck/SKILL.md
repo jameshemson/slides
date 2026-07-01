@@ -54,7 +54,30 @@ On success it exits 0 and prints a one-line summary. On a malformed spec or bran
 
 If the render fails, read the error. It names the fault: a slide numbered out of sequence, a role with more fields than its layout has placeholders, a missing `brand.json` key. Fix the spec or, for a layout-map fault, send the user back to `teach-slides` (via `$skill teach-slides` or `/skills`). Then run again.
 
-## Step 4: Report
+## Step 4: Render-back visual check
+
+The mechanical lint proves a slide is on-brand and on-grid, but it cannot see the
+rendered pixels — text that overflowed its box, a font that fell back, a slide
+that reads as cluttered. This step is the lint *with eyes*: rasterise the deck and
+look at it. It needs a deck-to-image backend, so it is optional and degrades.
+
+Check for a backend: `python3 -c "import sys; sys.path.insert(0,'scripts'); import raster; print(raster.available_backend())"`.
+
+- **`libreoffice`** (headless, safe): rasterise and review automatically —
+  `python3 scripts/raster.py <deck>.pptx --out-dir <deck>.review --sheet --check`.
+  Then **open the per-slide PNGs (and `contact-sheet.png`) and look**: does any text
+  overflow its box or wrap badly? Do elements collide or crowd the edge? Does each
+  composed slide read as *composed*, or templated? Report what you see as
+  suggestions (the deck already rendered), and note any `[check] likely-blank`
+  slide from the summary.
+- **`keynote`** (macOS): the render-back works via Keynote, but it **opens the
+  Keynote app** (and may prompt for automation permission), so do not run it
+  automatically — tell the user it is available and run it only if they ask.
+- **`None`**: tell the user the visual check is unavailable and that installing
+  LibreOffice (`brew install --cask libreoffice`) enables an automatic, headless
+  render-back review.
+
+## Step 5: Report
 
 Print the render summary. It states how many slides were written, which carry a native chart, which carry a `VISUAL TO ADD` note, any matplotlib or brand-font fallback warning, and any non-blocking composition advisory notes on `composed` slides (evidence-cited "what good looks like" — see [composition.md](../presentation-craft/reference/composition.md)). Surface advisories to the user as suggestions, not errors; the deck still rendered.
 
