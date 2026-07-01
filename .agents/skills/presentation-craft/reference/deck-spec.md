@@ -85,11 +85,15 @@ Each item line is pipe-separated. A leading `-`/`*` bullet is tolerated; a leadi
 | `process` | `label \| detail?` | 3–5 steps | — (numbered in order) |
 | `timeline` | `date \| event` | 3–5 | `!` the turning point |
 | `tree` | an indented list (2-space = one level) | ≤8 (6 with icons), ≤3 deep | `!` the node that leads |
+| `cycle` | one stage label per line | 3–6 stages | — |
+| `matrix` | four `label \| body?` lines (TL, TR, BL, BR); optional `x:` / `y:` axis captions | 2×2 | `!` the quadrant that leads |
 | `icon-list` | `icon-name \| text` | 3–6 | — |
 
 Within a card or panel body, ` / ` breaks a line, so a few terse points share one box: `Fast / Focused / Owned`. A **comparison** must *resolve, not balance* — mark the winning side with `!`. A **card grid** holds 3–5 siblings with terse labels. A **process** is 3–5 numbered steps left to right, drawn as boxes joined by arrows (not a chevron ribbon). A **timeline** is dated milestones on a rail with one beat emphasised. A **tree** is an org chart / decomposition: indent to nest, `!` to lead a node. An **icon-list** replaces the bullet with an accent icon.
 
-**Icons.** A curated set of on-brand line icons (recoloured to a token colour) is available: as an `icon-list`, as a `[icon-name]` prefix on a `card-grid` or `tree` node, or in `freeform` (`icon <name> <colour> at <placement>`). Icons need `cairosvg` (`pip install cairosvg`); absent, they are skipped and the summary says so. See `assets/icons/` for the names.
+A **cycle** is 3–6 stages on a ring (a loop); a **matrix** is a 2×2 of quadrants with optional axis captions.
+
+**Icons.** A curated set of on-brand line icons (recoloured to a token colour) is available: as an `icon-list`, as a `[icon-name]` prefix on a `card-grid`, `tree`, `process`, or `comparison` item, or in `freeform` (`icon <name> <colour> at <placement>`). Icons need `cairosvg` (`pip install cairosvg`); absent, they are skipped and the summary says so. See `assets/icons/` for the names.
 
 ### Freeform — compose anything else
 
@@ -134,6 +138,8 @@ A `title-content` slide may carry a `Chart:` block: structured data `build-deck`
 
 - **Category charts** — `type: bar` (horizontal), `type: column` (vertical), or `type: pie` (part-to-whole). Need `categories:` (comma-separated labels) and `series <Name>:` (comma-separated numbers, one per category). `bar`/`column` take one or more series; `pie` takes exactly one. Optional `emphasis:` names the one category to colour in the brand accent (one slice, for a pie); the rest go muted. Optional `callout:` is a short annotation.
 - **Point charts** — `type: line` (filled) or `type: scatter` (dots). Need `points:` as comma-separated `x y` pairs. Optional `marker: <x> <label>` annotates the point at that x. Optional `callout:`. `emphasis:` does not apply.
+
+Instead of typing the data inline, a chart may read it from a CSV with `data: <file.csv>` (resolved against the spec's folder) — `data:` and the inline `categories`/`series`/`points` are mutually exclusive. A category chart's CSV is a header row (`category, Series1, Series2, …`) then one row per category; a point chart's first two columns are `x, y`. So a spreadsheet exports straight to a chart, and multiple series draw as grouped bars.
 
 ```
 ## Slide 4

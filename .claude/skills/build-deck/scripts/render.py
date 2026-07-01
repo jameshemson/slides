@@ -30,6 +30,7 @@ input it exits non-zero with a message naming the offending slide or key, and
 never emits a half-built .pptx.
 """
 import argparse
+import csv
 import json
 import os
 import re
@@ -186,6 +187,7 @@ def parse_spec(path):
     if not raw_slides:
         raise SpecError("deck spec declares no slides")
 
+    spec_dir = os.path.dirname(os.path.abspath(path))
     slides = []
     for expected_number, (declared_number, slide_lines) in enumerate(
         raw_slides, start=1
@@ -196,7 +198,7 @@ def parse_spec(path):
                 f"'## Slide {expected_number}' but found "
                 f"'## Slide {declared_number}'"
             )
-        slides.append(_parse_slide(expected_number, slide_lines))
+        slides.append(_parse_slide(expected_number, slide_lines, spec_dir))
     return slides
 
 
@@ -239,12 +241,13 @@ def _split_slides(body):
     return slides
 
 
-def _parse_slide(number, lines):
+def _parse_slide(number, lines, spec_dir=None):
     """Parse one slide's lines into role, fields, and meta. Raises SpecError.
 
     A `layout: composed` slide is routed to _parse_composed_slide before the
     field loop, so its repeated `Block:` lines never trip the stray-field guard.
-    The six fixed roles keep their original parse path below, unchanged.
+    The six fixed roles keep their original parse path below, unchanged. spec_dir
+    resolves a chart's relative `data:` CSV path.
     """
     if _prescan_layout(lines) == "composed":
         return _parse_composed_slide(number, lines)
@@ -262,7 +265,9 @@ def _parse_slide(number, lines):
             items = _block_items(current_block)
             fields[current_field] = items
         elif current_field in STRUCTURED_BLOCK_FIELDS:
-            fields[current_field] = _parse_chart_block(number, current_block)
+            fields[current_field] = _parse_chart_block(
+                number, current_block, spec_dir
+            )
         # Inline fields were already stored from the `Field: value` line.
 
     for raw in lines:
@@ -1012,8 +1017,49 @@ def _parse_marker(number, value):
     return {"x": _chart_number(number, parts[0]), "label": parts[1].strip()}
 
 
-def _parse_chart_block(number, lines):
+def _read_chart_csv(number, path, ctype):
+    """Read a CSV into chart data. Raises SpecError naming the slide.
+
+    Category charts: header row = [axis, series1, series2, ...], first column =
+    category labels. Point charts (line/scatter): first two columns = x, y.
+    Returns {"categories", "series"} or {"points"}.
+    """
+    if not os.path.isfile(path):
+        raise SpecError(f"slide {number}: chart data file not found: {path}")
+    with open(path, newline="", encoding="utf-8") as fh:
+        rows = [r for r in csv.reader(fh) if any(c.strip() for c in r)]
+    if len(rows) < 2:
+        raise SpecError(
+            f"slide {number}: chart data {path!r} needs a header row and at "
+            f"least one data row"
+        )
+    header, body = [c.strip() for c in rows[0]], rows[1:]
+    if ctype in CATEGORY_CHART_TYPES:
+        if len(header) < 2:
+            raise SpecError(
+                f"slide {number}: chart data {path!r} needs a category column "
+                f"and at least one series column"
+            )
+        cats = [r[0].strip() for r in body]
+        series = []
+        for col in range(1, len(header)):
+            name = header[col] or f"Series {col}"
+            values = [_chart_number(number, r[col]) for r in body]
+            series.append({"name": name, "values": values})
+        return {"categories": cats, "series": series}
+    # point charts: first two columns are x, y
+    points = [(_chart_number(number, r[0]), _chart_number(number, r[1]))
+              for r in body if len(r) >= 2]
+    if not points:
+        raise SpecError(f"slide {number}: chart data {path!r} has no x,y rows")
+    return {"points": points}
+
+
+def _parse_chart_block(number, lines, spec_dir=None):
     """Parse a Chart block's raw lines into a chart dict. Raises SpecError.
+
+    Data is either typed inline (`categories`/`series`/`points`) or read from a
+    CSV named by `data:` (resolved against the spec's directory) — not both.
 
     Returns one of:
       bar/column: {type, categories: [str], series: [{name, values:[float]}],
@@ -1021,7 +1067,7 @@ def _parse_chart_block(number, lines):
       line:       {type, points: [(x,y)], markers: [{x,label}],
                    callout: str|None}
     """
-    ctype = categories = callout = emphasis = None
+    ctype = categories = callout = emphasis = data_file = None
     points = None
     series = []
     markers = []
@@ -1041,6 +1087,8 @@ def _parse_chart_block(number, lines):
         value = value.strip()
         if key == "type":
             ctype = value.lower()
+        elif key == "data":
+            data_file = value
         elif key == "categories":
             categories = [c.strip() for c in value.split(",") if c.strip()]
         elif key == "emphasis":
@@ -1074,6 +1122,19 @@ def _parse_chart_block(number, lines):
             f"slide {number}: unknown chart type {ctype!r}; expected one of "
             f"{', '.join(CHART_TYPES)}"
         )
+
+    if data_file is not None:
+        if categories or series or points:
+            raise SpecError(
+                f"slide {number}: chart 'data:' cannot be combined with inline "
+                f"categories/series/points"
+            )
+        path = (data_file if os.path.isabs(data_file)
+                else os.path.join(spec_dir or ".", data_file))
+        loaded = _read_chart_csv(number, path, ctype)
+        categories = loaded.get("categories")
+        series = loaded.get("series", [])
+        points = loaded.get("points")
 
     if ctype in CATEGORY_CHART_TYPES:
         if not categories:
