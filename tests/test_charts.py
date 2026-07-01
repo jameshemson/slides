@@ -45,6 +45,54 @@ class TestResolveColours(unittest.TestCase):
         self.assertEqual(charts._normalise_hex(muted), "#00FF00")
 
 
+class TestValueFormat(unittest.TestCase):
+    def test_currency_thousands(self):
+        # data in $k: 362 -> $362k (suffix set, no auto-abbreviate)
+        self.assertEqual(charts._fmt(362, {"prefix": "$", "suffix": "k"}), "$362k")
+
+    def test_percent(self):
+        self.assertEqual(charts._fmt(85, {"suffix": "%"}), "85%")
+
+    def test_default_abbreviates_large(self):
+        self.assertEqual(charts._fmt(362000), "362k")
+        self.assertEqual(charts._fmt(1_500_000), "1.5M")
+
+    def test_small_number_not_abbreviated(self):
+        self.assertEqual(charts._fmt(500), "500")
+
+    def test_plain_disables_abbreviation(self):
+        self.assertEqual(charts._fmt(362000, {"abbreviate": False}), "362000")
+
+    def test_currency_prefix_abbreviates(self):
+        self.assertEqual(charts._fmt(362000, {"prefix": "$"}), "$362k")
+
+
+class TestChartFormatParsing(unittest.TestCase):
+    def _fmt_of(self, *chart_lines):
+        chart = render._parse_chart_block(1, list(chart_lines), None)
+        return chart["fmt"]
+
+    def test_format_dollar_k(self):
+        fmt = self._fmt_of("type: column", "format: $k",
+                           "categories: A, B", "series X: 1, 2")
+        self.assertEqual(fmt, {"prefix": "$", "suffix": "k"})
+
+    def test_format_percent(self):
+        fmt = self._fmt_of("type: column", "format: %",
+                           "categories: A, B", "series X: 1, 2")
+        self.assertEqual(fmt, {"suffix": "%"})
+
+    def test_explicit_prefix_suffix(self):
+        fmt = self._fmt_of("type: column", "prefix: £", "suffix: m",
+                           "categories: A, B", "series X: 1, 2")
+        self.assertEqual(fmt, {"prefix": "£", "suffix": "m"})
+
+    def test_unknown_format_fails(self):
+        with self.assertRaises(render.SpecError):
+            self._fmt_of("type: column", "format: bananas",
+                         "categories: A", "series X: 1")
+
+
 class TestReadChartCsv(unittest.TestCase):
     def _csv(self, text):
         fd, path = tempfile.mkstemp(suffix=".csv")

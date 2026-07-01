@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 # bbox_inches="tight" crops to content, so the placed aspect follows the chart.
 _FIG_W, _FIG_H = 12.0, 5.0
 _DPI = 200
-_PAD = 0.12
+_PAD = 0.22  # breathing room around the tight-cropped image
 _LABEL_SIZE = 19
 _TICK_SIZE = 14
 _ANNOT_SIZE = 14
@@ -143,15 +143,40 @@ def render_png(chart, colours, font, out_path):
 # --- drawing -----------------------------------------------------------------
 
 
-def _fmt(v):
-    """Compact numeric label: drop a trailing .0, else %g."""
-    return str(int(v)) if float(v).is_integer() else f"{v:g}"
+def _fmt(v, fmt=None):
+    """Format a value label from the chart's `fmt` (prefix/suffix/abbreviate).
+
+    - `prefix` / `suffix` wrap the number (`$`, `%`, `k`), so 362 -> `$362k`.
+    - `abbreviate` (default on, skipped when a suffix is set) shortens large
+      numbers: 362000 -> `362k`, 1_500_000 -> `1.5M`.
+    A bare number drops a trailing .0. No brand literal — fmt is caller-supplied.
+    """
+    fmt = fmt or {}
+    prefix, suffix = fmt.get("prefix", ""), fmt.get("suffix", "")
+    if fmt.get("abbreviate", True) and not suffix and abs(v) >= 1000:
+        for div, unit in ((1e9, "B"), (1e6, "M"), (1e3, "k")):
+            if abs(v) >= div:
+                num = f"{v / div:.1f}".rstrip("0").rstrip(".")
+                return f"{prefix}{num}{unit}"
+    num = str(int(v)) if float(v).is_integer() else f"{v:g}"
+    return f"{prefix}{num}{suffix}"
+
+
+def _set_xlabels(ax, cats):
+    """Set category tick labels, rotating them when long or many so they don't
+    run into each other."""
+    crowded = len(cats) > 5 or any(len(str(c)) > 7 for c in cats)
+    if crowded:
+        ax.set_xticklabels(cats, fontsize=_TICK_SIZE, rotation=25, ha="right")
+    else:
+        ax.set_xticklabels(cats, fontsize=_TICK_SIZE)
 
 
 def _draw_bars(ax, chart, emphasis, muted, spend, ink, vertical):
     cats = chart["categories"]
     series = chart["series"]
     emph = chart.get("emphasis")
+    fmt = chart.get("fmt")
     n = len(cats)
 
     if len(series) == 1:
@@ -164,10 +189,10 @@ def _draw_bars(ax, chart, emphasis, muted, spend, ink, vertical):
         if vertical:
             ax.bar(pos, values, width=_BAR_THICK, color=colours, zorder=3)
             for x, v in zip(pos, values):
-                ax.text(x, v, _fmt(v), ha="center", va="bottom",
+                ax.text(x, v, _fmt(v, fmt), ha="center", va="bottom",
                         fontsize=_LABEL_SIZE, fontweight="bold", color=ink)
             ax.set_xticks(list(pos))
-            ax.set_xticklabels(cats, fontsize=_TICK_SIZE)
+            _set_xlabels(ax, cats)
             ax.set_ylim(0, max(values) * 1.18 or 1)
             _strip(ax, muted, keep_x=True)
         else:
@@ -175,7 +200,7 @@ def _draw_bars(ax, chart, emphasis, muted, spend, ink, vertical):
             ax.barh(order, values, height=_BAR_THICK, color=colours, zorder=3)
             span = (max(values) or 1)
             for y, v, name in zip(order, values, cats):
-                ax.text(v + span * 0.01, y, _fmt(v), va="center", ha="left",
+                ax.text(v + span * 0.01, y, _fmt(v, fmt), va="center", ha="left",
                         fontsize=_LABEL_SIZE, fontweight="bold", color=ink)
                 ax.text(-span * 0.01, y, name, va="center", ha="right",
                         fontsize=_TICK_SIZE, color=ink)
@@ -197,14 +222,16 @@ def _draw_bars(ax, chart, emphasis, muted, spend, ink, vertical):
                         label=s["name"])
         if vertical:
             ax.set_xticks(list(base))
-            ax.set_xticklabels(cats, fontsize=_TICK_SIZE)
+            _set_xlabels(ax, cats)
+            ax.set_ylim(0, max(max(s["values"]) for s in series) * 1.12 or 1)
             _strip(ax, muted, keep_x=True)
         else:
             ax.set_yticks(list(base))
             ax.set_yticklabels(cats, fontsize=_TICK_SIZE)
             _strip(ax, muted, keep_x=False)
+        # Legend BELOW the chart, so it never crowds the slide title above it.
         leg = ax.legend(loc="upper center", ncol=len(series), frameon=False,
-                        bbox_to_anchor=(0.5, 1.08), fontsize=_TICK_SIZE)
+                        bbox_to_anchor=(0.5, -0.16), fontsize=_TICK_SIZE)
         for t in leg.get_texts():
             t.set_color(ink)
 
@@ -240,7 +267,7 @@ def _draw_pie(ax, chart, emphasis, muted, spend, ink):
         colours = [palette[i % len(palette)] for i in range(len(cats))]
     else:
         colours = [emphasis if c == emph else muted for c in cats]
-    labels = [f"{c}  {_fmt(v)}" for c, v in zip(cats, values)]
+    labels = [f"{c}  {_fmt(v, chart.get('fmt'))}" for c, v in zip(cats, values)]
     ax.pie(
         values, labels=labels, colors=colours, startangle=90,
         counterclock=False, wedgeprops={"linewidth": 0},

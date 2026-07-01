@@ -141,6 +141,8 @@ A `title-content` slide may carry a `Chart:` block: structured data `build-deck`
 
 Instead of typing the data inline, a chart may read it from a CSV with `data: <file.csv>` (resolved against the spec's folder) — `data:` and the inline `categories`/`series`/`points` are mutually exclusive. A category chart's CSV is a header row (`category, Series1, Series2, …`) then one row per category; a point chart's first two columns are `x, y`. So a spreadsheet exports straight to a chart, and multiple series draw as grouped bars.
 
+Format the value labels with `format:` — `$` (currency), `%` (percent), or `$k` / `$m` (currency in thousands / millions, so `362` reads as `$362k`); or set `prefix:` / `suffix:` directly. Large numbers abbreviate by default (`362000` → `362k`); `format: plain` keeps them exact.
+
 ```
 ## Slide 4
 layout: title-content
