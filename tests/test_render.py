@@ -796,5 +796,226 @@ class WaterfallParseTest(unittest.TestCase):
         self.assertIn("50", note)  # computed total: 40 - 15 + 25
 
 
+# --- T-001 (Wave 0, red-first), continued: native-charts-plan.md REQ-001,
+# REQ-003, REQ-004, REQ-005, REQ-006; decisions D-001, D-005, D-009.
+#
+# `native:`, `stacked:`, and `target:` are not yet recognised chart keys, so
+# every line carrying one of them raises SpecError "unknown chart key
+# '<key>'" the moment `_parse_chart_block`'s key loop reaches it — the
+# genuine current fault, regardless of what other keys/lines surround it.
+# Positive-path cases below (no key mismatch to check) are left uncaught and
+# so simply error out on that same SpecError right now. Cross-validation
+# cases assert the *desired* end-state wording (naming bar/column, 'series',
+# 'emphasis', or the allowed point-chart types) — text the current "unknown
+# chart key" message does not contain, so these fail red as assertion
+# mismatches, not as accidental passes. Both go green once T-006 lands.
+
+
+class NativeChartParseTest(unittest.TestCase):
+    """REQ-001/D-001: the `native:` chart key parse contract.
+
+    Pinned shape: `chart["native"]` is always present as a bool (key present
+    even when the spec never mentions `native:` — default False), set from
+    `true`/`false` (case-insensitive); anything else is a SpecError naming
+    'native'.
+    """
+
+    def _parse_chart(self, lines, spec_dir=None):
+        return render._parse_chart_block(1, lines, spec_dir)
+
+    def test_native_true_parses_true(self):
+        chart = self._parse_chart([
+            "type: column",
+            "categories: A, B",
+            "series X: 1, 2",
+            "native: true",
+        ])
+        self.assertIs(chart["native"], True)
+
+    def test_native_false_parses_false(self):
+        chart = self._parse_chart([
+            "type: column",
+            "categories: A, B",
+            "series X: 1, 2",
+            "native: false",
+        ])
+        self.assertIs(chart["native"], False)
+
+    def test_native_absent_defaults_false(self):
+        # No `native:` line at all — the key must still be present (pinned
+        # shape: key always present, boolean), not merely absent-equivalent.
+        chart = self._parse_chart([
+            "type: column",
+            "categories: A, B",
+            "series X: 1, 2",
+        ])
+        self.assertIn("native", chart)
+        self.assertIs(chart["native"], False)
+
+    def test_native_invalid_value_raises(self):
+        # Strengthened past a bare 'native' substring check (today's "unknown
+        # chart key 'native'" message would already satisfy that trivially,
+        # coincidentally passing before implementation) by also requiring the
+        # bad token 'maybe' appear, so this is genuinely red right now.
+        with self.assertRaises(render.SpecError) as cm:
+            self._parse_chart([
+                "type: column",
+                "categories: A, B",
+                "series X: 1, 2",
+                "native: maybe",
+            ])
+        msg = str(cm.exception).lower()
+        self.assertIn("native", msg)
+        self.assertIn("maybe", msg)
+
+
+class StackedTargetParseTest(unittest.TestCase):
+    """REQ-004/005, D-009: the `stacked:` and `target:` chart key parse
+    contract.
+
+    Pinned shapes:
+      chart["stacked"] -> bool, legal only on multi-series bar/column.
+      chart["target"]  -> {"value": float, "label": str|None}, legal only on
+                           column/bar/line (D-009's optional '| label').
+    """
+
+    def _parse_chart(self, lines, spec_dir=None):
+        return render._parse_chart_block(1, lines, spec_dir)
+
+    def _assert_chart_error(self, lines, *needles, spec_dir=None):
+        with self.assertRaises(render.SpecError) as cm:
+            self._parse_chart(lines, spec_dir=spec_dir)
+        msg = str(cm.exception).lower()
+        for needle in needles:
+            self.assertIn(needle.lower(), msg)
+
+    # --- stacked ---
+
+    def test_stacked_true_two_series_column(self):
+        chart = self._parse_chart([
+            "type: column",
+            "categories: A, B",
+            "series X: 1, 2",
+            "series Y: 3, 4",
+            "stacked: true",
+        ])
+        self.assertIs(chart["stacked"], True)
+
+    def test_stacked_on_pie_raises_naming_bar_column(self):
+        self._assert_chart_error(
+            ["type: pie", "categories: A, B", "series X: 1, 2",
+             "stacked: true"],
+            "bar", "column",
+        )
+
+    def test_stacked_single_series_raises(self):
+        self._assert_chart_error(
+            ["type: column", "categories: A, B", "series X: 1, 2",
+             "stacked: true"],
+            "series",
+        )
+
+    def test_stacked_with_emphasis_raises(self):
+        self._assert_chart_error(
+            ["type: column", "emphasis: A", "categories: A, B",
+             "series X: 1, 2", "series Y: 3, 4", "stacked: true"],
+            "emphasis",
+        )
+
+    # --- target ---
+
+    def test_target_value_only(self):
+        chart = self._parse_chart([
+            "type: column",
+            "categories: A, B",
+            "series X: 1, 2",
+            "target: 50",
+        ])
+        self.assertEqual(chart["target"], {"value": 50.0, "label": None})
+
+    def test_target_with_label(self):
+        chart = self._parse_chart([
+            "type: column",
+            "categories: A, B",
+            "series X: 1, 2",
+            "target: 50 | goal",
+        ])
+        self.assertEqual(chart["target"], {"value": 50.0, "label": "goal"})
+
+    def test_target_non_numeric_raises(self):
+        # Strengthened past a bare 'target' substring check (same rationale
+        # as test_native_invalid_value_raises) by requiring the bad token.
+        with self.assertRaises(render.SpecError) as cm:
+            self._parse_chart([
+                "type: column", "categories: A, B", "series X: 1, 2",
+                "target: abc",
+            ])
+        self.assertIn("abc", str(cm.exception).lower())
+
+    def test_target_on_scatter_raises_naming_allowed_types(self):
+        self._assert_chart_error(
+            ["type: scatter", "points: 0 1, 1 2", "target: 50"],
+            "column", "bar", "line",
+        )
+
+
+class ComposedChartBlockTest(unittest.TestCase):
+    """REQ-006: `Block: chart` on a composed slide reuses `_parse_chart_block`'s
+    grammar (including `data:` CSV, resolved against spec_dir), nested under a
+    `"chart"` key exactly as `table` nests under `"table"`:
+
+        {"type": "chart", "chart": {<same dict _parse_chart_block returns>}}
+
+    `chart` is not yet in COMPOSED_BLOCK_TYPES, so every case below raises
+    SpecError "unknown composed block type 'chart'" right now — the genuine
+    current fault, raised at the top of _parse_composed_block before any
+    chart-specific logic runs (so the CSV case fails the same way as the
+    inline case). These assert the desired end-state; they go green once
+    T-006 adds 'chart' to COMPOSED_BLOCK_TYPES and delegates to
+    _parse_chart_block(items, spec_dir).
+    """
+
+    def _parse_composed(self, body, files=None):
+        tmp = tempfile.mkdtemp(prefix="slides-composed-chart-parse-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        for name, content in (files or {}).items():
+            with open(os.path.join(tmp, name), "w", encoding="utf-8") as fh:
+                fh.write(content)
+        spec = ("---\ndeck: d\naudience: a\n---\n\n"
+                "## Slide 1\nlayout: composed\n" + body)
+        spec_path = os.path.join(tmp, "deck.md")
+        with open(spec_path, "w", encoding="utf-8") as fh:
+            fh.write(spec)
+        return render.parse_spec(spec_path)[0]["blocks"][0]
+
+    def test_chart_block_parses_inline(self):
+        block = self._parse_composed(
+            "Block: chart\n"
+            "type: column\n"
+            "categories: A, B\n"
+            "series X: 1, 2\n"
+        )
+        self.assertEqual(block["type"], "chart")
+        chart = block["chart"]
+        self.assertEqual(chart["type"], "column")
+        self.assertEqual(chart["categories"], ["A", "B"])
+        self.assertEqual(len(chart["series"]), 1)
+        self.assertEqual(chart["series"][0]["name"], "X")
+        self.assertEqual(chart["series"][0]["values"], [1, 2])
+
+    def test_chart_block_data_csv_resolves_against_spec_dir(self):
+        block = self._parse_composed(
+            "Block: chart\n"
+            "type: column\n"
+            "data: sales.csv\n",
+            files={"sales.csv": "Category,X\nA,1\nB,2\n"},
+        )
+        self.assertEqual(block["type"], "chart")
+        chart = block["chart"]
+        self.assertEqual(chart["type"], "column")
+        self.assertEqual(chart["categories"], ["A", "B"])
+        self.assertEqual(chart["series"][0]["values"], [1, 2])
+
+
 if __name__ == "__main__":
     unittest.main()

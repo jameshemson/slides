@@ -375,5 +375,131 @@ class TestTableCount(unittest.TestCase):
         self.assertIn("[count]", str(ctx.exception))
 
 
+# --- Chart-element lint regression pins (T-005, REQ-006, decision D-006) --
+#
+# `Block: chart` on a composed slide is planned by render.py as ONE element of
+# kind "chart" — `{"role": "chart-figure", "kind": "chart", "text": "chart:
+# <type>", left/top/width/height}` — carrying only role/text/bbox, no colour
+# or font keys (chart internals derive from brand["colours"] by construction,
+# on both the image and native backends). These are GREEN-FROM-START
+# regression pins: lint.py needs NO change for this kind — the bbox rules
+# (margins/overlap/count) are kind-generic, and check_colours/check_sizes
+# naturally see no colour/font keys on a chart element to flag.
+
+
+def good_chart(left=457200, top=1600200, width=3000000, height=300000):
+    """A clean composed chart element: role/text/bbox only, no colour/font
+    keys, positioned to sit inside margins without overlapping good_elements()."""
+    return {
+        "role": "chart-figure",
+        "kind": "chart",
+        "text": "chart: column",
+        "left": left,
+        "top": top,
+        "width": width,
+        "height": height,
+    }
+
+
+def stacked_with_chart(n):
+    """`n` clean, non-overlapping, within-margin elements; element 0 is a
+    chart. Used to prove a chart counts as exactly ONE element for the cap."""
+    els = []
+    for i in range(n):
+        top = 1600200 + i * 50000
+        if i == 0:
+            els.append(good_chart(left=457200, top=top, width=500000, height=40000))
+        else:
+            els.append({
+                "role": f"item-{i}",
+                "text": str(i),
+                "left": 457200,
+                "top": top,
+                "width": 500000,
+                "height": 40000,
+                "font_pt": 12.0,
+                "colour": "#000000",
+            })
+    return els
+
+
+class TestChartElementKind(unittest.TestCase):
+    """Regression pins for the composed `Block: chart` element (kind "chart"),
+    planned by render.py per D-006. These are GREEN-FROM-START pins: lint.py
+    itself needs no change to handle this element shape."""
+
+    def test_clean_chart_passes_alongside_other_elements(self):
+        """Regression pin: a clean chart element (inside margins, not
+        overlapping) alongside other elements produces no violations from
+        lint.check or any individual rule helper."""
+        els = good_elements() + [good_chart()]
+        self.assertIsNone(lint.check(els, TOKENS, SLIDE_W, SLIDE_H))
+        self.assertEqual(lint.check_colours(els, TOKENS), [])
+        self.assertEqual(lint.check_sizes(els, TOKENS), [])
+        self.assertEqual(lint.check_within_margins(els, TOKENS, SLIDE_W, SLIDE_H), [])
+        self.assertEqual(lint.check_no_overlap(els), [])
+        self.assertEqual(lint.check_count(els), [])
+
+    def test_out_of_margin_names_text_key(self):
+        """Regression pin: a chart placed outside the grid margins produces a
+        [margins] violation whose message includes the element's `text` key
+        (no KeyError — lint.py's margins message reads el['text'])."""
+        chart = good_chart(left=0)  # left of margin_x
+        violations = lint.check_within_margins([chart], TOKENS, SLIDE_W, SLIDE_H)
+        self.assertTrue(violations)
+        self.assertTrue(any("[margins]" in v for v in violations))
+        self.assertTrue(
+            any(chart["text"] in v for v in violations),
+            "the margins message must include the element's text key",
+        )
+        with self.assertRaises(lint.LintError) as ctx:
+            lint.check([chart], TOKENS, SLIDE_W, SLIDE_H)
+        self.assertIn("[margins]", str(ctx.exception))
+
+    def test_overlap_with_filled_box_flagged(self):
+        """Regression pin: a chart overlapping a filled (non-container) box
+        element produces an [overlap] violation — a chart is a filled
+        element, not a 1-D line kind (connector/edge), so it is not exempt
+        from the overlap rule."""
+        box = container_box()
+        box["container"] = False
+        chart = good_chart(
+            left=box["left"], top=box["top"], width=box["width"], height=box["height"]
+        )
+        violations = lint.check_no_overlap([box, chart])
+        self.assertTrue(violations)
+        self.assertTrue(any("[overlap]" in v for v in violations))
+        with self.assertRaises(lint.LintError) as ctx:
+            lint.check([box, chart], TOKENS, SLIDE_W, SLIDE_H)
+        self.assertIn("[overlap]", str(ctx.exception))
+
+    def test_chart_at_cap_passes(self):
+        """Regression pin: a chart counts as exactly ONE element toward
+        ELEMENT_CAP — ELEMENT_CAP elements including one chart is legal."""
+        els = stacked_with_chart(lint.ELEMENT_CAP)
+        self.assertEqual(len(els), lint.ELEMENT_CAP)
+        self.assertEqual(lint.check_count(els), [])
+        self.assertIsNone(lint.check(els, TOKENS, SLIDE_W, SLIDE_H))
+
+    def test_chart_over_cap_fails(self):
+        """Regression pin: ELEMENT_CAP + 1 elements including one chart still
+        trips the [count] rule — the chart earns no exemption from the cap."""
+        els = stacked_with_chart(lint.ELEMENT_CAP + 1)
+        violations = lint.check_count(els)
+        self.assertTrue(violations)
+        self.assertIn("[count]", violations[0])
+        with self.assertRaises(lint.LintError) as ctx:
+            lint.check(els, TOKENS, SLIDE_W, SLIDE_H)
+        self.assertIn("[count]", str(ctx.exception))
+
+    def test_no_colour_or_size_violations(self):
+        """Regression pin: check_colours/check_sizes produce NO violations for
+        a chart element — it carries no `colour`/`fill`/`stroke` or `font_pt`
+        keys, since chart internals derive from the brand by construction."""
+        chart = good_chart()
+        self.assertEqual(lint.check_colours([chart], TOKENS), [])
+        self.assertEqual(lint.check_sizes([chart], TOKENS), [])
+
+
 if __name__ == "__main__":
     unittest.main()
