@@ -11,6 +11,8 @@ shape/text drawing that charts.py plays for chart images — render.py delegates
 all literal-emitting work here so the rest of the renderer stays literal-free.
 """
 
+import math
+
 from pptx.util import Emu, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_SHAPE, MSO_CONNECTOR
@@ -321,7 +323,10 @@ def plan_comparison(sides, tokens, slide_w, slide_h, region=None) -> list:
         max_lines = max(max_lines, len([x for x in lines if x]))
     max_lines = min(max_lines, 6)
     body_alloc = max_lines * _line_h(body_pt)
-    inner_h = header_h + baseline + body_alloc
+    has_icons = any(s.get("icon") for s in sides)
+    icon_side = header_h if has_icons else 0
+    inner_h = ((icon_side + baseline) if has_icons else 0) + header_h \
+        + baseline + body_alloc
     panel_h = min(inner_h + 2 * pad, band_h)
     panel_top = band_top + round((band_h - panel_h) * OPTICAL_CENTRE)
 
@@ -339,9 +344,19 @@ def plan_comparison(sides, tokens, slide_w, slide_h, region=None) -> list:
             panel["stroke_w"] = _STROKE_EMU
         elements.append(panel)
         text_colour = roles["paper"] if emph else roles["ink"]
+        y = panel_top + pad
+        if has_icons:
+            if s.get("icon"):
+                elements.append({
+                    "role": "comparison-icon", "kind": "icon", "name": s["icon"],
+                    "left": cl + (cw - icon_side) // 2, "top": y,
+                    "width": icon_side, "height": icon_side,
+                    "colour": roles["paper"] if emph else roles["accent"],
+                })
+            y += icon_side + baseline
         elements.append({
             "role": "comparison-header", "text": str(s.get("header", "")),
-            "left": cl + pad, "top": panel_top + pad,
+            "left": cl + pad, "top": y,
             "width": cw - 2 * pad, "height": header_h,
             "font_pt": header_pt, "colour": text_colour, "bold": True,
         })
@@ -349,7 +364,7 @@ def plan_comparison(sides, tokens, slide_w, slide_h, region=None) -> list:
         if body:
             elements.append({
                 "role": "comparison-body", "text": _split_body(body),
-                "left": cl + pad, "top": panel_top + pad + header_h + baseline,
+                "left": cl + pad, "top": y + header_h + baseline,
                 "width": cw - 2 * pad, "height": body_alloc,
                 "font_pt": body_pt, "colour": text_colour,
             })
@@ -398,12 +413,21 @@ def plan_process(steps, tokens, slide_w, slide_h, region=None) -> list:
             "left": cl, "top": box_top, "width": cw, "height": box_h,
             "fill": roles["paper"], "stroke": roles["ink"], "stroke_w": _STROKE_EMU,
         })
-        elements.append({
-            "role": "process-number", "text": str(i + 1),
-            "left": cl + pad, "top": box_top + pad,
-            "width": cw - 2 * pad, "height": num_h,
-            "font_pt": num_pt, "colour": roles["accent"], "bold": True,
-        })
+        if s.get("icon"):
+            # An icon takes the number's slot (centred), so element count is flat.
+            iside = max(1, min(num_h, cw - 2 * pad))
+            elements.append({
+                "role": "process-icon", "kind": "icon", "name": s["icon"],
+                "left": cl + (cw - iside) // 2, "top": box_top + pad,
+                "width": iside, "height": iside, "colour": roles["accent"],
+            })
+        else:
+            elements.append({
+                "role": "process-number", "text": str(i + 1),
+                "left": cl + pad, "top": box_top + pad,
+                "width": cw - 2 * pad, "height": num_h,
+                "font_pt": num_pt, "colour": roles["accent"], "bold": True,
+            })
         elements.append({
             "role": "process-label", "text": str(s.get("label", "")),
             "left": cl + pad, "top": box_top + pad + num_h + baseline,
@@ -769,6 +793,164 @@ def plan_icon_list(rows, tokens, slide_w, slide_h, region=None) -> list:
             "width": text_w, "height": line_h,
             "font_pt": text_pt, "colour": roles["ink"], "anchor": "middle",
         })
+    return elements
+
+
+# --- cycle -------------------------------------------------------------------
+
+
+def plan_cycle(steps, tokens, slide_w, slide_h, region=None) -> list:
+    """A loop of 2-6 stages on a circle, joined by edges around the ring.
+
+    steps: list of {"label": str}. Nodes are placed on a circle (top, clockwise);
+    each edge runs node -> next -> ... -> back to the first, so the loop closes.
+    Node sizing is tied to the ring spacing so nodes never overlap.
+    """
+    grid, ts, roles = _require(tokens, ("body",))
+    n = len(steps)
+    if n < 2:
+        raise ShapeError("cycle needs at least 2 stages")
+    if n > 6:
+        raise ShapeError("cycle takes at most 6 stages")
+
+    content_left, content_w = _content_span(tokens, slide_w, region)
+    band_top, band_bottom = _band(tokens, slide_h, region)
+    band_h = band_bottom - band_top
+    baseline = grid["baseline"]
+    label_pt = ts["body"]
+    line_h = _line_h(label_pt)
+
+    r = int(min(content_w, band_h) * 0.34)
+    spacing = 2 * r * math.sin(math.pi / n)          # min adjacent centre gap
+    node_w = max(2 * grid["gutter"], min(content_w // 4, int(spacing * 0.7)))
+    node_h = max(line_h, min(2 * line_h + baseline, int(spacing * 0.55)))
+    cx = content_left + content_w // 2
+    cy = band_top + band_h // 2
+
+    centres = []
+    for i in range(n):
+        ang = -math.pi / 2 + 2 * math.pi * i / n
+        centres.append((cx + int(r * math.cos(ang)), cy + int(r * math.sin(ang))))
+
+    elements = []
+    for i, (px, py) in enumerate(centres):
+        left, top = px - node_w // 2, py - node_h // 2
+        elements.append({
+            "role": "cycle-node", "kind": "box", "container": True,
+            "shape": _corner_shape(tokens),
+            "left": left, "top": top, "width": node_w, "height": node_h,
+            "fill": roles["paper"], "stroke": roles["ink"], "stroke_w": _STROKE_EMU,
+        })
+        elements.append({
+            "role": "cycle-label", "text": str(steps[i].get("label", "")),
+            "left": left, "top": top, "width": node_w, "height": node_h,
+            "font_pt": label_pt, "colour": roles["ink"],
+            "align": "center", "anchor": "middle",
+        })
+
+    node_r = max(node_w, node_h) // 2
+    for i in range(n):
+        ax, ay = centres[i]
+        bx, by = centres[(i + 1) % n]
+        dist = math.hypot(bx - ax, by - ay) or 1
+        ux, uy = (bx - ax) / dist, (by - ay) / dist
+        sx, sy = int(ax + node_r * ux), int(ay + node_r * uy)
+        ex, ey = int(bx - node_r * ux), int(by - node_r * uy)
+        elements.append({
+            "role": "cycle-edge", "kind": "edge", "colour": roles["ink"],
+            "x1": sx, "y1": sy, "x2": ex, "y2": ey,
+            "left": min(sx, ex), "top": min(sy, ey),
+            "width": max(1, abs(ex - sx)), "height": max(1, abs(ey - sy)),
+        })
+    return elements
+
+
+# --- matrix (2x2) ------------------------------------------------------------
+
+
+def plan_matrix(spec, tokens, slide_w, slide_h, region=None) -> list:
+    """A 2x2 quadrant matrix: four labelled panels, optional axis captions.
+
+    spec: {"quadrants": [TL, TR, BL, BR]} where each is {label, body?, emphasis?},
+    plus optional "x" (caption below) and "y" (caption above). One quadrant may be
+    marked emphasis to lead. The two dimensions are conveyed by the captions and
+    the quadrant labels.
+    """
+    grid, ts, roles = _require(tokens, ("h1", "body"))
+    quads = spec.get("quadrants", [])
+    if len(quads) != 4:
+        raise ShapeError("matrix needs exactly four quadrants (TL, TR, BL, BR)")
+
+    content_left, content_w = _content_span(tokens, slide_w, region)
+    band_top, band_bottom = _band(tokens, slide_h, region)
+    band_h = band_bottom - band_top
+    gutter = grid["gutter"]
+    pad = gutter
+    baseline = grid["baseline"]
+    label_pt, body_pt, cap_pt = ts["h1"], ts["body"], ts["body"]
+    label_h = _line_h(label_pt)
+    cap_h = _line_h(cap_pt)
+
+    xlab = (spec.get("x") or "").strip()
+    ylab = (spec.get("y") or "").strip()
+    top_strip = (cap_h + baseline) if ylab else 0
+    bot_strip = (cap_h + baseline) if xlab else 0
+
+    grid_top = band_top + top_strip
+    grid_h = band_h - top_strip - bot_strip
+    cols = _even_cells(content_left, content_w, 2, gutter)
+    cell_h = (grid_h - gutter) // 2
+    row_tops = [grid_top, grid_top + cell_h + gutter]
+    coords = [(0, 0), (1, 0), (0, 1), (1, 1)]  # TL, TR, BL, BR
+
+    if cell_h < 2 * pad + label_h:
+        raise ShapeError(
+            "matrix needs more room; drop the axis labels or use a full slide"
+        )
+    # Body must fit inside the cell (the region can be short under a title).
+    avail = cell_h - 2 * pad - label_h - baseline
+    body_alloc = min(2 * _line_h(body_pt), avail) if avail >= _line_h(body_pt) else 0
+    elements = []
+    if ylab:
+        elements.append({
+            "role": "matrix-axis", "text": ylab, "left": content_left,
+            "top": band_top, "width": content_w, "height": cap_h,
+            "font_pt": cap_pt, "colour": roles["muted"], "align": "center",
+        })
+    if xlab:
+        elements.append({
+            "role": "matrix-axis", "text": xlab, "left": content_left,
+            "top": band_bottom - cap_h, "width": content_w, "height": cap_h,
+            "font_pt": cap_pt, "colour": roles["muted"], "align": "center",
+        })
+    for q, (col, row) in zip(quads, coords):
+        cl, cw = cols[col]
+        ct = row_tops[row]
+        emph = bool(q.get("emphasis"))
+        panel = {
+            "role": "matrix-cell", "kind": "box", "container": True,
+            "shape": _corner_shape(tokens),
+            "left": cl, "top": ct, "width": cw, "height": cell_h,
+            "fill": roles["accent"] if emph else roles["paper"],
+        }
+        if not emph:
+            panel["stroke"] = roles["ink"]
+            panel["stroke_w"] = _STROKE_EMU
+        elements.append(panel)
+        tc = roles["paper"] if emph else roles["ink"]
+        elements.append({
+            "role": "matrix-label", "text": str(q.get("label", "")),
+            "left": cl + pad, "top": ct + pad, "width": cw - 2 * pad,
+            "height": label_h, "font_pt": label_pt, "colour": tc, "bold": True,
+        })
+        body = (q.get("body") or "").strip()
+        if body and body_alloc:
+            elements.append({
+                "role": "matrix-body", "text": _split_body(body),
+                "left": cl + pad, "top": ct + pad + label_h + baseline,
+                "width": cw - 2 * pad, "height": body_alloc,
+                "font_pt": body_pt, "colour": tc,
+            })
     return elements
 
 
