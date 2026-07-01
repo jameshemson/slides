@@ -30,6 +30,7 @@ _ANNOT_SIZE = 14
 _BAR_THICK = 0.6
 _LINE_W = 3.2
 _CONNECTOR_W = 1.4  # thin waterfall connector between consecutive bars
+_TARGET_LW = 1.4  # target/goal reference line weight
 
 # Kept in sync with render.py's CHART_TYPES (D-010): the two tuples are
 # deliberately duplicated so render.py never imports matplotlib. Both change
@@ -186,11 +187,33 @@ def _set_xlabels(ax, cats):
         ax.set_xticklabels(cats, fontsize=_TICK_SIZE)
 
 
+def _stack_bottoms(series_values):
+    """Per-series bar bottoms for a stacked chart (D-007), pure (no
+    matplotlib) — mirrors `_waterfall_segments`. `series_values` is a list of
+    per-series value lists (one list per series, same length, one entry per
+    category). Returns, per series, its bottoms = the elementwise cumulative
+    sum of every PRIOR series, so the first series sits on the zero baseline
+    and each later series stacks on the running total below it.
+
+    Example: [[10, 20], [5, 5]] -> [[0, 0], [10, 20]].
+    """
+    if not series_values:
+        return []
+    n = len(series_values[0])
+    running = [0] * n
+    bottoms = []
+    for values in series_values:
+        bottoms.append(list(running))
+        running = [r + v for r, v in zip(running, values)]
+    return bottoms
+
+
 def _draw_bars(ax, chart, emphasis, muted, spend, ink, vertical):
     cats = chart["categories"]
     series = chart["series"]
     emph = chart.get("emphasis")
     fmt = chart.get("fmt")
+    target = chart.get("target")
     n = len(cats)
 
     if len(series) == 1:
@@ -207,8 +230,14 @@ def _draw_bars(ax, chart, emphasis, muted, spend, ink, vertical):
                         fontsize=_LABEL_SIZE, fontweight="bold", color=ink)
             ax.set_xticks(list(pos))
             _set_xlabels(ax, cats)
-            ax.set_ylim(0, max(values) * 1.18 or 1)
+            top = max(values) * 1.18 or 1
+            if target:
+                top = max(top, target["value"] * 1.1)
+            ax.set_ylim(0, top)
             _strip(ax, muted, keep_x=True)
+            if target:
+                _draw_target(ax, target, True, n - 1, spend, muted, emphasis,
+                             ink, fmt)
         else:
             order = list(reversed(range(n)))
             ax.barh(order, values, height=_BAR_THICK, color=colours, zorder=3)
@@ -218,8 +247,66 @@ def _draw_bars(ax, chart, emphasis, muted, spend, ink, vertical):
                         fontsize=_LABEL_SIZE, fontweight="bold", color=ink)
                 ax.text(-span * 0.01, y, name, va="center", ha="right",
                         fontsize=_TICK_SIZE, color=ink)
-            ax.set_xlim(0, span * 1.18)
+            xmax = span * 1.18
+            if target:
+                xmax = max(xmax, target["value"] * 1.1)
+            ax.set_xlim(0, xmax)
             _strip(ax, muted, keep_x=False, keep_y=False)
+            if target:
+                _draw_target(ax, target, False, n - 1, spend, muted, emphasis,
+                             ink, fmt)
+    elif chart.get("stacked"):
+        # Stacked bars (D-007): one full-width bar per category; series
+        # accumulate via _stack_bottoms. A single total label above each
+        # stack keeps it clean rather than labelling every segment.
+        palette = [emphasis, muted, spend]
+        series_values = [s["values"] for s in series]
+        bottoms = _stack_bottoms(series_values)
+        totals = [sum(vals) for vals in zip(*series_values)]
+        pos = list(range(n))
+        for i, s in enumerate(series):
+            col = palette[i % len(palette)]
+            if vertical:
+                ax.bar(pos, s["values"], bottom=bottoms[i], width=_BAR_THICK,
+                       color=col, zorder=3, label=s["name"])
+            else:
+                ax.barh(pos, s["values"], left=bottoms[i], height=_BAR_THICK,
+                        color=col, zorder=3, label=s["name"])
+        if vertical:
+            for x, tot in zip(pos, totals):
+                ax.text(x, tot, _fmt(tot, fmt), ha="center", va="bottom",
+                        fontsize=_LABEL_SIZE, fontweight="bold", color=ink)
+            ax.set_xticks(pos)
+            _set_xlabels(ax, cats)
+            top = (max(totals) if totals else 0) * 1.18 or 1
+            if target:
+                top = max(top, target["value"] * 1.1)
+            ax.set_ylim(0, top)
+            _strip(ax, muted, keep_x=True)
+            if target:
+                _draw_target(ax, target, True, n - 1, spend, muted, emphasis,
+                             ink, fmt)
+        else:
+            tot_span = (max(totals) if totals else 0) or 1
+            for y, tot in zip(pos, totals):
+                ax.text(tot + tot_span * 0.01, y, _fmt(tot, fmt), va="center",
+                        ha="left", fontsize=_LABEL_SIZE, fontweight="bold",
+                        color=ink)
+            ax.set_yticks(pos)
+            ax.set_yticklabels(cats, fontsize=_TICK_SIZE)
+            xmax = tot_span * 1.18
+            if target:
+                xmax = max(xmax, target["value"] * 1.1)
+            ax.set_xlim(0, xmax)
+            _strip(ax, muted, keep_x=False)
+            if target:
+                _draw_target(ax, target, False, n - 1, spend, muted, emphasis,
+                             ink, fmt)
+        # Legend BELOW the chart, matching the grouped multi-series branch.
+        leg = ax.legend(loc="upper center", ncol=len(series), frameon=False,
+                        bbox_to_anchor=(0.5, -0.16), fontsize=_TICK_SIZE)
+        for t in leg.get_texts():
+            t.set_color(ink)
     else:
         # Multiple series: grouped bars, one palette colour each, bottom legend.
         palette = [emphasis, muted, spend]
@@ -237,12 +324,24 @@ def _draw_bars(ax, chart, emphasis, muted, spend, ink, vertical):
         if vertical:
             ax.set_xticks(list(base))
             _set_xlabels(ax, cats)
-            ax.set_ylim(0, max(max(s["values"]) for s in series) * 1.12 or 1)
+            top = max(max(s["values"]) for s in series) * 1.12 or 1
+            if target:
+                top = max(top, target["value"] * 1.1)
+            ax.set_ylim(0, top)
             _strip(ax, muted, keep_x=True)
+            if target:
+                _draw_target(ax, target, True, n - 1, spend, muted, emphasis,
+                             ink, fmt)
         else:
             ax.set_yticks(list(base))
             ax.set_yticklabels(cats, fontsize=_TICK_SIZE)
             _strip(ax, muted, keep_x=False)
+            if target:
+                xmax = max(max(s["values"]) for s in series) * 1.12 or 1
+                xmax = max(xmax, target["value"] * 1.1)
+                ax.set_xlim(0, xmax)
+                _draw_target(ax, target, False, n - 1, spend, muted, emphasis,
+                             ink, fmt)
         # Legend BELOW the chart, so it never crowds the slide title above it.
         leg = ax.legend(loc="upper center", ncol=len(series), frameon=False,
                         bbox_to_anchor=(0.5, -0.16), fontsize=_TICK_SIZE)
@@ -359,6 +458,8 @@ def _draw_line(ax, chart, emphasis, muted, spend, ink):
     xs = [p[0] for p in points]
     ys = [p[1] for p in points]
     at = dict(points)
+    fmt = chart.get("fmt")
+    target = chart.get("target")
     ax.fill_between(xs, ys, color=emphasis, alpha=0.16, zorder=1)
     ax.plot(xs, ys, color=emphasis, lw=_LINE_W, zorder=2,
             solid_capstyle="round")
@@ -369,8 +470,14 @@ def _draw_line(ax, chart, emphasis, muted, spend, ink):
         ax.annotate(m["label"], (x, y), xytext=(0, -28),
                     textcoords="offset points", ha="center",
                     fontsize=_ANNOT_SIZE, fontweight="bold", color=ink)
-    ax.set_ylim(0, max(ys) * 1.12 or 1)
+    top = max(ys) * 1.12 or 1
+    if target:
+        top = max(top, target["value"] * 1.1)
+    ax.set_ylim(0, top)
     _strip(ax, muted, keep_x=True)
+    if target:
+        _draw_target(ax, target, True, max(xs), spend, muted, emphasis, ink,
+                     fmt)
     _callout(ax, chart, spend, ink)
 
 
@@ -425,6 +532,43 @@ def _callout(ax, chart, spend, ink):
                 xytext=(0, 6), textcoords="offset points", ha="center",
                 va="bottom", fontsize=_ANNOT_SIZE, fontweight="bold",
                 color=spend)
+
+
+def _draw_target(ax, target, vertical, span, spend, muted, emphasis, ink, fmt):
+    """Draw a target/goal reference line (D-008/D-009), under the bars/line
+    (zorder 2, below the zorder=3 bars/zorder=2+ line). `vertical` selects a
+    horizontal rule (`axhline`, for column/line charts, whose value axis is
+    y) vs a vertical rule (`axvline`, for bar charts, whose value axis is x).
+
+    `span` is the caller's already-resolved position along the axis that is
+    NOT the value axis — the last category index for bar/column charts, or
+    the rightmost x for a line chart — where the label anchors: the right
+    edge of the horizontal rule, or the top of the vertical one. The label is
+    nudged clear of the rule itself (off to the side, not centred on it) so
+    the line never reads as a strikethrough under the text.
+
+    Colour falls to `muted` when the brand names no distinct `spend` (i.e.
+    spend == emphasis, _resolve_colours' fallback) — the same guard
+    `_waterfall_colours` uses — so the line is never invisible. The label (if
+    given) borrows `_callout`'s offset-point styling but is set in `ink`, not
+    `spend`, so it reads as a plain data label rather than a highlight.
+    """
+    value = target["value"]
+    label = target.get("label")
+    colour = muted if _normalise_hex(spend) == _normalise_hex(emphasis) else spend
+    text = f"{label} {_fmt(value, fmt)}" if label else None
+    if vertical:
+        ax.axhline(value, color=colour, lw=_TARGET_LW, zorder=2)
+        if text:
+            ax.annotate(text, xy=(span, value), xytext=(0, 6),
+                        textcoords="offset points", ha="right", va="bottom",
+                        fontsize=_ANNOT_SIZE, fontweight="bold", color=ink)
+    else:
+        ax.axvline(value, color=colour, lw=_TARGET_LW, zorder=2)
+        if text:
+            ax.annotate(text, xy=(value, span), xytext=(6, 6),
+                        textcoords="offset points", ha="left", va="bottom",
+                        fontsize=_ANNOT_SIZE, fontweight="bold", color=ink)
 
 
 def _strip(ax, muted, keep_x=True, keep_y=False):
