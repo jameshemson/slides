@@ -1017,6 +1017,21 @@ def _parse_marker(number, value):
     return {"x": _chart_number(number, parts[0]), "label": parts[1].strip()}
 
 
+# Chart value-label format shorthands → {prefix?, suffix?, abbreviate?}.
+CHART_FORMAT_SHORTHANDS = {
+    "$": {"prefix": "$"},
+    "$k": {"prefix": "$", "suffix": "k"},
+    "$m": {"prefix": "$", "suffix": "M"},
+    "%": {"suffix": "%"},
+    "k": {"suffix": "k"},
+    "m": {"suffix": "M"},
+    "currency": {"prefix": "$"},
+    "percent": {"suffix": "%"},
+    "compact": {},
+    "plain": {"abbreviate": False},
+}
+
+
 def _read_chart_csv(number, path, ctype):
     """Read a CSV into chart data. Raises SpecError naming the slide.
 
@@ -1068,6 +1083,7 @@ def _parse_chart_block(number, lines, spec_dir=None):
                    callout: str|None}
     """
     ctype = categories = callout = emphasis = data_file = None
+    fmt_key = prefix_key = suffix_key = None
     points = None
     series = []
     markers = []
@@ -1089,6 +1105,12 @@ def _parse_chart_block(number, lines, spec_dir=None):
             ctype = value.lower()
         elif key == "data":
             data_file = value
+        elif key == "format":
+            fmt_key = value
+        elif key == "prefix":
+            prefix_key = value
+        elif key == "suffix":
+            suffix_key = value
         elif key == "categories":
             categories = [c.strip() for c in value.split(",") if c.strip()]
         elif key == "emphasis":
@@ -1122,6 +1144,20 @@ def _parse_chart_block(number, lines, spec_dir=None):
             f"slide {number}: unknown chart type {ctype!r}; expected one of "
             f"{', '.join(CHART_TYPES)}"
         )
+
+    fmt = {}
+    if fmt_key is not None:
+        shorthand = fmt_key.strip().lower()
+        if shorthand not in CHART_FORMAT_SHORTHANDS:
+            raise SpecError(
+                f"slide {number}: unknown chart format {fmt_key!r}; use one of "
+                f"{', '.join(sorted(CHART_FORMAT_SHORTHANDS))}, or prefix:/suffix:"
+            )
+        fmt.update(CHART_FORMAT_SHORTHANDS[shorthand])
+    if prefix_key is not None:
+        fmt["prefix"] = prefix_key
+    if suffix_key is not None:
+        fmt["suffix"] = suffix_key
 
     if data_file is not None:
         if categories or series or points:
@@ -1164,7 +1200,7 @@ def _parse_chart_block(number, lines, spec_dir=None):
                 f"the categories"
             )
         return {"type": ctype, "categories": categories, "series": series,
-                "emphasis": emphasis, "callout": callout}
+                "emphasis": emphasis, "callout": callout, "fmt": fmt}
 
     # line or scatter (point charts)
     if not points:
@@ -1184,7 +1220,7 @@ def _parse_chart_block(number, lines, spec_dir=None):
                 f"point"
             )
     return {"type": ctype, "points": points, "markers": markers,
-            "callout": callout}
+            "callout": callout, "fmt": fmt}
 
 
 def _validate_slide_fields(number, role, fields):
