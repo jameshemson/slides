@@ -162,6 +162,14 @@ def _require(tokens, ts_keys):
     return tokens["grid"], ts, roles
 
 
+def _corner_shape(tokens):
+    """The autoshape a panel should use for the brand's corner style: a sharp
+    brand gets a plain rectangle, everything else the default rounded rectangle."""
+    corner = (tokens.get("shape") or {}).get("corner", "rounded")
+    return "rect" if str(corner).lower() in ("sharp", "square", "rect") \
+        else "rounded_rectangle"
+
+
 def _content_span(tokens, slide_w, region=None):
     """(left, width) of the horizontal span a primitive fills.
 
@@ -243,7 +251,7 @@ def plan_card_grid(cards, tokens, slide_w, slide_h, region=None) -> list:
         cl, cw = cells[i]
         emph = bool(c.get("emphasis"))
         panel = {
-            "role": "card-panel", "kind": "box", "container": True,
+            "role": "card-panel", "kind": "box", "container": True, "shape": _corner_shape(tokens),
             "left": cl, "top": card_top, "width": cw, "height": card_h,
             "fill": roles["accent"] if emph else roles["paper"],
         }
@@ -309,7 +317,7 @@ def plan_comparison(sides, tokens, slide_w, slide_h, region=None) -> list:
         cl, cw = cells[i]
         emph = bool(s.get("emphasis"))
         panel = {
-            "role": "comparison-panel", "kind": "box", "container": True,
+            "role": "comparison-panel", "kind": "box", "container": True, "shape": _corner_shape(tokens),
             "left": cl, "top": panel_top, "width": cw, "height": panel_h,
             "fill": roles["accent"] if emph else roles["paper"],
         }
@@ -373,7 +381,7 @@ def plan_process(steps, tokens, slide_w, slide_h, region=None) -> list:
     for i, s in enumerate(steps):
         cl, cw = cells[i]
         elements.append({
-            "role": "process-step", "kind": "box", "container": True,
+            "role": "process-step", "kind": "box", "container": True, "shape": _corner_shape(tokens),
             "left": cl, "top": box_top, "width": cw, "height": box_h,
             "fill": roles["paper"], "stroke": roles["ink"], "stroke_w": _STROKE_EMU,
         })
@@ -544,7 +552,7 @@ def plan_freeform(elements, tokens, slide_w, slide_h, region=None) -> list:
         kind = el["kind"]
         if kind in ("box", "panel"):
             box = {
-                "role": "freeform-panel", "kind": "box", "container": True,
+                "role": "freeform-panel", "kind": "box", "container": True, "shape": _corner_shape(tokens),
                 "left": l, "top": t, "width": w, "height": h,
                 "fill": roles[el["fill"]],
             }
@@ -654,7 +662,7 @@ def plan_tree(root, tokens, slide_w, slide_h, region=None) -> list:
         t = top_of(d)
         emph = bool(node.get("emphasis"))
         panel = {
-            "role": "tree-node", "kind": "box", "container": True,
+            "role": "tree-node", "kind": "box", "container": True, "shape": _corner_shape(tokens),
             "left": left, "top": t, "width": node_w, "height": node_h,
             "fill": roles["accent"] if emph else roles["paper"],
         }

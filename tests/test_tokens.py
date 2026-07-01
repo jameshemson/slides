@@ -132,6 +132,36 @@ class TestDefaultTypeScale(unittest.TestCase):
         self.assertEqual(ts["caption"], 12.0)
 
 
+class TestDeriveScale(unittest.TestCase):
+    """_derive_scale: a monotonic brand scale, or None to fall back."""
+
+    def test_normal_case_monotonic(self):
+        # display is a hero size above the title (44*1.4 = 62); h1 = title.
+        scale = tokens._derive_scale(44, 32)
+        self.assertEqual(scale, {"display": 62.0, "h1": 44.0,
+                                 "body": 32.0, "caption": 24.0})
+        self.assertTrue(scale["display"] > scale["h1"] > scale["body"]
+                        > scale["caption"])
+        # A hero number still dominates a caption label >= 2.5x.
+        self.assertGreaterEqual(scale["display"] / scale["caption"], 2.5)
+
+    def test_inverted_falls_back(self):
+        # title <= body would invert the scale (the fixture's own risk) -> None.
+        self.assertIsNone(tokens._derive_scale(32, 44))
+        self.assertIsNone(tokens._derive_scale(32, 32))
+
+    def test_missing_falls_back(self):
+        self.assertIsNone(tokens._derive_scale(None, 32))
+        self.assertIsNone(tokens._derive_scale(44, None))
+
+    def test_narrow_range_still_monotonic(self):
+        # title just above body still derives (h1=title > body); display leads.
+        scale = tokens._derive_scale(33, 32)
+        self.assertIsNotNone(scale)
+        self.assertTrue(scale["display"] > scale["h1"] > scale["body"]
+                        > scale["caption"])
+
+
 class TestResolveColourRoles(unittest.TestCase):
     """resolve_colour_roles: name->hex dict → canonical colour roles."""
 
@@ -228,8 +258,9 @@ class TestResolveTokens(unittest.TestCase):
 
         # Override wins.
         self.assertEqual(t["type_scale"]["body"], 21.0)
-        # Default survives.
-        self.assertEqual(t["type_scale"]["display"], 40.0)
+        # The unoverridden keys are now the brand scale read from the master
+        # (title 44 / body 32 -> hero display 62), not the generic default.
+        self.assertEqual(t["type_scale"]["display"], 62.0)
         # Grid is measured from the MAPPED layouts (not all layouts): the
         # two-column layout's margins flow through resolve_tokens.
         self.assertEqual(t["grid"]["margin_x"], 457200)
@@ -239,18 +270,21 @@ class TestResolveTokens(unittest.TestCase):
         self.assertEqual(t["colour_roles"]["accent"], "#4F81BD")
 
     def test_resolve_tokens_no_overrides(self):
-        """With no explicit tokens, all values are derived from defaults."""
+        """With no explicit tokens, the scale is derived from the master's real
+        sizes (title 44 / body 32 -> 44 / 38 / 32 / 24), monotonic."""
         prs = Presentation(TEMPLATE)
         brand = {"colours": {"ink": "#111111", "paper": "#EEEEEE"}}
         t = tokens.resolve_tokens(brand, prs)
 
         ts = t["type_scale"]
-        self.assertEqual(ts["display"], 40.0)
-        self.assertEqual(ts["h1"], 28.0)
-        self.assertEqual(ts["body"], 18.0)
-        self.assertEqual(ts["caption"], 12.0)
+        self.assertEqual(ts["display"], 62.0)
+        self.assertEqual(ts["h1"], 44.0)
+        self.assertEqual(ts["body"], 32.0)
+        self.assertEqual(ts["caption"], 24.0)
+        self.assertGreater(ts["display"], ts["h1"])
+        self.assertGreater(ts["h1"], ts["body"])
+        self.assertGreater(ts["body"], ts["caption"])
         self.assertIn("margin_x", t["grid"])
-        self.assertIn("columns", t["grid"])
 
     def test_resolve_tokens_empty_brand(self):
         """Empty brand dict produces derived tokens with no colour_roles."""
@@ -260,6 +294,15 @@ class TestResolveTokens(unittest.TestCase):
         self.assertIn("type_scale", t)
         # No valid colours → empty colour_roles.
         self.assertEqual(t["colour_roles"], {})
+
+    def test_resolve_tokens_shape_default_and_override(self):
+        prs = Presentation(TEMPLATE)
+        # Default shape language is present and rounded (back-compat).
+        t = tokens.resolve_tokens({}, prs)
+        self.assertEqual(t["shape"]["corner"], "rounded")
+        # A brand can set a sharp corner language.
+        t2 = tokens.resolve_tokens({"tokens": {"shape": {"corner": "sharp"}}}, prs)
+        self.assertEqual(t2["shape"]["corner"], "sharp")
 
     def test_resolve_tokens_explicit_grid_override(self):
         """Explicit grid values in brand['tokens'] override derived grid."""

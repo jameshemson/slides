@@ -284,6 +284,18 @@ class TestNewPrimitives(unittest.TestCase):
         ], TOKENS, SLIDE_W, SLIDE_H)
         self.assertEqual(els[0]["fill"], "#4F81BD")  # role name -> brand hex
 
+    def test_panel_corner_honours_shape_token(self):
+        # Default (no shape token) -> rounded; a sharp brand -> plain rectangle.
+        cards = [{"label": "A"}, {"label": "B"}, {"label": "C"}]
+        default = plan_card_grid(cards, TOKENS, SLIDE_W, SLIDE_H)
+        panel = next(e for e in default if e["role"] == "card-panel")
+        self.assertEqual(panel["shape"], "rounded_rectangle")
+
+        sharp = dict(TOKENS, shape={"corner": "sharp"})
+        panel2 = next(e for e in plan_card_grid(cards, sharp, SLIDE_W, SLIDE_H)
+                      if e["role"] == "card-panel")
+        self.assertEqual(panel2["shape"], "rect")
+
     def test_tree_org_chart_lint_clean(self):
         root = _node("CEO", _node("Eng"), _node("Sales"), _node("Ops"))
         els = plan_tree(root, TOKENS, SLIDE_W, SLIDE_H)

@@ -187,6 +187,55 @@ def default_type_scale():
     }
 
 
+def default_shape():
+    """Generic default shape language for the box primitives.
+
+    `corner` is `rounded` (the current look) or `sharp`; `hairline_pt` is the
+    panel outline weight. A brand.json `tokens.shape` overrides these, so a deck
+    can carry the brand's own corner style without editing code. Kept optional
+    and defaulting to today's rounded look, so existing decks are unchanged.
+    """
+    return {"corner": "rounded", "hairline_pt": 1.0}
+
+
+def _derive_scale(title, body):
+    """Derive a 4-step scale from a master's title/body sizes, or None.
+
+    Guarantees a strictly decreasing display > h1 > body > caption. Returns None
+    when the inputs are missing or would invert the scale (e.g. title <= body) —
+    the caller then falls back to the generic default. PURE: unit-tested both ways.
+    """
+    if not title or not body or title <= body:
+        return None
+    # display is the hero step (stat numbers, big statements) — ABOVE the title
+    # placeholder; h1 is the title; body is the body; caption sits below it. This
+    # keeps a wide display:caption range so a hero number still dominates its
+    # label, even when a brand's title and body sizes are close.
+    scale = {
+        "display": float(round(title * 1.4)),
+        "h1": float(title),
+        "body": float(body),
+        "caption": float(max(round(body * 0.75), 8)),
+    }
+    if scale["display"] > scale["h1"] > scale["body"] > scale["caption"]:
+        return scale
+    return None
+
+
+def type_scale_from_master(prs):
+    """A brand type scale read from the template master (or None to fall back).
+
+    Reads the real title/body sizes via pptxlib.read_type_scale and derives a
+    monotonic 4-step scale, so composed slides use the brand's own type sizes
+    rather than the generic default. None when the master can't be read
+    monotonically.
+    """
+    from pptxlib import read_type_scale  # noqa: PLC0415
+
+    sizes = read_type_scale(prs)
+    return _derive_scale(sizes.get("title"), sizes.get("body"))
+
+
 # ---------------------------------------------------------------------------
 # Colour roles
 # ---------------------------------------------------------------------------
@@ -320,8 +369,9 @@ def resolve_tokens(brand, prs):
 
     derived = {
         "grid": derive_grid(prs, layout_indices),
-        "type_scale": default_type_scale(),
+        "type_scale": type_scale_from_master(prs) or default_type_scale(),
         "colour_roles": resolve_colour_roles(brand.get("colours", {}) or {}),
+        "shape": default_shape(),
     }
 
     explicit = brand.get("tokens", {}) or {}
