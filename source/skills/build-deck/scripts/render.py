@@ -74,8 +74,8 @@ CHART_ALLOWED_ROLES = {"title-content"}
 # at module load, so the list is duplicated rather than imported).
 # Two data shapes: category charts (categories + series) and point charts
 # (x/y points).
-CHART_TYPES = ("bar", "column", "line", "pie", "scatter")
-CATEGORY_CHART_TYPES = ("bar", "column", "pie")
+CHART_TYPES = ("bar", "column", "line", "pie", "scatter", "waterfall")
+CATEGORY_CHART_TYPES = ("bar", "column", "pie", "waterfall")
 POINT_CHART_TYPES = ("line", "scatter")
 REQUIRED_BRAND_KEYS = ("template", "fonts", "colours", "layout_map")
 
@@ -250,7 +250,7 @@ def _parse_slide(number, lines, spec_dir=None):
     resolves a chart's relative `data:` CSV path.
     """
     if _prescan_layout(lines) == "composed":
-        return _parse_composed_slide(number, lines)
+        return _parse_composed_slide(number, lines, spec_dir)
 
     role = None
     fields = {}
@@ -437,7 +437,7 @@ def _parse_block_header(number, rest):
     return btype, _parse_placement(number, place_text)
 
 
-def _parse_composed_slide(number, lines):
+def _parse_composed_slide(number, lines, spec_dir=None):
     """Parse a `composed` slide into title, blocks, and meta. Raises SpecError.
 
     Recognises `Title:` (optional, inline), `Notes:` (optional, meta), and one
@@ -503,7 +503,7 @@ def _parse_composed_slide(number, lines):
 
     parsed_blocks = []
     for b in blocks:
-        parsed = _parse_composed_block(number, b)
+        parsed = _parse_composed_block(number, b, spec_dir)
         parsed["placement"] = b.get("placement")
         parsed_blocks.append(parsed)
     fields = {"Title": title} if title else {}
@@ -521,7 +521,7 @@ def _parse_composed_slide(number, lines):
 # is the vocabulary a composed slide may draw from; render dispatches on it too.
 COMPOSED_BLOCK_TYPES = (
     "stat-row", "card-grid", "comparison", "process", "timeline", "tree",
-    "cycle", "matrix", "icon-list", "freeform",
+    "cycle", "matrix", "icon-list", "table", "freeform",
 )
 
 # Freeform vocabulary — the escape hatch. Colours are role names and sizes are
@@ -726,7 +726,7 @@ def _parse_tree_items(number, items):
     return root
 
 
-def _parse_composed_block(number, block):
+def _parse_composed_block(number, block, spec_dir=None):
     """Parse one composed block's raw item lines by type. Raises SpecError.
 
     Item grammar (a leading '-'/'*' bullet and a leading '!' emphasis marker are
@@ -874,6 +874,68 @@ def _parse_composed_block(number, block):
             )
         return {"type": "matrix",
                 "spec": {"x": xlab, "y": ylab, "quadrants": quads}}
+
+    if btype == "table":
+        # Key lines (matrix x:/y: precedent): `data:` names a CSV, `emphasis:`
+        # marks a data row by its first cell. Every other item line is a table
+        # row; the first is the header, split on '|'; a leading '!' via
+        # _clean_item flags a data row.
+        data_file = emphasis_label = None
+        row_lines = []
+        for item in items:
+            low = item.strip().lower()
+            if low.startswith("data:"):
+                data_file = item.split(":", 1)[1].strip()
+                continue
+            if low.startswith("emphasis:"):
+                emphasis_label = item.split(":", 1)[1].strip()
+                continue
+            row_lines.append(item)
+
+        if data_file is not None:
+            if row_lines:
+                raise SpecError(
+                    f"slide {number}: table 'data:' cannot be combined with "
+                    f"inline rows (use one or the other)"
+                )
+            header, rows = _read_table_csv(number, data_file, spec_dir)
+        else:
+            if not row_lines:
+                raise SpecError(
+                    f"slide {number}: table block needs a header row and at "
+                    f"least one data row"
+                )
+            header = _pipe_fields(_clean_item(row_lines[0])[1])
+            rows = []
+            for item in row_lines[1:]:
+                emph, text = _clean_item(item)
+                rows.append({"cells": _pipe_fields(text), "emphasis": emph})
+
+        if len(header) < 2:
+            raise SpecError(
+                f"slide {number}: a one-column table is a list, not a table; "
+                f"use 'Block: icon-list' or a Body with bullets"
+            )
+        for row in rows:
+            if len(row["cells"]) != len(header):
+                raise SpecError(
+                    f"slide {number}: table row {' | '.join(row['cells'])!r} "
+                    f"has {len(row['cells'])} cells but the header has "
+                    f"{len(header)} (ragged row)"
+                )
+        if emphasis_label is not None:
+            first_col = [r["cells"][0] for r in rows if r["cells"]]
+            matched = False
+            for r in rows:
+                if r["cells"] and r["cells"][0] == emphasis_label:
+                    r["emphasis"] = True
+                    matched = True
+            if not matched:
+                raise SpecError(
+                    f"slide {number}: table emphasis {emphasis_label!r} matches "
+                    f"no row; first-column values are: {', '.join(first_col)}"
+                )
+        return {"type": "table", "table": {"header": header, "rows": rows}}
 
     if btype == "icon-list":
         rows = []
@@ -1070,6 +1132,36 @@ def _read_chart_csv(number, path, ctype):
     return {"points": points}
 
 
+def _read_table_csv(number, data_file, spec_dir):
+    """Read a table CSV into (header, rows). Raises SpecError naming the file.
+
+    Header row then data rows, all plain strings — a table CSV carries no
+    numeric coercion (a table shows values verbatim). Rows come back in the
+    same `{"cells": [...], "emphasis": bool}` shape as inline rows; emphasis is
+    always False here and is set later by the `emphasis:` key line.
+    """
+    path = (data_file if os.path.isabs(data_file)
+            else os.path.join(spec_dir or ".", data_file))
+    if not os.path.isfile(path):
+        raise SpecError(f"slide {number}: table data file not found: {path}")
+    try:
+        with open(path, newline="", encoding="utf-8") as fh:
+            raw = [r for r in csv.reader(fh) if any(c.strip() for c in r)]
+    except UnicodeDecodeError:
+        raise SpecError(
+            f"slide {number}: table data file {path!r} is not valid UTF-8"
+        )
+    if len(raw) < 2:
+        raise SpecError(
+            f"slide {number}: table data {path!r} needs a header row and at "
+            f"least one data row"
+        )
+    header = [c.strip() for c in raw[0]]
+    rows = [{"cells": [c.strip() for c in r], "emphasis": False}
+            for r in raw[1:]]
+    return header, rows
+
+
 def _parse_chart_block(number, lines, spec_dir=None):
     """Parse a Chart block's raw lines into a chart dict. Raises SpecError.
 
@@ -1083,7 +1175,7 @@ def _parse_chart_block(number, lines, spec_dir=None):
                    callout: str|None}
     """
     ctype = categories = callout = emphasis = data_file = None
-    fmt_key = prefix_key = suffix_key = None
+    fmt_key = prefix_key = suffix_key = total_key = None
     points = None
     series = []
     markers = []
@@ -1111,6 +1203,8 @@ def _parse_chart_block(number, lines, spec_dir=None):
             prefix_key = value
         elif key == "suffix":
             suffix_key = value
+        elif key == "total":
+            total_key = value
         elif key == "categories":
             categories = [c.strip() for c in value.split(",") if c.strip()]
         elif key == "emphasis":
@@ -1159,6 +1253,21 @@ def _parse_chart_block(number, lines, spec_dir=None):
     if suffix_key is not None:
         fmt["suffix"] = suffix_key
 
+    # `total:` only means anything on a waterfall (the computed end bar). Absent
+    # -> "Total"; `none` -> no total bar; any other value renames the bar.
+    if ctype == "waterfall":
+        if total_key is None:
+            total_label = "Total"
+        elif total_key.strip().lower() == "none":
+            total_label = None
+        else:
+            total_label = total_key.strip()
+    elif total_key is not None:
+        raise SpecError(
+            f"slide {number}: 'total:' is only supported on a waterfall chart, "
+            f"not {ctype!r}"
+        )
+
     if data_file is not None:
         if categories or series or points:
             raise SpecError(
@@ -1187,6 +1296,17 @@ def _parse_chart_block(number, lines, spec_dir=None):
                 f"slide {number}: a pie chart needs exactly one series, not "
                 f"{len(series)}"
             )
+        if ctype == "waterfall" and len(series) != 1:
+            raise SpecError(
+                f"slide {number}: a waterfall chart needs exactly one series "
+                f"of signed deltas, not {len(series)}"
+            )
+        if ctype == "waterfall" and emphasis is not None:
+            raise SpecError(
+                f"slide {number}: 'emphasis' is not supported on a waterfall "
+                f"chart; the sign colouring already marks rises and falls — use "
+                f"'callout' to point at a bar instead"
+            )
         for s in series:
             if len(s["values"]) != len(categories):
                 raise SpecError(
@@ -1199,6 +1319,9 @@ def _parse_chart_block(number, lines, spec_dir=None):
                 f"slide {number}: chart emphasis {emphasis!r} is not one of "
                 f"the categories"
             )
+        if ctype == "waterfall":
+            return {"type": ctype, "categories": categories, "series": series,
+                    "callout": callout, "fmt": fmt, "total_label": total_label}
         return {"type": ctype, "categories": categories, "series": series,
                 "emphasis": emphasis, "callout": callout, "fmt": fmt}
 
@@ -1902,6 +2025,20 @@ def chart_to_note(chart):
         desc = f"{ctype.capitalize()} chart. {series}."
         if chart.get("emphasis"):
             desc += f" Emphasis: {chart['emphasis']}."
+    elif ctype == "waterfall":
+        cats = chart["categories"]
+        values = chart["series"][0]["values"]
+        deltas = ", ".join(
+            f"{c} {'+' if v >= 0 else '-'}{_num_str(abs(v))}"
+            for c, v in zip(cats, values)
+        )
+        total = sum(values)
+        desc = f"Waterfall chart. {deltas}."
+        label = chart.get("total_label")
+        if label:
+            desc += f" {label}: {_num_str(total)}."
+        else:
+            desc += f" (Running total: {_num_str(total)}.)"
     else:  # line or scatter
         pts = ", ".join(
             f"({_num_str(x)}, {_num_str(y)})" for x, y in chart["points"]
