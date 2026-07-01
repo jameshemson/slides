@@ -4,6 +4,36 @@ All notable changes to the slides skill pack are recorded here. The format
 follows [Keep a Changelog](https://keepachangelog.com/), and the pack uses
 [semantic versioning](https://semver.org/).
 
+## [0.9.0] - 2026-07-01
+
+More of the diagram vocabulary, and data that flows straight into a chart.
+Back-compatible.
+
+### Added
+
+- **Cycle and matrix diagrams.** `Block: cycle` places 3–6 stages on a ring
+  joined by edges (node sizing tied to the ring spacing, so nodes never overlap);
+  `Block: matrix` is a 2×2 of labelled quadrants with optional `x:` / `y:` axis
+  captions and a `!` hero quadrant. Both are token-bound and lint-clean.
+- **Icons on process and comparison.** A `[icon-name]` prefix now works on a
+  `process` step (the icon takes the number's slot, so the element count stays
+  flat) and a `comparison` panel — completing icons across every block that has
+  them (freeform, icon-list, card, tree, process, comparison).
+- **Data → chart from a CSV.** A `Chart:` block may read its data from
+  `data: <file.csv>` (resolved against the spec's folder) instead of typed-inline
+  series — a spreadsheet exports straight to a chart. A category CSV is a header
+  row + one row per category; a point CSV is `x, y` columns. `data:` and the
+  inline `categories`/`series`/`points` are mutually exclusive.
+
+### Fixed
+
+- **Multi-series grouped bars drew the second series invisibly.** `charts.py`
+  resolved the `muted` role to the last palette colour — `paper` (white) for most
+  brands — so a second grouped series, and any de-emphasised single-series bar,
+  rendered white on a white background. `muted` now falls back to a neutral grey
+  (grey-push), never paper; `ink` to a dark default. Exposed by the new CSV path
+  (a Revenue/Cost CSV is exactly the multi-series case).
+
 ## [0.8.0] - 2026-07-01
 
 A brand-constrained visual vocabulary. The composed role gains icons, a
