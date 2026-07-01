@@ -530,3 +530,134 @@ class TestNewPrimitiveReview(unittest.TestCase):
              "placement": {"cols": (9, 12), "rows": (1, 6)}},
         ], TOKENS, SLIDE_W, SLIDE_H)
         self.assertIn("freeform-one-accent", self._ids(els))
+
+
+# ---------------------------------------------------------------------------
+# table advisory rules (T-005, red-first for REQ-005)
+#
+# A table is ONE element (kind "table", role "table-grid"); unlike the other
+# primitives it is a single native GraphicFrame, so the composition rules read
+# the element's structural keys directly rather than per-cell pseudo-elements.
+#
+# PINNED element-shape contract the three rules inspect (defined here; T-010
+# must satisfy it):
+#   {
+#     "role": "table-grid",
+#     "kind": "table",
+#     "text": "table: " + " | ".join(header),
+#     "left"/"top"/"width"/"height": EMU ints,
+#     "header": [str, ...],                 # column headers
+#     "rows": [[str, ...], ...],            # DATA rows only (header excluded),
+#                                           #   a list of lists of cell strings
+#     "emphasis_rows": [int, ...],          # indices into `rows` that are
+#                                           #   accent-emphasised (0..len(rows)-1)
+#   }
+# ---------------------------------------------------------------------------
+
+TABLE_RULE_IDS = ("table-count", "table-cell-terseness", "table-one-accent")
+
+
+def _terse_rows(n, ncols=3):
+    """`n` data rows of terse cells (each cell <= 3 words)."""
+    return [[f"R{i}C{j}" for j in range(ncols)] for i in range(n)]
+
+
+def table_element(rows, header=None, emphasis_rows=None):
+    """Build a single table-grid element matching the pinned contract above."""
+    if header is None:
+        header = ["Plan", "Price", "Seats"]
+    if emphasis_rows is None:
+        emphasis_rows = []
+    return {
+        "role": "table-grid",
+        "kind": "table",
+        "text": "table: " + " | ".join(header),
+        "left": TOKENS["grid"]["margin_x"],
+        "top": TOKENS["grid"]["margin_top"] + 200000,
+        "width": 4000000,
+        "height": 2000000,
+        "header": list(header),
+        "rows": [list(r) for r in rows],
+        "emphasis_rows": list(emphasis_rows),
+    }
+
+
+def _assert_rule_present(test, rid):
+    """Clean red today: the three table rule ids are absent from RULES."""
+    ids = [r["id"] for r in composition.RULES]
+    test.assertIn(
+        rid, ids,
+        f"advisory rule {rid!r} is not yet registered in composition.RULES",
+    )
+
+
+class TestTableRulesPresent(unittest.TestCase):
+    """All three table advisory rules must be registered (fails red today)."""
+
+    def test_all_three_ids_present(self):
+        ids = [r["id"] for r in composition.RULES]
+        for rid in TABLE_RULE_IDS:
+            with self.subTest(rule_id=rid):
+                self.assertIn(rid, ids)
+
+    def test_tiers(self):
+        # table-count and table-cell-terseness are quality; table-one-accent slop.
+        _assert_rule_present(self, "table-count")
+        _assert_rule_present(self, "table-cell-terseness")
+        _assert_rule_present(self, "table-one-accent")
+        self.assertEqual(rule_by_id("table-count")["tier"], "quality")
+        self.assertEqual(rule_by_id("table-cell-terseness")["tier"], "quality")
+        self.assertEqual(rule_by_id("table-one-accent")["tier"], "slop")
+        self.assertEqual(rule_by_id("table-count")["applies_to"], "table-grid")
+
+
+class TestTableCount(unittest.TestCase):
+    """table-count (quality): a table of ~5 rows is fine; 7 data rows is a wall."""
+
+    def test_pass(self):
+        _assert_rule_present(self, "table-count")
+        rule = rule_by_id("table-count")
+        els = [table_element(_terse_rows(5))]
+        self.assertTrue(rule["check"](els, TOKENS, SLIDE_W, SLIDE_H))
+
+    def test_trigger(self):
+        _assert_rule_present(self, "table-count")
+        rule = rule_by_id("table-count")
+        els = [table_element(_terse_rows(7))]
+        self.assertFalse(rule["check"](els, TOKENS, SLIDE_W, SLIDE_H))
+
+
+class TestTableCellTerseness(unittest.TestCase):
+    """table-cell-terseness (quality): a 12-word cell is prose; terse cells pass."""
+
+    def test_pass(self):
+        _assert_rule_present(self, "table-cell-terseness")
+        rule = rule_by_id("table-cell-terseness")
+        els = [table_element(_terse_rows(3))]
+        self.assertTrue(rule["check"](els, TOKENS, SLIDE_W, SLIDE_H))
+
+    def test_trigger(self):
+        _assert_rule_present(self, "table-cell-terseness")
+        rule = rule_by_id("table-cell-terseness")
+        wordy = "This cell holds a very long sentence with far too many words"
+        self.assertEqual(len(wordy.split()), 12)
+        rows = _terse_rows(3)
+        rows[1][2] = wordy  # one 12-word data cell
+        els = [table_element(rows)]
+        self.assertFalse(rule["check"](els, TOKENS, SLIDE_W, SLIDE_H))
+
+
+class TestTableOneAccent(unittest.TestCase):
+    """table-one-accent (slop): one emphasis row resolves; two is a rainbow."""
+
+    def test_pass(self):
+        _assert_rule_present(self, "table-one-accent")
+        rule = rule_by_id("table-one-accent")
+        els = [table_element(_terse_rows(4), emphasis_rows=[1])]
+        self.assertTrue(rule["check"](els, TOKENS, SLIDE_W, SLIDE_H))
+
+    def test_trigger(self):
+        _assert_rule_present(self, "table-one-accent")
+        rule = rule_by_id("table-one-accent")
+        els = [table_element(_terse_rows(4), emphasis_rows=[0, 2])]
+        self.assertFalse(rule["check"](els, TOKENS, SLIDE_W, SLIDE_H))

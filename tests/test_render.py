@@ -31,6 +31,14 @@ RENDER_PY = os.path.join(
     REPO_ROOT, "source", "skills", "build-deck", "scripts", "render.py"
 )
 
+# The parse-contract tests at the bottom of this file (TableParseTest,
+# WaterfallParseTest) call render.py's parse functions in-process, so import it
+# as a module. Its own directory carries pptxlib; put that on the path first.
+# The subprocess-based tests above do not use this import; it is purely
+# additive.
+sys.path.insert(0, os.path.dirname(RENDER_PY))
+import render  # noqa: E402
+
 # tests/fixtures/sample-template.pptx has its layouts renamed to role names by
 # generate-fixture-template.py. `quote` has no dedicated layout and shares the
 # `section` layout (TITLE + BODY) — index 2.
@@ -553,6 +561,239 @@ class ChartRenderTest(unittest.TestCase):
         summary = (result.stdout + result.stderr).lower()
         self.assertIn("matplotlib", summary)
         self.assertIn("pip install matplotlib", summary)
+
+
+# --- T-001 (Wave 0, red-first): parse contract for the `table` composed block
+# and the `waterfall` chart type. Both features are unimplemented, so every case
+# below fails right now for a named pre-implementation reason:
+#   * a `table` block  -> SpecError "unknown composed block type 'table'"
+#     (raised at the top of _parse_composed_block, before any table logic — so
+#      the shape/CSV cases raise it instead of returning, and the malformed
+#      cases raise it instead of their eventual table-specific message).
+#   * a `waterfall` chart -> SpecError "unknown chart type 'waterfall'"
+#     (raised after the _parse_chart_block key loop). The two `total:`-bearing
+#     cases raise earlier, on the not-yet-recognised `total:` key -> SpecError
+#     "unknown chart key 'total'"; the chart_to_note case falls through the
+#     point-chart branch -> KeyError 'points'. Each is the genuine current fault.
+# These assert the desired end-state behaviour; they go green when T-006 lands.
+
+
+class TableParseTest(unittest.TestCase):
+    """REQ-001/002/003: the `table` composed block parse contract.
+
+    The parse branch must return, nested under a `"table"` key exactly as
+    `matrix` nests under `"spec"`:
+
+        {"type": "table",
+         "table": {"header": [...],
+                   "rows": [{"cells": [...], "emphasis": bool}, ...]}}
+    """
+
+    def _parse_table(self, body, files=None):
+        """Write a one-slide composed spec (plus optional sidecar files) and
+        parse it through the public `parse_spec` entry point, so `spec_dir` is
+        threaded exactly as at runtime. Returns the parsed first block dict, or
+        propagates SpecError for a malformed spec."""
+        tmp = tempfile.mkdtemp(prefix="slides-table-parse-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        for name, content in (files or {}).items():
+            with open(os.path.join(tmp, name), "w", encoding="utf-8") as fh:
+                fh.write(content)
+        spec = ("---\ndeck: d\naudience: a\n---\n\n"
+                "## Slide 1\nlayout: composed\n" + body)
+        spec_path = os.path.join(tmp, "deck.md")
+        with open(spec_path, "w", encoding="utf-8") as fh:
+            fh.write(spec)
+        return render.parse_spec(spec_path)[0]["blocks"][0]
+
+    def test_header_and_rows_shape(self):
+        block = self._parse_table(
+            "Block: table\n"
+            "Name | Q1 | Q2\n"
+            "Alpha | 1 | 2\n"
+            "Beta | 3 | 4\n"
+        )
+        self.assertEqual(block["type"], "table")
+        self.assertEqual(block["table"], {
+            "header": ["Name", "Q1", "Q2"],
+            "rows": [
+                {"cells": ["Alpha", "1", "2"], "emphasis": False},
+                {"cells": ["Beta", "3", "4"], "emphasis": False},
+            ],
+        })
+
+    def test_emphasis_marker_sets_row_flag(self):
+        block = self._parse_table(
+            "Block: table\n"
+            "Name | Q1\n"
+            "Alpha | 1\n"
+            "! Beta | 2\n"
+        )
+        rows = block["table"]["rows"]
+        self.assertEqual(rows[0], {"cells": ["Alpha", "1"], "emphasis": False})
+        self.assertEqual(rows[1], {"cells": ["Beta", "2"], "emphasis": True})
+
+    def test_ragged_row_raises(self):
+        # Row cell count != header cell count.
+        with self.assertRaisesRegex(render.SpecError, r"(?i)cell|ragged"):
+            self._parse_table(
+                "Block: table\n"
+                "Name | Q1 | Q2\n"
+                "Alpha | 1\n"
+            )
+
+    def test_one_column_header_raises(self):
+        # A single-column table is a list; the message points elsewhere.
+        with self.assertRaisesRegex(render.SpecError, r"(?i)column"):
+            self._parse_table(
+                "Block: table\n"
+                "OnlyOne\n"
+                "Alpha\n"
+            )
+
+    def test_data_csv_loads_header_and_rows(self):
+        block = self._parse_table(
+            "Block: table\n"
+            "data: costs.csv\n",
+            files={"costs.csv": "Item,Q1,Q2\nAlpha,1,2\nBeta,3,4\n"},
+        )
+        self.assertEqual(block["type"], "table")
+        self.assertEqual(block["table"], {
+            "header": ["Item", "Q1", "Q2"],
+            "rows": [
+                {"cells": ["Alpha", "1", "2"], "emphasis": False},
+                {"cells": ["Beta", "3", "4"], "emphasis": False},
+            ],
+        })
+
+    def test_data_plus_inline_rows_raises(self):
+        # `data:` and inline rows are mutually exclusive.
+        with self.assertRaisesRegex(render.SpecError, r"(?i)inline|combined"):
+            self._parse_table(
+                "Block: table\n"
+                "data: costs.csv\n"
+                "Extra | 9 | 9\n",
+                files={"costs.csv": "Item,Q1,Q2\nAlpha,1,2\n"},
+            )
+
+    def test_emphasis_key_marks_matching_row(self):
+        block = self._parse_table(
+            "Block: table\n"
+            "data: costs.csv\n"
+            "emphasis: Beta\n",
+            files={"costs.csv": "Item,Q1\nAlpha,1\nBeta,2\n"},
+        )
+        rows = block["table"]["rows"]
+        self.assertEqual(rows[0], {"cells": ["Alpha", "1"], "emphasis": False})
+        self.assertEqual(rows[1], {"cells": ["Beta", "2"], "emphasis": True})
+
+    def test_emphasis_key_no_match_raises(self):
+        # An emphasis label matching no first cell fails, naming the label.
+        with self.assertRaisesRegex(render.SpecError, r"Zeta"):
+            self._parse_table(
+                "Block: table\n"
+                "data: costs.csv\n"
+                "emphasis: Zeta\n",
+                files={"costs.csv": "Item,Q1\nAlpha,1\nBeta,2\n"},
+            )
+
+
+class WaterfallParseTest(unittest.TestCase):
+    """REQ-006/007/010: the `waterfall` chart parse contract.
+
+    A waterfall takes `categories` plus exactly one `series` of signed deltas,
+    accepts an optional `total:` (default label "Total", `none` disables it),
+    and rejects `emphasis:` (the sign colouring already encodes emphasis).
+    """
+
+    def _parse_chart(self, lines, spec_dir=None):
+        return render._parse_chart_block(1, lines, spec_dir)
+
+    def test_type_accepted_with_single_series(self):
+        chart = self._parse_chart([
+            "type: waterfall",
+            "categories: Start, Rent, Food, Save",
+            "series Cash: 40, -15, -10, 25",
+        ])
+        self.assertEqual(chart["type"], "waterfall")
+        self.assertEqual(chart["categories"], ["Start", "Rent", "Food", "Save"])
+        self.assertEqual(len(chart["series"]), 1)
+        self.assertEqual(chart["series"][0]["values"], [40, -15, -10, 25])
+
+    def test_two_series_raises(self):
+        with self.assertRaisesRegex(render.SpecError, r"(?i)series"):
+            self._parse_chart([
+                "type: waterfall",
+                "categories: A, B",
+                "series X: 1, 2",
+                "series Y: 3, 4",
+            ])
+
+    def test_emphasis_raises(self):
+        with self.assertRaisesRegex(render.SpecError, r"(?i)emphasis"):
+            self._parse_chart([
+                "type: waterfall",
+                "emphasis: A",
+                "categories: A, B",
+                "series X: 1, 2",
+            ])
+
+    def test_total_defaults_to_total_label(self):
+        chart = self._parse_chart([
+            "type: waterfall",
+            "categories: A, B, C",
+            "series X: 10, -5, 20",
+        ])
+        self.assertEqual(chart.get("total_label"), "Total")
+
+    def test_total_none_disables_total(self):
+        chart = self._parse_chart([
+            "type: waterfall",
+            "categories: A, B",
+            "series X: 10, -5",
+            "total: none",
+        ])
+        self.assertIsNone(chart["total_label"])
+
+    def test_total_on_non_waterfall_raises(self):
+        with self.assertRaisesRegex(render.SpecError, r"(?i)waterfall"):
+            self._parse_chart([
+                "type: column",
+                "categories: A, B",
+                "series X: 1, 2",
+                "total: 5",
+            ])
+
+    def test_data_csv_single_series(self):
+        tmp = tempfile.mkdtemp(prefix="slides-waterfall-parse-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        with open(os.path.join(tmp, "wf.csv"), "w", encoding="utf-8") as fh:
+            fh.write("Stage,Delta\nStart,40\nRent,-15\nFood,-10\n")
+        chart = self._parse_chart(
+            ["type: waterfall", "data: wf.csv"], spec_dir=tmp)
+        self.assertEqual(chart["type"], "waterfall")
+        self.assertEqual(chart["categories"], ["Start", "Rent", "Food"])
+        self.assertEqual(len(chart["series"]), 1)
+        self.assertEqual(chart["series"][0]["values"], [40, -15, -10])
+
+    def test_chart_to_note_includes_signed_deltas_and_total(self):
+        chart = {
+            "type": "waterfall",
+            "categories": ["Start", "Rent", "Save"],
+            "series": [{"name": "Cash", "values": [40, -15, 25]}],
+            "emphasis": None,
+            "callout": None,
+            "fmt": {},
+            "total_label": "Total",
+        }
+        note = render.chart_to_note(chart)
+        self.assertIn("+40", note)
+        self.assertTrue(
+            "-15" in note or "−15" in note,
+            f"signed negative delta missing from note: {note!r}",
+        )
+        self.assertIn("+25", note)
+        self.assertIn("50", note)  # computed total: 40 - 15 + 25
 
 
 if __name__ == "__main__":
