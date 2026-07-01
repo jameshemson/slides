@@ -67,6 +67,10 @@ The defaults are good by construction; these warn when a spec strays.
 | `timeline-count` | quality | ~3–6 milestones; more is a table on a rail. | report#4 (Cowan) |
 | `timeline-emphasis` | slop | One milestone is the turn; an even dotted rule has no hierarchy. | report#7; Visme (hierarchy) |
 | `timeline-terseness` | quality | A date + a ≤ 3-word event, not a paragraph. | report#3; Evergreen |
+| `tree-count` | quality | ~3–8 nodes; more is a diagram, not a slide. | report#4 (Cowan) |
+| `tree-label-terseness` | quality | Node labels ≤ 4 words. | report#3 |
+| `tree-one-accent` | slop | At most one node leads (accent); the rest are the grey field. | report#7 |
+| `icon-list-count` | quality | ~3–6 rows in an icon list. | report#4 (Cowan) |
 | `freeform-one-accent` | slop | The one freeform rule: grey-push the field, keep the accent to one or two marks. | report#7 |
 
 The `freeform` block is otherwise deliberately advisory-free: it trades
