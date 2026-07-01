@@ -29,8 +29,12 @@ _TICK_SIZE = 14
 _ANNOT_SIZE = 14
 _BAR_THICK = 0.6
 _LINE_W = 3.2
+_CONNECTOR_W = 1.4  # thin waterfall connector between consecutive bars
 
-CHART_TYPES = ("bar", "column", "line", "pie", "scatter")
+# Kept in sync with render.py's CHART_TYPES (D-010): the two tuples are
+# deliberately duplicated so render.py never imports matplotlib. Both change
+# together.
+CHART_TYPES = ("bar", "column", "line", "pie", "scatter", "waterfall")
 
 
 class ChartError(Exception):
@@ -131,6 +135,8 @@ def render_png(chart, colours, font, out_path):
             _draw_pie(ax, chart, emphasis, muted, spend, ink)
         elif ctype == "scatter":
             _draw_scatter(ax, chart, emphasis, muted, spend, ink)
+        elif ctype == "waterfall":
+            _draw_waterfall(ax, chart, emphasis, muted, spend, ink)
         else:  # line
             _draw_line(ax, chart, emphasis, muted, spend, ink)
         fig.savefig(out_path, dpi=_DPI, bbox_inches="tight",
@@ -160,6 +166,14 @@ def _fmt(v, fmt=None):
                 return f"{prefix}{num}{unit}"
     num = str(int(v)) if float(v).is_integer() else f"{v:g}"
     return f"{prefix}{num}{suffix}"
+
+
+def _signed_fmt(v, fmt=None):
+    """Format a signed delta label (D-007): a leading sign then _fmt of the
+    magnitude, e.g. `+$40k` / `-$15k`. Zero reads as `+0` (styled via _fmt).
+    The sign is explicit; the magnitude carries the caller's prefix/suffix."""
+    sign = "-" if v < 0 else "+"
+    return sign + _fmt(abs(v), fmt)
 
 
 def _set_xlabels(ax, cats):
@@ -235,6 +249,108 @@ def _draw_bars(ax, chart, emphasis, muted, spend, ink, vertical):
         for t in leg.get_texts():
             t.set_color(ink)
 
+    _callout(ax, chart, spend, ink)
+
+
+# --- waterfall (running-total floating bars) ---------------------------------
+
+
+def _waterfall_segments(values):
+    """Pure geometry for a waterfall (no matplotlib). Given signed deltas,
+    return (bottoms, heights, running):
+
+    - `running[i]` is the cumulative total AFTER applying delta i.
+    - `heights[i]` is the non-negative magnitude of delta i (bar height).
+    - `bottoms[i]` is the lower edge of bar i — the smaller of the running
+      levels either side of the delta — so a rise floats up from the previous
+      level and a fall hangs down to the new level.
+
+    Example: [40, -15, 25] -> bottoms [0, 25, 25], heights [40, 15, 25],
+    running [40, 25, 50].
+    """
+    bottoms, heights, running = [], [], []
+    prev = 0
+    for v in values:
+        new = prev + v
+        bottoms.append(min(prev, new))
+        heights.append(abs(v))
+        running.append(new)
+        prev = new
+    return bottoms, heights, running
+
+
+def _waterfall_colours(values, emphasis, muted, spend, ink):
+    """Sign-coded bar colours (D-005), length len(values)+1:
+
+    - a rise (delta >= 0) -> `emphasis` (accent);
+    - a fall (delta < 0)  -> `spend`, but if the brand names no distinct spend
+      (its fallback IS `emphasis`) -> `muted`, so rises and falls never share a
+      colour and a fall is never the paper colour;
+    - the trailing entry is the computed total bar -> `ink`.
+    """
+    fall = muted if _normalise_hex(spend) == _normalise_hex(emphasis) else spend
+    colours = [emphasis if v >= 0 else fall for v in values]
+    colours.append(ink)  # the appended total bar
+    return colours
+
+
+def _draw_waterfall(ax, chart, emphasis, muted, spend, ink):
+    values = chart["series"][0]["values"]
+    cats = list(chart["categories"])
+    fmt = chart.get("fmt")
+    n = len(values)
+    bottoms, heights, running = _waterfall_segments(values)
+    colours = _waterfall_colours(values, emphasis, muted, spend, ink)
+
+    total_label = chart.get("total_label")
+    has_total = total_label is not None
+    total = running[-1] if running else 0
+    half = _BAR_THICK / 2.0
+    pos = list(range(n))
+
+    # Floating delta bars.
+    ax.bar(pos, heights, bottom=bottoms, width=_BAR_THICK,
+           color=colours[:n], zorder=3)
+
+    # Muted connectors at each running level, carrying into the total bar.
+    for i in range(n - 1):
+        ax.plot([i + half, (i + 1) - half], [running[i], running[i]],
+                color=muted, lw=_CONNECTOR_W, zorder=2, solid_capstyle="round")
+    if has_total and n >= 1:
+        ax.plot([(n - 1) + half, n - half], [running[-1], running[-1]],
+                color=muted, lw=_CONNECTOR_W, zorder=2, solid_capstyle="round")
+
+    # Appended total bar: 0 -> final running total, drawn in ink.
+    if has_total:
+        ax.bar([n], [abs(total)], bottom=[min(0, total)], width=_BAR_THICK,
+               color=ink, zorder=3)
+
+    # Signed value labels: above the bar top for rises, below it for falls.
+    for i, v in enumerate(values):
+        if v >= 0:
+            y, va = bottoms[i] + heights[i], "bottom"
+        else:
+            y, va = bottoms[i], "top"
+        ax.text(i, y, _signed_fmt(v, fmt), ha="center", va=va,
+                fontsize=_LABEL_SIZE, fontweight="bold", color=ink, zorder=4)
+    if has_total:
+        ax.text(n, max(0, total), _fmt(total, fmt), ha="center", va="bottom",
+                fontsize=_LABEL_SIZE, fontweight="bold", color=ink, zorder=4)
+
+    # Category ticks (plus the total label when present).
+    labels = cats + [total_label] if has_total else cats
+    ax.set_xticks(pos + [n] if has_total else pos)
+    _set_xlabels(ax, labels)
+
+    # Y-limits: headroom above every bar top and below any sub-zero bottom.
+    tops = [bottoms[i] + heights[i] for i in range(n)] + [total]
+    y_max = max(tops + [0])
+    y_min = min(bottoms + [total, 0])
+    top = (y_max * 1.18) or 1
+    bottom = y_min * 1.15 if y_min < 0 else 0
+    ax.set_ylim(bottom, top)
+
+    _strip(ax, muted, keep_x=True)
     _callout(ax, chart, spend, ink)
 
 

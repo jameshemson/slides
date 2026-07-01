@@ -40,7 +40,10 @@ def check_colours(elements: list, tokens: dict) -> list:
 
     Checks every colour-bearing key present on the element (`colour` for text,
     `fill`/`stroke` for boxes) — a card panel's fill is held to the token
-    palette exactly like a stat number's text colour.
+    palette exactly like a stat number's text colour. A `kind == "table"`
+    element is a single native GraphicFrame whose per-cell colours travel as the
+    `fills` and `text_colours` vectors; every entry of each is held to the same
+    palette (its hairline colour rides the scalar `stroke` key, already checked).
 
     Tag: [colour]
     """
@@ -56,6 +59,14 @@ def check_colours(elements: list, tokens: dict) -> list:
                     f"[colour] element {_label(el)} "
                     f"has {key}={value!r} which is not in colour_roles"
                 )
+        if el.get("kind") == "table":
+            for key in ("fills", "text_colours"):
+                for i, value in enumerate(el.get(key) or []):
+                    if _norm(value) not in allowed:
+                        messages.append(
+                            f"[colour] element {_label(el)} "
+                            f"has {key}[{i}]={value!r} which is not in colour_roles"
+                        )
     return messages
 
 
@@ -64,7 +75,9 @@ def check_sizes(elements: list, tokens: dict) -> list:
     Return violation messages for elements whose font_pt is not in the type scale.
 
     Box and connector elements carry no `font_pt` (they hold no text) and are
-    skipped — only text is held to the type scale.
+    skipped — only text is held to the type scale. A `kind == "table"` element
+    carries its per-cell sizes in the `font_pts` vector instead of a scalar
+    `font_pt`; every entry is held to the type scale the same way.
 
     Tag: [size]
     """
@@ -72,13 +85,18 @@ def check_sizes(elements: list, tokens: dict) -> list:
     messages = []
     for el in elements:
         font_pt = el.get("font_pt")
-        if font_pt is None:
-            continue
-        if font_pt not in allowed:
+        if font_pt is not None and font_pt not in allowed:
             messages.append(
                 f"[size] element role={el['role']!r} text={el.get('text')!r} "
                 f"has font_pt={font_pt} which is not in type_scale"
             )
+        if el.get("kind") == "table":
+            for i, size in enumerate(el.get("font_pts") or []):
+                if size not in allowed:
+                    messages.append(
+                        f"[size] element role={el['role']!r} text={el.get('text')!r} "
+                        f"has font_pts[{i}]={size} which is not in type_scale"
+                    )
     return messages
 
 
