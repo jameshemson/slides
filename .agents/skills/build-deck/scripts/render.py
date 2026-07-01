@@ -1529,10 +1529,10 @@ def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None):
             if composed_tokens is None:
                 import tokens  # noqa: PLC0415 — light; composed decks only
                 composed_tokens = tokens.resolve_tokens(brand, prs)
-            advisories, dropped_icons, chart_fallback_notes = (
-                _render_composed_slide(
-                    prs, brand, spec, composed_tokens, charts_dir
-                )
+            (advisories, dropped_icons, chart_fallback_notes, font_family,
+             font_warning) = _render_composed_slide(
+                prs, brand, spec, composed_tokens, charts_dir,
+                font_family, font_warning, brand_path
             )
             if advisories:
                 composed_advisories.append((number, advisories))
@@ -1859,7 +1859,8 @@ def _icon_px(el):
     return max(48, min(px, 512))
 
 
-def _render_composed_slide(prs, brand, spec, tokens, charts_dir):
+def _render_composed_slide(prs, brand, spec, tokens, charts_dir,
+                            font_family, font_warning, brand_path):
     """Render a composed slide: fill an optional title, then draw token-bound
     primitives that must pass the mechanical lint before any shape is added.
 
@@ -1867,10 +1868,17 @@ def _render_composed_slide(prs, brand, spec, tokens, charts_dir):
     that replaces D-002's structural guarantee. A lint or shape failure becomes
     a SpecError naming the slide, so no half-built deck is saved.
 
-    Returns (advisories, dropped_icons, native_fallback_notes): the advisory
-    composition findings, any icon names dropped for want of a rasteriser, and
-    one fallback note per `Block: chart` that requested `native: true` but
-    fell back to a matplotlib image (REQ-006/D-005/D-006).
+    `font_family`/`font_warning` are build_deck's own lazily-resolved brand
+    font state ("unset" until a matplotlib image chart first needs it) —
+    threading them in and back out lets a composed deck's image charts use
+    the same registered brand font as the title-content path, resolved at
+    most once per run regardless of which path hits it first.
+
+    Returns (advisories, dropped_icons, native_fallback_notes, font_family,
+    font_warning): the advisory composition findings, any icon names dropped
+    for want of a rasteriser, one fallback note per `Block: chart` that
+    requested `native: true` but fell back to a matplotlib image
+    (REQ-006/D-005/D-006), and the (possibly just-resolved) font state.
     """
     import primitives  # noqa: PLC0415 — composed decks only
     import lint  # noqa: PLC0415
@@ -2030,16 +2038,19 @@ def _render_composed_slide(prs, brand, spec, tokens, charts_dir):
         except ImportError:
             chart_notes.append(chart_to_note(chart))
             continue
+        if font_family == "unset":
+            font_family, font_warning = register_brand_font(brand, brand_path)
         os.makedirs(charts_dir, exist_ok=True)
         png = os.path.join(charts_dir, f"slide{number}-block{idx}.png")
         try:
-            charts_mod.render_png(chart, brand["colours"], None, png)
+            charts_mod.render_png(chart, brand["colours"], font_family, png)
         except charts_mod.ChartError as exc:
             raise SpecError(f"slide {number}: {exc}")
         _place_picture(slide, png, region)
 
     _apply_meta(slide, spec.get("meta", {}), extra_visual=chart_notes or None)
-    return advisories, dropped_icons, native_fallback_notes
+    return (advisories, dropped_icons, native_fallback_notes, font_family,
+            font_warning)
 
 
 def _apply_meta(slide, meta, extra_visual=None):
@@ -2047,8 +2058,13 @@ def _apply_meta(slide, meta, extra_visual=None):
 
     A Visual description is recorded — not drawn — prefixed 'VISUAL TO ADD:'.
     Notes prose sits alongside it. Order: notes prose, then the visual line(s).
-    `extra_visual` is a second VISUAL TO ADD line (the matplotlib-absent chart
-    fallback synthesised by chart_to_note), appended after any Visual field.
+    `extra_visual` is one or more further VISUAL TO ADD lines (the
+    matplotlib-absent chart fallback synthesised by chart_to_note), appended
+    after any Visual field. A single string yields one line (the
+    title-content path, which has at most one chart per slide); a list/tuple
+    yields one line per entry (the composed path, which may carry several
+    `Block: chart` on one slide) — never f-string the list itself, which
+    would leak its Python repr into the note.
     """
     meta = meta or {}
     parts = []
@@ -2059,7 +2075,11 @@ def _apply_meta(slide, meta, extra_visual=None):
     if visual:
         parts.append(f"VISUAL TO ADD: {_meta_text(visual)}")
     if extra_visual:
-        parts.append(f"VISUAL TO ADD: {extra_visual}")
+        if isinstance(extra_visual, (list, tuple)):
+            for note in extra_visual:
+                parts.append(f"VISUAL TO ADD: {note}")
+        else:
+            parts.append(f"VISUAL TO ADD: {extra_visual}")
     if not parts:
         return
     notes_tf = slide.notes_slide.notes_text_frame

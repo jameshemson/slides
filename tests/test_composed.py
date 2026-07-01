@@ -10,6 +10,7 @@ Run from the repo root:
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -42,8 +43,13 @@ BRAND = {
 }
 
 
-def _run(spec_text, out_name="out.pptx", brand=None):
-    """Render spec_text via render.py in a temp dir. Returns (proc, out_path)."""
+def _run(spec_text, out_name="out.pptx", brand=None, env=None):
+    """Render spec_text via render.py in a temp dir. Returns (proc, out_path).
+
+    `env`, when given, replaces the subprocess environment (mirrors
+    test_render.py's `_render` — used to hide matplotlib via a PYTHONPATH
+    shim).
+    """
     tmp = tempfile.mkdtemp()
     spec_path = os.path.join(tmp, "deck.md")
     with open(spec_path, "w", encoding="utf-8") as fh:
@@ -55,7 +61,7 @@ def _run(spec_text, out_name="out.pptx", brand=None):
     proc = subprocess.run(
         [sys.executable, RENDER_PY, "--spec", spec_path,
          "--brand", brand_path, "--out", out_path],
-        capture_output=True, text=True,
+        capture_output=True, text=True, env=env,
     )
     return proc, out_path
 
@@ -745,3 +751,192 @@ class ComposedChartTest(unittest.TestCase):
         self.assertIn("type", combined)
         self.assertNotIn("unknown composed block type", combined)
         self.assertFalse(os.path.isfile(out), "a half-built .pptx was written")
+
+
+class ComposedMatplotlibAbsentNoteTest(unittest.TestCase):
+    """Architect review FINDING 1 (feat/native-charts): when matplotlib is
+    absent, composed `Block: chart` fulfilment collected `chart_notes` as a
+    Python list and handed the list itself to `_apply_meta`'s `extra_visual`,
+    which f-strung it straight into the note -> `VISUAL TO ADD:
+    ['Column chart. ...']`, leaking the list's repr (brackets and quotes)
+    instead of clean prose. `_apply_meta` now emits one clean
+    'VISUAL TO ADD:' line per chart note.
+
+    matplotlib absence is simulated exactly as test_render.py's
+    ChartRenderTest.test_matplotlib_absent_falls_back_to_note does: a
+    PYTHONPATH shim directory holding a `matplotlib.py` that raises
+    ImportError on import, prepended to the subprocess's PYTHONPATH — no
+    existing absence-simulation helper is shared between the two test files,
+    so this mirrors that one rather than inventing a new mechanism.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.mkdtemp(prefix="slides-composed-nomatplotlib-")
+        shim = os.path.join(cls._tmp, "shim")
+        os.makedirs(shim, exist_ok=True)
+        with open(os.path.join(shim, "matplotlib.py"), "w") as fh:
+            fh.write('raise ImportError("matplotlib hidden for test")\n')
+        cls.env = dict(os.environ)
+        cls.env["PYTHONPATH"] = shim + os.pathsep + cls.env.get("PYTHONPATH", "")
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls._tmp, ignore_errors=True)
+
+    def test_single_chart_note_has_no_repr_leak(self):
+        spec = (
+            "---\ndeck: d\naudience: a\n---\n\n## Slide 1\nlayout: composed\n"
+            "Title: Chart slide\n"
+            "Block: chart\ntype: column\ncategories: Q1, Q2, Q3\n"
+            "series Rev: 10, 20, 30\n"
+        )
+        proc, out = _run(spec, out_name="nomatplotlib-single.pptx", env=self.env)
+        self.assertEqual(proc.returncode, 0,
+                         f"render failed: {proc.stderr}\n{proc.stdout}")
+        prs = Presentation(out)
+        notes = prs.slides[0].notes_slide.notes_text_frame.text
+        self.assertIn("VISUAL TO ADD:", notes)
+        self.assertNotIn("[", notes, f"list repr leaked into notes: {notes!r}")
+        self.assertNotIn("]", notes, f"list repr leaked into notes: {notes!r}")
+        self.assertNotIn("'", notes, f"list repr leaked into notes: {notes!r}")
+        self.assertEqual(notes.count("VISUAL TO ADD:"), 1)
+        after = notes.split("VISUAL TO ADD:", 1)[1].strip()
+        self.assertTrue(
+            after.startswith("Column chart"),
+            f"expected clean prose right after the marker, got: {after!r}")
+
+    def test_two_charts_yield_two_clean_notes(self):
+        # A composed slide may carry several `Block: chart`; each must
+        # contribute its own clean 'VISUAL TO ADD:' line, not one line
+        # holding a Python-list rendering of all of them.
+        spec = (
+            "---\ndeck: d\naudience: a\n---\n\n## Slide 1\nlayout: composed\n"
+            "Title: Two charts\n"
+            "Block: chart at left\ntype: column\ncategories: Q1, Q2\n"
+            "series Rev: 10, 20\n"
+            "Block: chart at right\ntype: bar\ncategories: A, B\n"
+            "series Cost: 5, 7\n"
+        )
+        proc, out = _run(spec, out_name="nomatplotlib-two.pptx", env=self.env)
+        self.assertEqual(proc.returncode, 0,
+                         f"render failed: {proc.stderr}\n{proc.stdout}")
+        prs = Presentation(out)
+        notes = prs.slides[0].notes_slide.notes_text_frame.text
+        self.assertEqual(
+            notes.count("VISUAL TO ADD:"), 2,
+            f"expected one clean VISUAL TO ADD line per chart block: {notes!r}")
+        self.assertNotIn("[", notes, f"list repr leaked into notes: {notes!r}")
+        self.assertNotIn("]", notes, f"list repr leaked into notes: {notes!r}")
+        self.assertNotIn("'", notes, f"list repr leaked into notes: {notes!r}")
+        self.assertIn("Column chart", notes)
+        self.assertIn("Bar chart", notes)
+
+
+class ComposedChartFontTest(unittest.TestCase):
+    """Architect review FINDING 2 (feat/native-charts): the composed
+    `Block: chart` image-chart fulfilment called
+    `charts_mod.render_png(chart, brand["colours"], None, png)` — font always
+    hard-coded to None — while the title-content chart branch registers the
+    brand font via `register_brand_font(brand, brand_path)` and passes the
+    resolved family name. render.py now threads that same lazily-resolved
+    `font_family`/`font_warning` state into `_render_composed_slide` (and
+    back out, so it is only ever registered once per run) so composed image
+    charts use the identical registered brand font.
+
+    This is pinned at the seam rather than end-to-end: `_render_composed_slide`
+    is called directly (in-process, scripts dir on sys.path — the same
+    white-box style ComposedLintGateTest and TableRenderTest above already
+    use for `lint.check`/`tokens.resolve_tokens`) against a real parsed
+    composed spec (via `render.parse_spec`, so the chart dict shape is
+    exactly what the real pipeline produces) and a real brand font file (the
+    matplotlib-bundled DejaVuSans.ttf, the same fixture
+    test_render.py's test_font_file_registered_no_warning reuses). Only the
+    `charts` module is stubbed, to record the literal `font` argument
+    `render_png` receives — nothing in this suite verifies that matplotlib
+    then renders that family's glyphs correctly (not even for the
+    title-content path: the existing font coverage only checks that the
+    "fallback font" warning disappears), so recording the argument value at
+    the exact call site is the most direct, least-mocked way to pin "composed
+    passes the same registered brand font title-content does" without
+    depending on font-rendering internals this suite doesn't otherwise test.
+    """
+
+    def setUp(self):
+        sys.path.insert(0, SCRIPTS)
+        self._saved_charts = sys.modules.get("charts")
+
+    def tearDown(self):
+        # Restore whatever (if anything) really occupied sys.modules['charts']
+        # so this stub never leaks into other test modules sharing the process
+        # (test_charts.py imports the real module at collection time).
+        if self._saved_charts is not None:
+            sys.modules["charts"] = self._saved_charts
+        else:
+            sys.modules.pop("charts", None)
+
+    def test_composed_chart_receives_registered_brand_font(self):
+        import types
+
+        import matplotlib
+        import render
+        import tokens as tokens_mod
+        from PIL import Image
+
+        ttf = os.path.join(os.path.dirname(matplotlib.__file__),
+                           "mpl-data", "fonts", "ttf", "DejaVuSans.ttf")
+        self.assertTrue(os.path.isfile(ttf), "matplotlib DejaVuSans missing")
+
+        recorded_fonts = []
+
+        class _StubChartError(Exception):
+            pass
+
+        def _fake_render_png(chart, colours, font, png_path):
+            recorded_fonts.append(font)
+            # A real, minimal PNG so _place_picture's IHDR read succeeds —
+            # its content is irrelevant, only the `font` arg is under test.
+            Image.new("RGB", (10, 10), (255, 255, 255)).save(png_path, "PNG")
+
+        stub = types.ModuleType("charts")
+        stub.render_png = _fake_render_png
+        stub.ChartError = _StubChartError
+        sys.modules["charts"] = stub
+
+        tmp = tempfile.mkdtemp()
+        brand = dict(BRAND)
+        brand["font_files"] = {"DejaVu Sans": ttf}
+        brand_path = os.path.join(tmp, "brand.json")
+        with open(brand_path, "w", encoding="utf-8") as fh:
+            json.dump(brand, fh)
+
+        spec_text = (
+            "---\ndeck: d\naudience: a\n---\n\n## Slide 1\nlayout: composed\n"
+            "Title: Chart slide\n"
+            "Block: chart\ntype: column\ncategories: Q1, Q2\n"
+            "series Rev: 10, 20\n"
+        )
+        spec_path = os.path.join(tmp, "deck.md")
+        with open(spec_path, "w", encoding="utf-8") as fh:
+            fh.write(spec_text)
+
+        slides = render.parse_spec(spec_path)
+        prs = Presentation(brand["template"])
+        toks = tokens_mod.resolve_tokens(brand, prs)
+        charts_dir = os.path.join(tmp, "charts")
+
+        result = render._render_composed_slide(
+            prs, brand, slides[0], toks, charts_dir,
+            "unset", None, brand_path,
+        )
+        _advisories, _dropped_icons, _fallback_notes, font_family, _warning = (
+            result
+        )
+
+        self.assertEqual(len(recorded_fonts), 1,
+                         "expected exactly one render_png call")
+        self.assertEqual(
+            recorded_fonts[0], "DejaVu Sans",
+            "composed image chart must receive the registered brand font, "
+            "not None")
+        self.assertEqual(font_family, "DejaVu Sans")
