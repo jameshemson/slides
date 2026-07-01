@@ -4,6 +4,35 @@ All notable changes to the slides skill pack are recorded here. The format
 follows [Keep a Changelog](https://keepachangelog.com/), and the pack uses
 [semantic versioning](https://semver.org/).
 
+## [0.12.0] - 2026-07-01
+
+Two forms board and finance decks kept needing that the pack couldn't express: a
+small comparison table and a start-to-end money story. Back-compatible — existing
+specs and `brand.json` files render unchanged.
+
+### Added
+
+- **A table primitive.** `Block: table` on a composed slide — the first line is
+  the header, `cell | cell` rows follow, and a leading `!` marks the one emphasis
+  row. Instead of typing rows, `data: costs.csv` loads the header and rows from a
+  spreadsheet export (mutually exclusive with inline rows), and `emphasis:
+  <label>` marks a row by its first cell. It draws as a **native PowerPoint
+  table** — a GraphicFrame the recipient can edit, not a picture — styled entirely
+  from brand tokens: an ink header band, paper rows on muted hairlines, at most one
+  accent row, numeric columns right-aligned. Hard caps (2–5 columns, 1–8 data rows,
+  band fit) fail the render with named errors; three advisory rules
+  (`table-count`, `table-cell-terseness`, `table-one-accent`) surface in the run
+  summary without blocking.
+- **A waterfall chart.** `Chart: type: waterfall` draws a running total from one
+  series of signed deltas: a positive number rises in the brand accent, a negative
+  one falls in a distinct spend tone (a muted grey when the brand names no spend
+  colour), muted connectors join the bars, and an auto-appended ink total bar
+  closes it — so the sign already carries the emphasis. `total:` renames that bar,
+  `total: none` removes it; `emphasis:` is rejected (use `callout:` to point at a
+  bar). The delta labels are signed (`+$40k` / `-$15k`) and honour `format:`; the
+  deltas can come from a CSV with `data:`. Without matplotlib it degrades to a
+  `VISUAL TO ADD:` note carrying the computed total, like every other chart.
+
 ## [0.11.0] - 2026-07-01
 
 Chart polish, from real-usage feedback (v0.8.0 in real work): the numbers weren't

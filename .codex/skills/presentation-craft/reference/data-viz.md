@@ -31,6 +31,14 @@ Identify the relationship, then choose within its family.
 This taxonomy is for choosing the chart. Encoding the relationship is the craft. The
 specific chart within a family is a secondary choice the user makes in the tool.
 
+## When a table beats a chart
+
+Sometimes the honest form is a table, not a chart. Reach for one when the audience
+will read or look up exact values: few rows, and units that don't share an axis — a
+price, a percentage, a date sitting side by side. A table is reading; a chart is
+comparing. If the point is a comparison, chart it; if the point is the values
+themselves, table it.
+
 ## Make the point stand out
 
 A chart is built to land one point, so build the rest of it to step back.
@@ -73,6 +81,19 @@ spec; `build-deck` renders an on-brand PNG with matplotlib — direct labels, no
 legend, stripped axes, the insight in the brand accent and the rest muted — and
 places it below the slide's one-line `Body`. The `Chart:` format is in
 [deck-spec.md](deck-spec.md).
+
+## When a waterfall is the right chart
+
+A waterfall tells a composition-of-change story: a starting level, a run of signed
+movements, and where they leave you. Feed it a single series of signed deltas —
+each rise and fall becomes a floating bar off the running total, and the renderer
+appends a total bar that lands the ending. The sign already carries the story —
+rises in the accent, falls in spend or grey, the total in ink — so `emphasis` has
+no role here; a `callout:` points at the one bar that matters.
+
+Reach for it when the point is how a number moved from one value to another — a
+budget spent down, a bridge from last quarter's revenue to this — not the two
+endpoints alone.
 
 The two families that need a different data shape still travel as a `Visual:`
 field: a histogram for distribution (it needs binned data) and a map for

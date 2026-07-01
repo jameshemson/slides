@@ -73,6 +73,9 @@ The defaults are good by construction; these warn when a spec strays.
 | `icon-list-count` | quality | ~3–6 rows in an icon list. | report#4 (Cowan) |
 | `cycle-count` | quality | ~3–6 stages on a cycle. | report#4 (Cowan) |
 | `matrix-one-accent` | slop | At most one quadrant leads (accent); the rest are the grey field. | report#7 |
+| `table-count` | quality | ~3–6 data rows; more is a spreadsheet, not a slide — cut rows or split the slide. | report#4 (Cowan) |
+| `table-cell-terseness` | quality | Cells stay terse (≤ ~6 words); a sentence in a cell belongs in prose. | report#3 |
+| `table-one-accent` | slop | At most one row leads (accent fill); the rest are the grey field. | report#7 |
 | `freeform-one-accent` | slop | The one freeform rule: grey-push the field, keep the accent to one or two marks. | report#7 |
 
 The `freeform` block is otherwise deliberately advisory-free: it trades
