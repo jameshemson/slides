@@ -4,6 +4,27 @@ All notable changes to the slides skill pack are recorded here. The format
 follows [Keep a Changelog](https://keepachangelog.com/), and the pack uses
 [semantic versioning](https://semver.org/).
 
+## [0.11.0] - 2026-07-01
+
+Chart polish, from real-usage feedback (v0.8.0 in real work): the numbers weren't
+formatted, category labels collided, and the legend crowded the slide title.
+
+### Added
+
+- **Chart value-label formatting.** A `Chart:` block takes a `format:` — `$`
+  (currency), `%` (percent), or `$k` / `$m` (currency in thousands / millions, so
+  `362` reads as `$362k`) — or explicit `prefix:` / `suffix:`. Large numbers
+  abbreviate by default (`362000` → `362k`, `1500000` → `1.5M`); `format: plain`
+  keeps them exact.
+
+### Fixed
+
+- **Category labels collided.** Long or many x-axis labels now rotate (25°) so
+  they don't run into each other.
+- **The legend crowded the slide title.** A grouped multi-series chart drew its
+  legend at the top of the image, jammed against the slide title above it. The
+  legend now sits below the chart, with a little more padding around the crop.
+
 ## [0.10.0] - 2026-07-01
 
 The lint with eyes. `build-deck` can now rasterise a rendered deck and look at
