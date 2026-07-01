@@ -474,7 +474,9 @@ def _parse_composed_slide(number, lines):
         if current == "notes":
             notes_lines.append(stripped)
         elif isinstance(current, dict):
-            current["items"].append(stripped)
+            # Keep leading indentation: the tree block reads it as hierarchy.
+            # Every other block parser strips each item, so this is transparent.
+            current["items"].append(raw.rstrip())
         # else: a stray line before any Block/Title/Notes — ignored.
 
     if not blocks:
@@ -513,7 +515,8 @@ def _parse_composed_slide(number, lines):
 # Composed block types and the item key each parses its lines into. The order
 # is the vocabulary a composed slide may draw from; render dispatches on it too.
 COMPOSED_BLOCK_TYPES = (
-    "stat-row", "card-grid", "comparison", "process", "timeline", "freeform",
+    "stat-row", "card-grid", "comparison", "process", "timeline", "tree",
+    "freeform",
 )
 
 # Freeform vocabulary — the escape hatch. Colours are role names and sizes are
@@ -646,6 +649,62 @@ def _parse_freeform_element(number, item):
     return el
 
 
+def _parse_tree_items(number, items):
+    """Parse an indented list into a nested tree node dict. Raises SpecError.
+
+    2-space indentation = one level (measured from the least-indented line); a
+    leading `[icon]` sets a node icon, a leading `!` emphasises it. Exactly one
+    root; a level may only jump down by one.
+    """
+    parsed = [(len(it) - len(it.lstrip(" ")), it.strip()) for it in items]
+    if not parsed:
+        raise SpecError(f"slide {number}: tree block is empty")
+    base = min(indent for indent, _ in parsed)
+    root = None
+    stack = []  # [(level, node), ...]
+    for raw_indent, text in parsed:
+        level = (raw_indent - base) // 2
+        if text[:1] in "-*":
+            text = text[1:].strip()
+        emphasis = text[:1] == "!"
+        if emphasis:
+            text = text[1:].strip()
+        icon = None
+        if text.startswith("[") and "]" in text:
+            end = text.find("]")
+            icon = text[1:end].strip().lower()
+            text = text[end + 1:].strip()
+            import icons as _icons  # noqa: PLC0415
+            if icon not in _icons.available():
+                raise SpecError(
+                    f"slide {number}: unknown icon {icon!r} in tree node"
+                )
+        if not text:
+            raise SpecError(f"slide {number}: a tree node needs a label")
+        node = {"label": text, "emphasis": emphasis, "icon": icon, "children": []}
+        while stack and stack[-1][0] >= level:
+            stack.pop()
+        if not stack:
+            if level != 0:
+                raise SpecError(
+                    f"slide {number}: tree must start at the root (level 0)"
+                )
+            if root is not None:
+                raise SpecError(
+                    f"slide {number}: a tree needs exactly one root node"
+                )
+            root = node
+        else:
+            if level != stack[-1][0] + 1:
+                raise SpecError(
+                    f"slide {number}: tree indentation jumps a level at "
+                    f"{text!r}"
+                )
+            stack[-1][1]["children"].append(node)
+        stack.append((level, node))
+    return root
+
+
 def _parse_composed_block(number, block):
     """Parse one composed block's raw item lines by type. Raises SpecError.
 
@@ -742,6 +801,9 @@ def _parse_composed_block(number, block):
     if btype == "freeform":
         els = [_parse_freeform_element(number, it) for it in items]
         return {"type": "freeform", "elements": els}
+
+    if btype == "tree":
+        return {"type": "tree", "root": _parse_tree_items(number, items)}
 
     # timeline
     nodes = []
@@ -1402,6 +1464,7 @@ def _render_composed_slide(prs, brand, spec, tokens, charts_dir):
         "comparison": (primitives.plan_comparison, "sides"),
         "process": (primitives.plan_process, "steps"),
         "timeline": (primitives.plan_timeline, "nodes"),
+        "tree": (primitives.plan_tree, "root"),
         "freeform": (primitives.plan_freeform, "elements"),
     }
     blocks = spec.get("blocks", [])

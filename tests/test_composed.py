@@ -369,3 +369,42 @@ class NewPrimitiveRenderTest(unittest.TestCase):
         proc, out = self._render_block(block, "ffo.pptx")
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn("[overlap]", proc.stderr + proc.stdout)
+
+    def test_freeform_icon_degrades_without_rasteriser(self):
+        # No cairosvg here: the icon is dropped, the deck still builds, and the
+        # summary names the fallback (mirrors the matplotlib chart fallback).
+        import icons
+        block = ("Block: freeform\n"
+                 "icon growth accent at cols 1-3 rows 1-4\n"
+                 "text h1 ink at cols 4-10 rows 1-4 | Up\n")
+        proc, out = self._render_block(block, "ffi.pptx")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertTrue(os.path.isfile(out))
+        if not icons.cairosvg_available():
+            self.assertIn("cairosvg not installed", proc.stdout + proc.stderr)
+            # the text still drew; the icon was dropped
+            drawn = self._drawn(out)
+            self.assertEqual(len(drawn), 1)
+
+    def test_tree_renders_nodes_and_edges(self):
+        block = ("Block: tree\n"
+                 "Product\n"
+                 "  Discovery\n"
+                 "  Delivery\n"
+                 "  !Growth\n")
+        proc, out = self._render_block(block, "tree.pptx")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        # 4 nodes + 4 labels + 3 edges = 11 drawn shapes.
+        self.assertEqual(len(self._drawn(out)), 11)
+
+    def test_tree_indent_jump_fails(self):
+        block = "Block: tree\nRoot\n    Grandchild\n"  # jumps root -> level 2
+        proc, out = self._render_block(block, "treebad.pptx")
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("jumps a level", proc.stderr + proc.stdout)
+
+    def test_tree_two_roots_fails(self):
+        block = "Block: tree\nRootA\nRootB\n"
+        proc, out = self._render_block(block, "tree2.pptx")
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("exactly one root", proc.stderr + proc.stdout)

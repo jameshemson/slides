@@ -269,6 +269,20 @@ def _check_freeform_one_accent(elements, tokens, slide_w, slide_h):
     return used <= 2
 
 
+# --- tree --------------------------------------------------------------------
+
+def _check_tree_count(elements, tokens, slide_w, slide_h):
+    return 2 <= len(_by_role(elements, "tree-node")) <= 8
+
+
+def _check_tree_label_terseness(elements, tokens, slide_w, slide_h):
+    return _all_terse((e["text"] for e in _by_role(elements, "tree-label")), 4)
+
+
+def _check_tree_one_accent(elements, tokens, slide_w, slide_h):
+    return _accent_boxes(_by_role(elements, "tree-node"), tokens) <= 1
+
+
 # ---------------------------------------------------------------------------
 # RULES registry
 # ---------------------------------------------------------------------------
@@ -486,5 +500,35 @@ RULES = [
             "not a rainbow."
         ),
         "check": _check_freeform_one_accent,
+    },
+    # --- tree ----------------------------------------------------------------
+    {
+        "id": "tree-count",
+        "tier": "quality",
+        "severity": "advisory",
+        "applies_to": "tree",
+        "source": "report#4 (Cowan); org-chart legibility",
+        "message": "Keep a tree to ~3-8 nodes; more is a diagram, not a slide.",
+        "check": _check_tree_count,
+    },
+    {
+        "id": "tree-label-terseness",
+        "tier": "quality",
+        "severity": "advisory",
+        "applies_to": "tree",
+        "source": "report#3 (terse labels)",
+        "message": "Tree node labels stay to <=4 words.",
+        "check": _check_tree_label_terseness,
+    },
+    {
+        "id": "tree-one-accent",
+        "tier": "slop",
+        "severity": "advisory",
+        "applies_to": "tree",
+        "source": "report#7 (grey-push, one accent)",
+        "message": (
+            "At most one node leads (accent fill); the rest are the grey field."
+        ),
+        "check": _check_tree_one_accent,
     },
 ]

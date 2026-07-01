@@ -592,6 +592,116 @@ def plan_freeform(elements, tokens, slide_w, slide_h, region=None) -> list:
     return out
 
 
+# --- hierarchy / tree --------------------------------------------------------
+
+
+def plan_tree(root, tokens, slide_w, slide_h, region=None) -> list:
+    """A tidy hierarchy: token box nodes with text (and optional icon), joined by
+    elbow edges parent -> child.
+
+    `root` is a nested node dict {label, emphasis?, icon?, children:[...]}. Layout
+    comes from tidytree (deterministic, non-overlapping for small trees). Node
+    boxes sit in per-depth rows; each edge is ONE elbow connector, so the tree
+    stays under the element cap: node = box+text (+icon) -> cap 8 (6 with icons),
+    depth <= 3. One box per node keeps same-depth nodes gutter-separated; the lint
+    exempts edges from the overlap rule, so edges may route between rows freely.
+    """
+    import tidytree  # noqa: PLC0415 — tree slides only
+
+    grid, ts, roles = _require(tokens, ("h1", "body"))
+    rows, max_x, max_depth = tidytree.layout(root)
+    n = len(rows)
+    has_icons = any((nd.get("icon") for nd, _, _ in rows))
+    cap = 6 if has_icons else 8
+    if n > cap:
+        raise ShapeError(
+            f"tree has {n} nodes; keep to {cap}"
+            f"{' with icons' if has_icons else ''} or fewer"
+        )
+    if max_depth > 3:
+        raise ShapeError("tree is too deep; keep to 3 levels or fewer")
+
+    content_left, content_w = _content_span(tokens, slide_w, region)
+    band_top, band_bottom = _band(tokens, slide_h, region)
+    band_h = band_bottom - band_top
+    gutter, baseline = grid["gutter"], grid["baseline"]
+    label_pt = ts["body"]
+    label_h = _line_h(label_pt)
+
+    slots = max_x + 1.0
+    slot_w = content_w / slots
+    node_w = int(slot_w - gutter)
+    if node_w < gutter:
+        raise ShapeError("tree is too wide to fit; fewer nodes per level")
+
+    n_levels = max_depth + 1
+    row_h = band_h // n_levels
+    icon_side = label_h if has_icons else 0
+    node_h = max(label_h + baseline, min(row_h - baseline, 2 * label_h + baseline))
+    pad = gutter // 2
+
+    def cx(x):
+        return int(content_left + (x + 0.5) * slot_w)
+
+    def top_of(d):
+        return band_top + d * row_h + (row_h - node_h) // 2
+
+    elements = []
+    geom = {}  # id(node) -> (centre_x, top, node_h)
+    for node, x, d in rows:
+        c = cx(x)
+        left = c - node_w // 2
+        t = top_of(d)
+        emph = bool(node.get("emphasis"))
+        panel = {
+            "role": "tree-node", "kind": "box", "container": True,
+            "left": left, "top": t, "width": node_w, "height": node_h,
+            "fill": roles["accent"] if emph else roles["paper"],
+        }
+        if not emph:
+            panel["stroke"] = roles["ink"]
+            panel["stroke_w"] = _STROKE_EMU
+        elements.append(panel)
+        text_colour = roles["paper"] if emph else roles["ink"]
+        if node.get("icon"):
+            iside = max(1, min(icon_side, node_w - 2 * pad, node_h - label_h - 2 * pad))
+            elements.append({
+                "role": "tree-icon", "kind": "icon", "name": node["icon"],
+                "left": c - iside // 2, "top": t + pad, "width": iside, "height": iside,
+                "colour": roles["accent"] if emph else roles["ink"],
+            })
+            elements.append({
+                "role": "tree-label", "text": str(node["label"]),
+                "left": left + pad, "top": t + pad + iside,
+                "width": node_w - 2 * pad, "height": node_h - 2 * pad - iside,
+                "font_pt": label_pt, "colour": text_colour,
+                "align": "center", "anchor": "middle", "bold": emph,
+            })
+        else:
+            elements.append({
+                "role": "tree-label", "text": str(node["label"]),
+                "left": left + pad, "top": t + pad,
+                "width": node_w - 2 * pad, "height": node_h - 2 * pad,
+                "font_pt": label_pt, "colour": text_colour,
+                "align": "center", "anchor": "middle", "bold": emph,
+            })
+        geom[id(node)] = (c, t)
+
+    for node, x, d in rows:
+        pc, pt_ = geom[id(node)]
+        for child in (node.get("children") or []):
+            cc, ct = geom[id(child)]
+            y1 = pt_ + node_h
+            elements.append({
+                "role": "tree-edge", "kind": "edge", "colour": roles["ink"],
+                "x1": pc, "y1": y1, "x2": cc, "y2": ct,
+                # a bounding box so the within-margins lint has geometry to check
+                "left": min(pc, cc), "top": y1,
+                "width": max(1, abs(cc - pc)), "height": max(1, ct - y1),
+            })
+    return elements
+
+
 # Autoshape names a box element may request via its "shape" key. Generic
 # geometry, not brand values. Default is a rounded rectangle (the card/panel).
 _SHAPE_BY_NAME = {
