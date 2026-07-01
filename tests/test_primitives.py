@@ -15,8 +15,13 @@ _SCRIPTS_DIR = os.path.join(
 sys.path.insert(0, os.path.abspath(_SCRIPTS_DIR))
 
 import primitives
-from primitives import plan_stat_row, ShapeError, _normalise_hex
+import lint
+from primitives import (
+    plan_stat_row, plan_card_grid, plan_comparison, plan_process,
+    plan_timeline, plan_freeform, ShapeError, _normalise_hex,
+)
 from pptx import Presentation
+from pptx.dml.color import RGBColor
 
 TEMPLATE = os.path.join(os.path.dirname(__file__), "fixtures", "sample-template.pptx")
 
@@ -129,6 +134,26 @@ class TestPlanStatRow(unittest.TestCase):
         self.assertEqual(_normalise_hex("4f81bd"), "#4F81BD")
         self.assertIsNone(_normalise_hex("nope"))
 
+    def test_draw_renders_box_with_token_fill(self):
+        prs = Presentation(TEMPLATE)
+        slide = prs.slides.add_slide(prs.slide_layouts[5])
+        box = {
+            "role": "card-panel", "kind": "box", "container": True,
+            "fill": "#4F81BD",
+            "left": 457200, "top": 1600200, "width": 3000000, "height": 2000000,
+        }
+        text = {
+            "role": "card-title", "text": "Hi",
+            "left": 600000, "top": 1700000, "width": 2000000, "height": 400000,
+            "font_pt": 18.0, "colour": "#FFFFFF",
+        }
+        shapes = primitives.draw(slide, [text, box])  # unordered on purpose
+        non_placeholder = [s for s in slide.shapes if not s.is_placeholder]
+        self.assertEqual(len(non_placeholder), 2)
+        # The box must paint behind the text: it is added first despite being
+        # second in the element list (z-order sort).
+        self.assertEqual(shapes[0].fill.fore_color.rgb, RGBColor.from_string("4F81BD"))
+
     def test_optical_centre_top_biased(self):
         # Default placement sits at the optical centre (~45% from top): the row's
         # vertical centre is ABOVE the band's geometric centre, but still in the
@@ -141,6 +166,126 @@ class TestPlanStatRow(unittest.TestCase):
         band_centre = (band_top + band_bottom) / 2
         self.assertLess(row_centre, band_centre)
         self.assertGreater(row_centre, band_top + 0.25 * (band_bottom - band_top))
+
+
+def _roles(els):
+    return [e["role"] for e in els]
+
+
+def _fills(els):
+    return {e.get("fill") for e in els if e.get("kind") == "box"}
+
+
+class TestNewPrimitives(unittest.TestCase):
+    """card-grid, comparison, process, timeline: planners are pure, produce
+    lint-clean geometry, keep colours on-token, and honour emphasis."""
+
+    def _lint_clean(self, els):
+        # Every primitive's default output must pass the hard gate.
+        self.assertIsNone(lint.check(els, TOKENS, SLIDE_W, SLIDE_H))
+
+    def test_card_grid_shape_and_lint(self):
+        els = plan_card_grid(
+            [{"label": "Size"}, {"label": "Know"}, {"label": "Aim"}],
+            TOKENS, SLIDE_W, SLIDE_H)
+        self._lint_clean(els)
+        # 3 panels + 3 labels, no body.
+        self.assertEqual(_roles(els).count("card-panel"), 3)
+        self.assertEqual(_roles(els).count("card-label"), 3)
+        # Panels are paper with an ink outline (grouped, grey field).
+        self.assertEqual(_fills(els), {"#FFFFFF"})
+
+    def test_card_grid_emphasis_fills_accent(self):
+        els = plan_card_grid(
+            [{"label": "a"}, {"label": "b", "emphasis": True}],
+            TOKENS, SLIDE_W, SLIDE_H)
+        self._lint_clean(els)
+        self.assertIn("#4F81BD", _fills(els))  # the hero card fills with accent
+
+    def test_card_grid_rejects_too_many(self):
+        with self.assertRaises(ShapeError):
+            plan_card_grid([{"label": str(i)} for i in range(7)],
+                           TOKENS, SLIDE_W, SLIDE_H)
+
+    def test_comparison_two_panels(self):
+        els = plan_comparison(
+            [{"header": "Before", "body": "a / b"},
+             {"header": "After", "body": "b / a", "emphasis": True}],
+            TOKENS, SLIDE_W, SLIDE_H)
+        self._lint_clean(els)
+        self.assertEqual(_roles(els).count("comparison-panel"), 2)
+        self.assertIn("#4F81BD", _fills(els))  # the winning side tilts to accent
+
+    def test_comparison_needs_exactly_two(self):
+        with self.assertRaises(ShapeError):
+            plan_comparison([{"header": "solo"}], TOKENS, SLIDE_W, SLIDE_H)
+
+    def test_process_numbered_with_connectors(self):
+        els = plan_process(
+            [{"label": "Plan"}, {"label": "Create"}, {"label": "Deliver"}],
+            TOKENS, SLIDE_W, SLIDE_H)
+        self._lint_clean(els)
+        self.assertEqual(_roles(els).count("process-step"), 3)
+        self.assertEqual(_roles(els).count("process-connector"), 2)  # n-1
+        nums = [e["text"] for e in els if e["role"] == "process-number"]
+        self.assertEqual(nums, ["1", "2", "3"])
+        # The number is the accent; the label is ink (lead by size + colour).
+        num = next(e for e in els if e["role"] == "process-number")
+        self.assertEqual(num["colour"], "#4F81BD")
+
+    def test_process_rejects_over_five(self):
+        with self.assertRaises(ShapeError):
+            plan_process([{"label": str(i)} for i in range(6)],
+                         TOKENS, SLIDE_W, SLIDE_H)
+
+    def test_timeline_dots_rail_labels(self):
+        els = plan_timeline(
+            [{"date": "26", "event": "Kick"},
+             {"date": "27", "event": "Ship", "emphasis": True},
+             {"date": "28", "event": "Scale"}],
+            TOKENS, SLIDE_W, SLIDE_H)
+        self._lint_clean(els)
+        self.assertEqual(_roles(els).count("timeline-dot"), 3)
+        self.assertEqual(_roles(els).count("timeline-rail"), 2)   # n-1 segments
+        self.assertEqual(_roles(els).count("timeline-label"), 3)
+        # The emphasised milestone dot is the accent; the rest are muted to ink.
+        dots = [e for e in els if e["role"] == "timeline-dot"]
+        self.assertIn("#4F81BD", {d["fill"] for d in dots})
+
+    def test_freeform_plans_lint_clean_kit(self):
+        # The whole freeform kit (panel/text/arrow/dot/line) plans lint-clean
+        # when placed without overlap; text sits inside its container panel.
+        els = plan_freeform([
+            {"kind": "box", "fill": "paper", "stroke": "ink",
+             "placement": {"cols": (1, 6), "rows": (1, 10)}},
+            {"kind": "text", "scale": "h1", "colour": "ink", "text": "In panel",
+             "placement": {"cols": (1, 6), "rows": (1, 4)}},
+            {"kind": "arrow", "colour": "ink",
+             "placement": {"cols": (7, 8), "rows": (5, 6)}},
+            {"kind": "dot", "colour": "accent",
+             "placement": {"cols": (9, 10), "rows": (1, 3)}},
+            {"kind": "line", "colour": "ink",
+             "placement": {"cols": (1, 12), "rows": (12, 12)}},
+        ], TOKENS, SLIDE_W, SLIDE_H)
+        self._lint_clean(els)
+        roles = set(_roles(els))
+        self.assertEqual(roles, {"freeform-panel", "freeform-text",
+                                 "freeform-arrow", "freeform-dot", "freeform-line"})
+
+    def test_freeform_colours_resolve_to_tokens(self):
+        els = plan_freeform([
+            {"kind": "box", "fill": "accent",
+             "placement": {"cols": (1, 12), "rows": (1, 8)}},
+        ], TOKENS, SLIDE_W, SLIDE_H)
+        self.assertEqual(els[0]["fill"], "#4F81BD")  # role name -> brand hex
+
+    def test_all_defaults_stay_under_cap(self):
+        # 5-step process with details is the worst case; must fit the cap.
+        els = plan_process(
+            [{"label": f"S{i}", "detail": "why & who"} for i in range(5)],
+            TOKENS, SLIDE_W, SLIDE_H)
+        self.assertLessEqual(len(els), lint.ELEMENT_CAP)
+        self._lint_clean(els)
 
 
 if __name__ == "__main__":

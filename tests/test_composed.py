@@ -115,11 +115,11 @@ class ComposedLintGateTest(unittest.TestCase):
     """The mechanical lint is wired into the render gate."""
 
     def test_over_cap_fails_render(self):
-        """7 stats -> 14 elements -> over the element cap -> render fails, no file."""
+        """13 stats -> 26 elements -> over the element cap -> render fails, no file."""
         spec = (
             "---\ndeck: d\naudience: a\n---\n\n## Slide 1\nlayout: composed\n"
             "Block: stat-row\n"
-            + "".join(f"{i} | label{i}\n" for i in range(7))
+            + "".join(f"{i} | label{i}\n" for i in range(13))
         )
         proc, out = _run(spec)
         self.assertNotEqual(proc.returncode, 0)
@@ -181,12 +181,21 @@ class ComposedSpecErrorTest(unittest.TestCase):
                 "Block: pie-tower\n1 | a\n")
         self._assert_fails(spec, "pie-tower")
 
-    def test_multiple_blocks_rejected(self):
-        # This release takes one Block: per composed slide; stacking is a
-        # follow-up. A second block must fail loudly (no overlapping output).
+    def test_mixed_placement_rejected(self):
+        # Several blocks must all be placed or all auto-placed, never a mix.
         spec = ("---\ndeck: d\naudience: a\n---\n\n## Slide 1\nlayout: composed\n"
-                "Block: stat-row\n1 | a\nBlock: stat-row\n2 | b\n")
-        self._assert_fails(spec, "one 'Block:'")
+                "Block: card-grid at cols 1-6\nA | x\nBlock: process\nPlan\n")
+        self._assert_fails(spec, "mix of placed")
+
+    def test_too_many_blocks_rejected(self):
+        spec = ("---\ndeck: d\naudience: a\n---\n\n## Slide 1\nlayout: composed\n"
+                + "".join("Block: stat-row\n1 | a\n" for _ in range(5)))
+        self._assert_fails(spec, "at most 4 blocks")
+
+    def test_bad_placement_rejected(self):
+        spec = ("---\ndeck: d\naudience: a\n---\n\n## Slide 1\nlayout: composed\n"
+                "Block: card-grid at cols 1-99\nA | x\n")
+        self._assert_fails(spec, "within 1-12")
 
 
 class BackCompatTest(unittest.TestCase):
@@ -238,3 +247,125 @@ class CompositionAdvisoryTest(unittest.TestCase):
         self.assertIn("advisory", combined.lower())
         self.assertIn("stat-count", combined)
         self.assertIn("label-terseness", combined)
+
+
+class NewPrimitiveRenderTest(unittest.TestCase):
+    """card-grid, comparison, process, timeline render as real drawn shapes."""
+
+    def _render_block(self, block_text, out_name):
+        spec = (
+            "---\ndeck: d\naudience: a\n---\n\n## Slide 1\nlayout: composed\n"
+            "Title: T\n" + block_text
+        )
+        return _run(spec, out_name=out_name)
+
+    def _drawn(self, out):
+        prs = Presentation(out)
+        slide = prs.slides[0]
+        self.assertEqual(slide.shapes.title.text, "T")
+        return [s for s in slide.shapes if not s.is_placeholder]
+
+    def test_card_grid_renders_panels(self):
+        proc, out = self._render_block(
+            "Block: card-grid\nSize | a\nKnowledge | b\n!Aim | c\n", "cards.pptx")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        # 3 panels + 3 labels + 3 bodies = 9 drawn shapes.
+        self.assertEqual(len(self._drawn(out)), 9)
+
+    def test_comparison_renders_two_panels(self):
+        proc, out = self._render_block(
+            "Block: comparison\nBefore | slow\n!After | fast\n", "cmp.pptx")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(len(self._drawn(out)), 6)  # 2 panels + 2 headers + 2 bodies
+
+    def test_process_renders_steps_and_connectors(self):
+        proc, out = self._render_block(
+            "Block: process\nPlan\nCreate\nDeliver\n", "proc.pptx")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        # 3 boxes + 3 numbers + 3 labels + 2 connectors = 11.
+        self.assertEqual(len(self._drawn(out)), 11)
+
+    def test_timeline_renders_dots_and_rail(self):
+        proc, out = self._render_block(
+            "Block: timeline\n2026 | Kickoff\n!2027 | Launch\n2028 | Scale\n",
+            "tl.pptx")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        # 3 dots + 3 labels + 2 rail segments = 8.
+        self.assertEqual(len(self._drawn(out)), 8)
+
+    def test_comparison_wrong_count_fails(self):
+        proc, out = self._render_block("Block: comparison\nOnly one | x\n", "bad.pptx")
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("exactly two", proc.stderr + proc.stdout)
+
+    def test_process_over_five_fails(self):
+        block = "Block: process\n" + "".join(f"S{i}\n" for i in range(6))
+        proc, out = self._render_block(block, "bad2.pptx")
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("at most 5", proc.stderr + proc.stdout)
+
+    def test_two_blocks_stack(self):
+        # Two unplaced blocks stack top to bottom on one slide, no overlap.
+        proc, out = self._render_block(
+            "Block: stat-row\n56 | Days\n4% | Rate\nBlock: process\nPlan\nShip\n",
+            "stack.pptx")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        drawn = self._drawn(out)
+        # 2 numbers + 2 labels (stat-row) + 2 boxes + 2 numbers + 2 labels + 1
+        # connector (process) = 11 shapes, all on one slide.
+        self.assertEqual(len(drawn), 11)
+
+    def test_placed_blocks_tile_side_by_side(self):
+        # Left half card-grid, right half process — placed on the grid.
+        proc, out = self._render_block(
+            "Block: card-grid at cols 1-6\nWhy | reason\nWho | people\n"
+            "Block: process at cols 7-12\nPlan\nShip\n",
+            "tile.pptx")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        prs = Presentation(out)
+        slide = prs.slides[0]
+        drawn = [s for s in slide.shapes if not s.is_placeholder]
+        mid = prs.slide_width // 2
+        # Card panels sit left of centre; process boxes sit right of it.
+        left_boxes = [s for s in drawn if s.left + s.width <= mid + 10000]
+        right_boxes = [s for s in drawn if s.left >= mid - 10000]
+        self.assertTrue(left_boxes, "no shapes in the left column")
+        self.assertTrue(right_boxes, "no shapes in the right column")
+
+    def test_freeform_renders_node_graph(self):
+        # The case the fixed primitives can't express: nodes that connect.
+        block = (
+            "Block: freeform\n"
+            "panel paper outline ink at cols 1-4 rows 1-8\n"
+            "text h1 ink at cols 1-4 rows 1-3 | UK\n"
+            "arrow ink at cols 5-5 rows 4-5\n"
+            "panel accent at cols 6-9 rows 1-8\n"
+            "text h1 paper at cols 6-9 rows 1-3 | Platform\n"
+        )
+        proc, out = self._render_block(block, "ff.pptx")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(len(self._drawn(out)), 5)
+
+    def test_freeform_bad_colour_fails(self):
+        proc, out = self._render_block(
+            "Block: freeform\ntext h1 purple at cols 1-6 rows 1-3 | Hi\n",
+            "ffb.pptx")
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("purple", proc.stderr + proc.stdout)
+
+    def test_freeform_missing_at_fails(self):
+        proc, out = self._render_block(
+            "Block: freeform\ntext h1 ink hello world\n", "ffb2.pptx")
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("at <placement>", proc.stderr + proc.stdout)
+
+    def test_freeform_overlap_still_fails_hard(self):
+        # The guardrail holds: freedom of arrangement, but no overlap.
+        block = (
+            "Block: freeform\n"
+            "panel paper outline ink at cols 1-8 rows 1-8\n"
+            "panel accent at cols 5-12 rows 4-10\n"
+        )
+        proc, out = self._render_block(block, "ffo.pptx")
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("[overlap]", proc.stderr + proc.stdout)

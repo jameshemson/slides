@@ -363,15 +363,85 @@ def _prescan_layout(lines):
     return None
 
 
+# A composed slide takes a handful of blocks at most; more is a wall, not a
+# composition. The advisory count rules police items within a block.
+MAX_COMPOSED_BLOCKS = 4
+
+# 'at <placement>' shortcuts: half-band placements on the 12x12 block grid.
+_PLACEMENT_SHORTCUTS = {
+    "left": {"cols": (1, 6), "rows": None},
+    "right": {"cols": (7, 12), "rows": None},
+    "top": {"cols": None, "rows": (1, 6)},
+    "bottom": {"cols": None, "rows": (7, 12)},
+}
+
+
+def _parse_placement(number, text):
+    """Parse an `at ...` clause into {'cols': (c1,c2)|None, 'rows': (r1,r2)|None}.
+
+    The content band is a 12-column by 12-row grid. `cols 1-6` is the left half,
+    `rows 1-6` the top half; the two combine (`cols 1-6 rows 7-12` = lower left).
+    `left`/`right`/`top`/`bottom` are shortcuts. An unspecified axis spans full.
+    """
+    low = text.strip().lower()
+    if low in _PLACEMENT_SHORTCUTS:
+        return dict(_PLACEMENT_SHORTCUTS[low])
+    place = {"cols": None, "rows": None}
+    for m in re.finditer(r"\b(cols|rows)\s+(\d+)\s*-\s*(\d+)", low):
+        axis, a, b = m.group(1), int(m.group(2)), int(m.group(3))
+        if not 1 <= a <= b <= 12:
+            raise SpecError(
+                f"slide {number}: placement {axis} {a}-{b} must be within 1-12 "
+                f"with start <= end"
+            )
+        place[axis] = (a, b)
+    if place["cols"] is None and place["rows"] is None:
+        raise SpecError(
+            f"slide {number}: could not read placement {text!r}; use e.g. "
+            f"'at cols 1-6', 'at rows 1-6', 'at left', 'at top'"
+        )
+    return place
+
+
+def _parse_block_header(number, rest):
+    """Parse a `Block:` header value into (type, placement|None).
+
+    'stat-row'              -> ('stat-row', None)
+    'card-grid at cols 1-6' -> ('card-grid', {'cols': (1,6), 'rows': None})
+    'process at top'        -> ('process', {'cols': None, 'rows': (1,6)})
+    """
+    parts = rest.split()
+    if not parts:
+        raise SpecError(
+            f"slide {number}: 'Block:' needs a type (e.g. 'Block: stat-row')"
+        )
+    btype = parts[0].lower()
+    if len(parts) == 1:
+        return btype, None
+    if parts[1].lower() != "at":
+        raise SpecError(
+            f"slide {number}: unexpected text in 'Block: {rest}'; use "
+            f"'Block: <type> at <placement>'"
+        )
+    place_text = " ".join(parts[2:]).strip()
+    if not place_text:
+        raise SpecError(
+            f"slide {number}: 'at' needs a placement "
+            f"(e.g. 'at cols 1-6', 'at left', 'at top')"
+        )
+    return btype, _parse_placement(number, place_text)
+
+
 def _parse_composed_slide(number, lines):
     """Parse a `composed` slide into title, blocks, and meta. Raises SpecError.
 
-    Recognises `Title:` (optional, inline), `Notes:` (optional, meta), and a
-    single `Block: <type>` block followed by indented item lines (multiple
-    blocks are rejected this release — stacking is a follow-up). Returns:
+    Recognises `Title:` (optional, inline), `Notes:` (optional, meta), and one
+    or more `Block: <type> [at <placement>]` blocks, each followed by its item
+    lines. Several blocks either all carry an `at ...` placement (they tile the
+    grid) or none do (they stack top to bottom). Returns:
 
         {"number", "role": "composed", "fields": {"Title": str?},
-         "blocks": [parsed block dict, ...], "meta": {"Notes": str?}}
+         "blocks": [parsed block dict + "placement", ...], "meta": {"Notes": str?}}
     """
     title = None
     notes_lines = []
@@ -393,13 +463,9 @@ def _parse_composed_slide(number, lines):
             current = "notes"
             continue
         if low.startswith("block:"):
-            btype = stripped.split(":", 1)[1].strip().lower()
-            if not btype:
-                raise SpecError(
-                    f"slide {number}: 'Block:' needs a type "
-                    f"(e.g. 'Block: stat-row')"
-                )
-            current = {"type": btype, "items": []}
+            rest = stripped.split(":", 1)[1].strip()
+            btype, placement = _parse_block_header(number, rest)
+            current = {"type": btype, "items": [], "placement": placement}
             blocks.append(current)
             continue
         # continuation line
@@ -416,14 +482,23 @@ def _parse_composed_slide(number, lines):
             f"slide {number}: composed slide has no 'Block:' (need at least "
             f"one, e.g. 'Block: stat-row')"
         )
-    if len(blocks) > 1:
+    if len(blocks) > MAX_COMPOSED_BLOCKS:
         raise SpecError(
-            f"slide {number}: a composed slide takes one 'Block:' in this "
-            f"release; stacking multiple blocks on a slide is a planned "
-            f"follow-up"
+            f"slide {number}: a composed slide takes at most "
+            f"{MAX_COMPOSED_BLOCKS} blocks, got {len(blocks)}; split the slide"
+        )
+    placed = [b for b in blocks if b.get("placement") is not None]
+    if placed and len(placed) != len(blocks):
+        raise SpecError(
+            f"slide {number}: mix of placed and auto-placed blocks; give every "
+            f"'Block:' an 'at ...' clause, or none (they then stack top to bottom)"
         )
 
-    parsed_blocks = [_parse_composed_block(number, b) for b in blocks]
+    parsed_blocks = []
+    for b in blocks:
+        parsed = _parse_composed_block(number, b)
+        parsed["placement"] = b.get("placement")
+        parsed_blocks.append(parsed)
     fields = {"Title": title} if title else {}
     meta = {"Notes": " ".join(notes_lines)} if notes_lines else {}
     return {
@@ -435,43 +510,237 @@ def _parse_composed_slide(number, lines):
     }
 
 
+# Composed block types and the item key each parses its lines into. The order
+# is the vocabulary a composed slide may draw from; render dispatches on it too.
+COMPOSED_BLOCK_TYPES = (
+    "stat-row", "card-grid", "comparison", "process", "timeline", "freeform",
+)
+
+# Freeform vocabulary — the escape hatch. Colours are role names and sizes are
+# scale names (never hex/pt), so a freeform element is on-token by construction;
+# the mechanical lint enforces the rest. These name sets are the canonical token
+# keys, so they can be validated at parse time without the resolved tokens.
+_FREEFORM_KINDS = {"box", "panel", "text", "arrow", "dot", "line"}
+_FREEFORM_COLOURS = {"ink", "paper", "accent", "muted"}
+_FREEFORM_SCALES = {"display", "h1", "body", "caption"}
+
+
+def _clean_item(item):
+    """Strip a leading '-'/'*' bullet and a leading '!' emphasis marker.
+
+    Returns (emphasis, text). A line beginning '!' marks the one element that
+    leads — the hero card, the winning panel, the milestone that is the turn."""
+    text = item.strip()
+    if text[:1] in "-*":
+        text = text[1:].strip()
+    emphasis = text[:1] == "!"
+    if emphasis:
+        text = text[1:].strip()
+    return emphasis, text
+
+
+def _pipe_fields(text):
+    """Split a `a | b` item line into stripped fields."""
+    return [p.strip() for p in text.split("|")]
+
+
+def _require_name(number, name, allowed, what):
+    if name not in allowed:
+        raise SpecError(
+            f"slide {number}: unknown freeform {what} {name!r}; use one of "
+            f"{', '.join(sorted(allowed))}"
+        )
+
+
+def _parse_freeform_element(number, item):
+    """Parse one freeform line into an element dict. Raises SpecError.
+
+    Grammar: `<kind> <style...> at <placement> [| text]`
+      panel <fill> [outline <stroke>] at <placement>
+      box   <fill> [outline <stroke>] at <placement>
+      text  <scale> <colour>          at <placement> | the words
+      arrow|dot|line <colour>         at <placement>
+    Colours are role names (ink/paper/accent/muted), sizes scale names
+    (display/h1/body/caption), placement is `cols A-B` / `rows C-D` (or a
+    shortcut) on the block's 12x12 grid.
+    """
+    line = item.strip()
+    if line[:1] in "-*":
+        line = line[1:].strip()
+    spec, sep, text = line.partition("|")
+    text = text.strip()
+    tokens = spec.split()
+    if not tokens:
+        raise SpecError(f"slide {number}: empty freeform line")
+    kind = tokens[0].lower()
+    if kind not in _FREEFORM_KINDS:
+        raise SpecError(
+            f"slide {number}: freeform element starts with one of "
+            f"{', '.join(sorted(_FREEFORM_KINDS))}, got {tokens[0]!r}"
+        )
+    lowered = [t.lower() for t in tokens]
+    if "at" not in lowered:
+        raise SpecError(
+            f"slide {number}: freeform element needs 'at <placement>' "
+            f"(e.g. 'at cols 1-6 rows 1-3')"
+        )
+    at_idx = lowered.index("at")
+    style = tokens[1:at_idx]
+    placement = _parse_placement(number, " ".join(tokens[at_idx + 1:]))
+    el = {"kind": "box" if kind == "panel" else kind, "placement": placement}
+
+    if kind == "text":
+        if len(style) != 2:
+            raise SpecError(
+                f"slide {number}: freeform text needs '<scale> <colour>' "
+                f"(e.g. 'h1 ink'), got {' '.join(style) or '(nothing)'!r}"
+            )
+        scale, colour = style[0].lower(), style[1].lower()
+        _require_name(number, scale, _FREEFORM_SCALES, "type scale")
+        _require_name(number, colour, _FREEFORM_COLOURS, "colour")
+        if not text:
+            raise SpecError(
+                f"slide {number}: freeform text needs words after '|'"
+            )
+        el.update({"scale": scale, "colour": colour, "text": text})
+    elif kind in ("box", "panel"):
+        if not style:
+            raise SpecError(
+                f"slide {number}: freeform {kind} needs a fill colour "
+                f"(e.g. 'paper outline ink')"
+            )
+        _require_name(number, style[0].lower(), _FREEFORM_COLOURS, "colour")
+        el["fill"] = style[0].lower()
+        if len(style) >= 2 and style[1].lower() == "outline":
+            if len(style) < 3:
+                raise SpecError(
+                    f"slide {number}: freeform 'outline' needs a colour after it"
+                )
+            _require_name(number, style[2].lower(), _FREEFORM_COLOURS, "colour")
+            el["stroke"] = style[2].lower()
+    else:  # arrow, dot, line
+        if len(style) != 1:
+            raise SpecError(
+                f"slide {number}: freeform {kind} needs one colour "
+                f"(e.g. '{kind} ink at ...')"
+            )
+        _require_name(number, style[0].lower(), _FREEFORM_COLOURS, "colour")
+        el["colour"] = style[0].lower()
+    return el
+
+
 def _parse_composed_block(number, block):
     """Parse one composed block's raw item lines by type. Raises SpecError.
 
-    stat-row: each item is `value | label` (a leading '-'/'*' bullet is
-    tolerated). Returns {"type": "stat-row", "stats": [{"value", "label"}, ...]}.
+    Item grammar (a leading '-'/'*' bullet and a leading '!' emphasis marker are
+    tolerated on every type):
+      stat-row    `value | label`         -> {"stats": [{value, label}]}
+      card-grid   `label | body?`         -> {"cards": [{label, body, emphasis}]}
+      comparison  `header | body?` x2     -> {"sides": [{header, body, emphasis}]}
+      process     `label | detail?`       -> {"steps": [{label, detail}]}
+      timeline    `date | event`          -> {"nodes": [{date, event, emphasis}]}
     """
     btype = block["type"]
+    items = [it for it in block["items"] if it.strip()]
+    if btype not in COMPOSED_BLOCK_TYPES:
+        raise SpecError(
+            f"slide {number}: unknown composed block type {btype!r}; expected "
+            f"one of: {', '.join(COMPOSED_BLOCK_TYPES)}"
+        )
+    if not items:
+        raise SpecError(
+            f"slide {number}: {btype} block is empty (add item lines)"
+        )
+
     if btype == "stat-row":
         stats = []
-        for item in block["items"]:
-            text = item
-            if text[:1] in "-*":
-                text = text[1:].strip()
+        for item in items:
+            _emph, text = _clean_item(item)
             if "|" not in text:
                 raise SpecError(
                     f"slide {number}: stat-row line {item!r} must be "
                     f"'value | label'"
                 )
-            value, label = text.split("|", 1)
-            value = value.strip()
-            label = label.strip()
+            value, label = _pipe_fields(text)[0], text.split("|", 1)[1].strip()
             if not value:
                 raise SpecError(
                     f"slide {number}: stat-row line {item!r} has an empty value"
                 )
             stats.append({"value": value, "label": label})
-        if not stats:
-            raise SpecError(
-                f"slide {number}: stat-row block is empty (add 'value | label' "
-                f"lines)"
-            )
         return {"type": "stat-row", "stats": stats}
 
-    raise SpecError(
-        f"slide {number}: unknown composed block type {btype!r}; expected one "
-        f"of: stat-row"
-    )
+    if btype == "card-grid":
+        cards = []
+        for item in items:
+            emph, text = _clean_item(item)
+            fields = _pipe_fields(text)
+            if not fields[0]:
+                raise SpecError(
+                    f"slide {number}: card-grid line {item!r} needs a label "
+                    f"(write 'Label | optional body')"
+                )
+            cards.append({
+                "label": fields[0],
+                "body": fields[1] if len(fields) > 1 else "",
+                "emphasis": emph,
+            })
+        return {"type": "card-grid", "cards": cards}
+
+    if btype == "comparison":
+        if len(items) != 2:
+            raise SpecError(
+                f"slide {number}: comparison needs exactly two lines "
+                f"('Header | body'), got {len(items)}"
+            )
+        sides = []
+        for item in items:
+            emph, text = _clean_item(item)
+            fields = _pipe_fields(text)
+            if not fields[0]:
+                raise SpecError(
+                    f"slide {number}: comparison line {item!r} needs a header"
+                )
+            sides.append({
+                "header": fields[0],
+                "body": fields[1] if len(fields) > 1 else "",
+                "emphasis": emph,
+            })
+        return {"type": "comparison", "sides": sides}
+
+    if btype == "process":
+        steps = []
+        for item in items:
+            _emph, text = _clean_item(item)
+            fields = _pipe_fields(text)
+            if not fields[0]:
+                raise SpecError(
+                    f"slide {number}: process line {item!r} needs a step label"
+                )
+            steps.append({
+                "label": fields[0],
+                "detail": fields[1] if len(fields) > 1 else "",
+            })
+        return {"type": "process", "steps": steps}
+
+    if btype == "freeform":
+        els = [_parse_freeform_element(number, it) for it in items]
+        return {"type": "freeform", "elements": els}
+
+    # timeline
+    nodes = []
+    for item in items:
+        emph, text = _clean_item(item)
+        if "|" in text:
+            date, event = _pipe_fields(text)[0], text.split("|", 1)[1].strip()
+        else:
+            date, event = "", text
+        if not event:
+            raise SpecError(
+                f"slide {number}: timeline line {item!r} needs an event "
+                f"(write 'date | event')"
+            )
+        nodes.append({"date": date, "event": event, "emphasis": emph})
+    return {"type": "timeline", "nodes": nodes}
 
 
 def _field_label(line):
@@ -963,6 +1232,71 @@ def _resolve_composed_layout(prs, brand):
     return prs.slide_layouts[0]
 
 
+def _full_band(grid, slide_w, slide_h):
+    """The full content band (left, top, width, height) inside the margins."""
+    mx = grid.get("margin_x", 0)
+    mt = grid.get("margin_top", 0)
+    mb = grid.get("margin_bottom", 0)
+    return (mx, mt, slide_w - 2 * mx, slide_h - mt - mb)
+
+
+def _place_region(base_band, placement, tokens):
+    """Sub-rect of the band for an explicit `at cols/rows` placement.
+
+    The band is a 12-column by 12-row grid. A small breathing inset keeps two
+    adjacent placements from touching, so the slide-level lint's no-overlap rule
+    is never even tested at the seam.
+    """
+    bl, bt, bw, bh = base_band
+    grid = tokens.get("grid", {}) or {}
+    cols_n = grid.get("columns", 12) or 12
+    rows_n = 12
+    cols, rows = placement.get("cols"), placement.get("rows")
+    if cols:
+        left = bl + (cols[0] - 1) * bw // cols_n
+        right = bl + cols[1] * bw // cols_n
+    else:
+        left, right = bl, bl + bw
+    if rows:
+        top = bt + (rows[0] - 1) * bh // rows_n
+        bottom = bt + rows[1] * bh // rows_n
+    else:
+        top, bottom = bt, bt + bh
+    pad_x = grid.get("gutter", 0) // 2
+    pad_y = grid.get("baseline", 0)
+    left += pad_x
+    right -= pad_x
+    top += pad_y
+    bottom -= pad_y
+    return (left, top, max(1, right - left), max(1, bottom - top))
+
+
+def _stack_regions(base_band, n, tokens):
+    """Split the band into n stacked full-width slices, top to bottom."""
+    bl, bt, bw, bh = base_band
+    gap = tokens.get("grid", {}).get("baseline", 0)
+    slice_h = (bh - (n - 1) * gap) // n
+    regions = []
+    for i in range(n):
+        top = bt + i * (slice_h + gap)
+        h = slice_h if i < n - 1 else bh - (n - 1) * (slice_h + gap)
+        regions.append((bl, top, bw, h))
+    return regions
+
+
+def _composed_regions(base_band, blocks, tokens):
+    """One region per block: the whole band for a lone block, an explicit
+    placement per block when any carries one, else an even top-to-bottom stack."""
+    n = len(blocks)
+    if n == 0:
+        return []
+    if n == 1 and blocks[0].get("placement") is None:
+        return [base_band]
+    if any(b.get("placement") is not None for b in blocks):
+        return [_place_region(base_band, b["placement"], tokens) for b in blocks]
+    return _stack_regions(base_band, n, tokens)
+
+
 def _drop_composed_placeholders(slide, keep_title):
     """Remove the layout's content placeholders so no 'click to add' prompts show.
 
@@ -1003,7 +1337,7 @@ def _render_composed_slide(prs, brand, spec, tokens):
 
     title = spec.get("fields", {}).get("Title")
     title_ph = slide.shapes.title
-    region = None
+    base_band = _full_band(grid, slide_w, slide_h)
     if title and title_ph is not None:
         title_ph.text = title
         _, tt, _, th = _geom(slide, title_ph)
@@ -1016,9 +1350,9 @@ def _render_composed_slide(prs, brand, spec, tokens):
         if "margin_x" in grid and "margin_bottom" in grid:
             bottom = slide_h - grid["margin_bottom"]
             if bottom - title_bottom > 0:
-                region = (grid["margin_x"], title_bottom,
-                          slide_w - 2 * grid["margin_x"],
-                          bottom - title_bottom)
+                base_band = (grid["margin_x"], title_bottom,
+                             slide_w - 2 * grid["margin_x"],
+                             bottom - title_bottom)
         _drop_composed_placeholders(slide, keep_title=True)
     else:
         _drop_composed_placeholders(slide, keep_title=False)
@@ -1026,23 +1360,31 @@ def _render_composed_slide(prs, brand, spec, tokens):
     # Plan every block, then lint the slide's FULL element list once before any
     # shape is drawn — the gate is slide-level, so overlap and the element cap
     # are enforced across all blocks together, not per block.
+    plan = {
+        "stat-row": (primitives.plan_stat_row, "stats"),
+        "card-grid": (primitives.plan_card_grid, "cards"),
+        "comparison": (primitives.plan_comparison, "sides"),
+        "process": (primitives.plan_process, "steps"),
+        "timeline": (primitives.plan_timeline, "nodes"),
+        "freeform": (primitives.plan_freeform, "elements"),
+    }
+    blocks = spec.get("blocks", [])
+    regions = _composed_regions(base_band, blocks, tokens)
     all_elements = []
-    for block in spec.get("blocks", []):
+    for block, region in zip(blocks, regions):
         btype = block.get("type")
-        if btype == "stat-row":
-            try:
-                all_elements.extend(
-                    primitives.plan_stat_row(
-                        block["stats"], tokens, slide_w, slide_h, region
-                    )
-                )
-            except primitives.ShapeError as exc:
-                raise SpecError(f"slide {number}: {exc}")
-        else:
+        entry = plan.get(btype)
+        if entry is None:
             raise SpecError(
-                f"slide {number}: unknown composed block type {btype!r}; "
-                f"expected one of: stat-row"
+                f"slide {number}: unknown composed block type {btype!r}"
             )
+        planner, key = entry
+        try:
+            all_elements.extend(
+                planner(block[key], tokens, slide_w, slide_h, region)
+            )
+        except primitives.ShapeError as exc:
+            raise SpecError(f"slide {number}: {exc}")
 
     try:
         lint.check(all_elements, tokens, slide_w, slide_h)

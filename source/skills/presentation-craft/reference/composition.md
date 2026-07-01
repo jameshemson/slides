@@ -48,6 +48,36 @@ strays outside the band. Thresholds are advisory bands, not law.
 | `decoration-present` | slop | No decoration — a strong stat row is the numbers and labels, nothing else. (Guards against the gradient-accented "hero-metric" SaaS cliché.) | impeccable ban; report#2 |
 | `emphasis-colour-only` | slop | The number leads by **size**, not colour alone (WCAG 1.4.1 — never rely on colour as the only signal). | report#9; report#8 |
 
+## The advisory rules for the other primitives
+
+The same tiers apply to `card-grid`, `comparison`, `process`, and `timeline`. Each
+rule judges only its own block's elements (a stat-row rule never sees the process
+boxes stacked below it), so a multi-block slide is reviewed primitive by primitive.
+The defaults are good by construction; these warn when a spec strays.
+
+| Rule | Tier | What good looks like | Source |
+|------|------|----------------------|--------|
+| `card-count` | quality | 3–5 cards. 6+ is a wall; 1 isn't a grid. | report#4 (Cowan); decks "three or five topics / MECE" |
+| `card-label-terseness` | quality | Card labels ≤ 3 words, one line of body. | report#3; the lorem-card anti-pattern |
+| `card-one-accent` | slop | At most one card leads (accent fill); the rest are siblings, not a rainbow. | report#7 (grey-push, one accent) |
+| `comparison-resolves` | slop | The comparison *resolves* — one side is marked the winner (the turn), not left balanced. | decks "order for impact"; end on the turn |
+| `comparison-header-terseness` | quality | Headers ≤ 3 words (a one-word verdict). | report#3 |
+| `process-count` | quality | 3–5 steps; the signature is three. | report#4 (Cowan); decks "Plan/Create/Deliver" |
+| `process-label-terseness` | quality | Step labels ≤ 3 words (a terse verb). | report#3 |
+| `timeline-count` | quality | ~3–6 milestones; more is a table on a rail. | report#4 (Cowan) |
+| `timeline-emphasis` | slop | One milestone is the turn; an even dotted rule has no hierarchy. | report#7; Visme (hierarchy) |
+| `timeline-terseness` | quality | A date + a ≤ 3-word event, not a paragraph. | report#3; Evergreen |
+| `freeform-one-accent` | slop | The one freeform rule: grey-push the field, keep the accent to one or two marks. | report#7 |
+
+The `freeform` block is otherwise deliberately advisory-free: it trades
+good-by-construction for freedom, so its composition is the author's judgement.
+The hard lint still holds (on-token, on-grid, no overlap, under the cap) — that is
+the guardrail that makes the freedom safe.
+
+The full evidence base — per-primitive layout patterns, James's own vocabulary, and
+the design-system principles (hierarchy, type scale, imagery, colour) — is in
+[design-research.md](design-research.md).
+
 ## Doc-only: judgement, not a check
 
 These separate a strong stat row from the cliché more than any geometry can, but

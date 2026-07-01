@@ -59,9 +59,9 @@ A role is a *semantic* job, not a template layout. `build-deck` resolves each ro
 
 ## The composed role
 
-`layout: composed` is a different mode. Instead of filling a fixed layout's placeholders, it composes brand-locked *primitives* on the template's own grid — invention in the arrangement, consistency guaranteed by the design tokens (below) and a mechanical lint. The six fixed roles stay the safe default; `composed` is for a bespoke arrangement that still cannot go off-brand.
+`layout: composed` is a different mode. Instead of filling a fixed layout's placeholders, it composes brand-locked *primitives* on the template's own grid — invention in the arrangement, consistency guaranteed by the design tokens (below) and a mechanical lint. The six fixed roles stay the safe default; `composed` is for a set, a contrast, a sequence, or milestones — the ideas a bulleted slide flattens.
 
-A composed slide carries an optional `Title:`, an optional `Notes:`, and a `Block:` line — naming a primitive, then its indented items:
+A composed slide carries an optional `Title:`, an optional `Notes:`, and one or more `Block:` lines — each naming a primitive, then its indented item lines:
 
 ```
 ## Slide 5
@@ -73,11 +73,46 @@ Block: stat-row
 120 | New deals
 ```
 
-Primitives in this release:
+### Primitives
 
-- `stat-row` — a row of hero numbers with labels, spread evenly across the content width and snapped to the grid margins. Each item is `value | label`.
+Each item line is pipe-separated. A leading `-`/`*` bullet is tolerated; a leading `!` marks the one element that leads — the hero card, the winning panel, the milestone that is the turn.
 
-Every primitive draws only in the brand's token colours and type-scale sizes, snapped within the grid. A composed slide that would place an off-token colour, an off-scale size, an element outside the margins, overlapping elements, or more than the element cap fails the render with a named error rather than producing an off-brand slide — the mechanical lint is what makes free composition safe. Beyond that hard gate, `build-deck` also runs an *advisory* composition review — evidence-cited "what good looks like" for a stat row (hierarchy, count, contrast, terseness, restraint) — and prints any notes in the run summary without blocking; see [composition.md](composition.md). `build-deck` draws `composed` on the layout named in `layout_map` (falling back to the `statement`, then `title` layout). This release takes one `Block:` per composed slide and auto-places it. Explicit grid placement (choosing rows and columns), stacking several blocks on one slide, and further primitives (card, table) are planned follow-ups.
+| Block | Item line | Good count | The one that leads |
+|-------|-----------|-----------|--------------------|
+| `stat-row` | `value \| label` | 3–5 | — |
+| `card-grid` | `label \| body?` | 3–5 | `!` the hero card |
+| `comparison` | `header \| body?` (exactly two) | 2 | `!` the winning side |
+| `process` | `label \| detail?` | 3–5 steps | — (numbered in order) |
+| `timeline` | `date \| event` | 3–5 | `!` the turning point |
+
+Within a card or panel body, ` / ` breaks a line, so a few terse points share one box: `Fast / Focused / Owned`. A **comparison** must *resolve, not balance* — mark the winning side with `!`. A **card grid** holds 3–5 siblings with terse labels. A **process** is 3–5 numbered steps left to right, drawn as boxes joined by arrows (not a chevron ribbon). A **timeline** is dated milestones on a rail with one beat emphasised.
+
+### Freeform — compose anything else
+
+The five named blocks are shortcuts for the shapes that recur most; they are not the whole vocabulary. When an idea wants something they don't cover — a 2×2 matrix, a quadrant, a node graph, an annotated diagram — use `Block: freeform` and place the elements yourself. Each line is one element:
+
+```
+Block: freeform
+panel paper outline ink at cols 1-6 rows 1-8
+text h1 ink at cols 1-6 rows 1-3 | Three markets
+arrow ink at cols 7-7 rows 4-5
+panel accent at cols 8-12 rows 1-8
+text h1 paper at cols 8-12 rows 1-3 | One backbone
+```
+
+- `panel <fill> [outline <stroke>]` (or `box …`) — a filled, optionally outlined box that can hold text.
+- `text <scale> <colour> | the words` — `<scale>` is `display` / `h1` / `body` / `caption`.
+- `arrow <colour>`, `dot <colour>`, `line <colour>` — a connector, a marker, a hairline divider.
+- `<colour>` is a role name — `ink`, `paper`, `accent`, `muted` — never a hex, so it stays on-brand.
+- `at <placement>` positions the element on the block's 12×12 grid (`cols A-B`, `rows C-D`, or a shortcut).
+
+Freeform gives freedom, not a safety net beyond the lint: it guarantees the result is *on-brand* (token colours, on the grid, no overlap, under the element cap), not that it is *well composed* — that is your judgement. Its one advisory nudge is grey-push: keep the accent to one or two marks.
+
+### Several blocks, and placement
+
+A composed slide takes up to four blocks. With no placement they **stack** top to bottom. Or place each on the grid with `at`: `Block: card-grid at cols 1-6` (left half), `at cols 7-12` (right half), the shortcuts `at left` / `at right` / `at top` / `at bottom`, or a quadrant like `at cols 1-6 rows 7-12` (lower left) over a 12-column by 12-row band. Either place every block or none — not a mix.
+
+Every primitive draws only in the brand's token colours and type-scale sizes, snapped within the grid. A composed slide that would place an off-token colour, an off-scale size, an element outside the margins, overlapping elements, or more than the element cap fails the render with a named error rather than an off-brand slide — the mechanical lint is what makes free composition safe. Beyond that hard gate, `build-deck` runs an *advisory* review for each primitive (count, terseness, one-accent, and the cliché guards) and prints non-blocking notes in the run summary; see [composition.md](composition.md) and [design-research.md](design-research.md). `build-deck` draws `composed` on the layout named in `layout_map` (falling back to the `statement`, then `title` layout).
 
 ## The Visual field
 

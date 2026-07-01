@@ -119,6 +119,22 @@ EXPECTED_IDS = [
     "one-accent",
     "decoration-present",
     "emphasis-colour-only",
+    # card-grid
+    "card-count",
+    "card-label-terseness",
+    "card-one-accent",
+    # comparison
+    "comparison-resolves",
+    "comparison-header-terseness",
+    # process
+    "process-count",
+    "process-label-terseness",
+    # timeline
+    "timeline-count",
+    "timeline-emphasis",
+    "timeline-terseness",
+    # freeform
+    "freeform-one-accent",
 ]
 
 REQUIRED_KEYS = {"id", "tier", "severity", "applies_to", "message", "source", "check"}
@@ -127,7 +143,8 @@ REQUIRED_KEYS = {"id", "tier", "severity", "applies_to", "message", "source", "c
 class TestRegistryShape(unittest.TestCase):
 
     def test_registry_shape(self):
-        self.assertEqual(len(RULES), 9, "Expected exactly 9 rules")
+        self.assertEqual(len(RULES), len(EXPECTED_IDS),
+                         f"Expected exactly {len(EXPECTED_IDS)} rules")
         ids_seen = [r["id"] for r in RULES]
         self.assertEqual(len(ids_seen), len(set(ids_seen)), "Rule ids must be unique")
         self.assertEqual(sorted(ids_seen), sorted(EXPECTED_IDS),
@@ -340,7 +357,10 @@ if __name__ == "__main__":
 # (composition rules are advisory; lint.review is the runner — never raises.)
 # ---------------------------------------------------------------------------
 import lint  # noqa: E402
-from primitives import plan_stat_row  # noqa: E402
+from primitives import (  # noqa: E402
+    plan_stat_row, plan_card_grid, plan_comparison, plan_process, plan_timeline,
+    plan_freeform,
+)
 
 _INTEG_STATS = [
     {"value": "56", "label": "Days"},
@@ -377,3 +397,93 @@ class TestReviewIntegration(unittest.TestCase):
         self.assertIn("stat-count", ids)
         self.assertIn("label-terseness", ids)
         self.assertTrue(findings and all(f["severity"] == "advisory" for f in findings))
+
+
+class TestNewPrimitiveReview(unittest.TestCase):
+    """Every new primitive is good by construction, and its advisory rules
+    fire on a weak input."""
+
+    def _ids(self, els):
+        return {f["rule_id"] for f in lint.review(els, TOKENS, SLIDE_W, SLIDE_H)}
+
+    def test_card_grid_clean(self):
+        els = plan_card_grid(
+            [{"label": "Size"}, {"label": "Knowledge"},
+             {"label": "Aim", "emphasis": True}], TOKENS, SLIDE_W, SLIDE_H)
+        self.assertEqual(self._ids(els), set())
+
+    def test_card_grid_two_accents_flag(self):
+        els = plan_card_grid(
+            [{"label": "A", "emphasis": True}, {"label": "B", "emphasis": True},
+             {"label": "C"}], TOKENS, SLIDE_W, SLIDE_H)
+        self.assertIn("card-one-accent", self._ids(els))
+
+    def test_comparison_clean(self):
+        els = plan_comparison(
+            [{"header": "Before", "body": "slow"},
+             {"header": "After", "body": "fast", "emphasis": True}],
+            TOKENS, SLIDE_W, SLIDE_H)
+        self.assertEqual(self._ids(els), set())
+
+    def test_comparison_no_verdict_flags(self):
+        els = plan_comparison(
+            [{"header": "A", "body": "x"}, {"header": "B", "body": "y"}],
+            TOKENS, SLIDE_W, SLIDE_H)
+        self.assertIn("comparison-resolves", self._ids(els))
+
+    def test_process_clean(self):
+        els = plan_process(
+            [{"label": "Plan"}, {"label": "Create"}, {"label": "Deliver"}],
+            TOKENS, SLIDE_W, SLIDE_H)
+        self.assertEqual(self._ids(els), set())
+
+    def test_process_wordy_label_flags(self):
+        els = plan_process(
+            [{"label": "Plan the whole thing out"}, {"label": "Do"}],
+            TOKENS, SLIDE_W, SLIDE_H)
+        self.assertIn("process-label-terseness", self._ids(els))
+
+    def test_timeline_clean(self):
+        els = plan_timeline(
+            [{"date": "26", "event": "Kick"},
+             {"date": "27", "event": "Ship", "emphasis": True},
+             {"date": "28", "event": "Scale"}], TOKENS, SLIDE_W, SLIDE_H)
+        self.assertEqual(self._ids(els), set())
+
+    def test_timeline_no_turn_flags(self):
+        els = plan_timeline(
+            [{"date": "26", "event": "Kick"}, {"date": "27", "event": "Ship"}],
+            TOKENS, SLIDE_W, SLIDE_H)
+        self.assertIn("timeline-emphasis", self._ids(els))
+
+    def test_multiblock_rules_isolated(self):
+        # A stat-row stacked with a process: stat rules see only stat elements,
+        # process rules only process elements -> no cross-family false flags.
+        stat = plan_stat_row(_INTEG_STATS, TOKENS, SLIDE_W, SLIDE_H)
+        proc = plan_process(
+            [{"label": "Plan"}, {"label": "Ship"}], TOKENS, SLIDE_W, SLIDE_H)
+        self.assertEqual(self._ids(stat + proc), set())
+
+    def test_freeform_restrained_is_clean(self):
+        # One accent mark among several -> grey-push respected, no advisory.
+        els = plan_freeform([
+            {"kind": "box", "fill": "paper", "stroke": "ink",
+             "placement": {"cols": (1, 6), "rows": (1, 8)}},
+            {"kind": "text", "scale": "h1", "colour": "ink", "text": "A",
+             "placement": {"cols": (1, 6), "rows": (1, 3)}},
+            {"kind": "box", "fill": "accent",
+             "placement": {"cols": (7, 12), "rows": (1, 8)}},
+        ], TOKENS, SLIDE_W, SLIDE_H)
+        self.assertEqual(self._ids(els), set())
+
+    def test_freeform_rainbow_flags(self):
+        # Three accent marks -> grey-push guardrail warns (advisory).
+        els = plan_freeform([
+            {"kind": "box", "fill": "accent",
+             "placement": {"cols": (1, 4), "rows": (1, 6)}},
+            {"kind": "box", "fill": "accent",
+             "placement": {"cols": (5, 8), "rows": (1, 6)}},
+            {"kind": "text", "scale": "h1", "colour": "accent", "text": "C",
+             "placement": {"cols": (9, 12), "rows": (1, 6)}},
+        ], TOKENS, SLIDE_W, SLIDE_H)
+        self.assertIn("freeform-one-accent", self._ids(els))

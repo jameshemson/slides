@@ -124,11 +124,17 @@ Match and refuse on sight, every time:
 
 ## The reference library
 
-Six reference files carry the full craft. Read the one the task needs.
+The reference files below carry the full craft. Read the one the task needs.
 
 - **`reference/narrative.md`**: Plan and Create. Read when working the story, the
   audience, and the slide-by-slide outline.
 - **`reference/slides.md`**: visual craft. Read when designing how the slides look.
+- **`reference/composition.md`**: what good looks like for a composed slide — the
+  advisory rules per primitive. Read when composing boxes (card grid, comparison,
+  process, timeline, stat row).
+- **`reference/design-research.md`**: the committed evidence base behind the
+  compositions (the design system, the four primitives, the myths kept out). Read
+  to know *why* a composition is shaped the way it is.
 - **`reference/data-viz.md`**: charts and diagrams. Read when a slide carries data
   or a concept that needs a picture.
 - **`reference/delivery.md`**: delivery and speaker notes. Read when writing the
