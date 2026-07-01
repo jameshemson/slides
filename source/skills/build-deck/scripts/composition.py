@@ -307,6 +307,34 @@ def _check_matrix_one_accent(elements, tokens, slide_w, slide_h):
     return _accent_boxes(_by_role(elements, "matrix-cell"), tokens) <= 1
 
 
+# --- table -------------------------------------------------------------------
+# A table is ONE element (kind "table", role "table-grid"): a native
+# GraphicFrame, not per-cell boxes.  So these rules read the element's own
+# structural keys — "header" (list), "rows" (list of data-row cell lists),
+# "emphasis_rows" (indices) — defensively (.get, never raise).
+
+def _tables(elements):
+    return [e for e in elements if e.get("role") == "table-grid"]
+
+
+def _check_table_count(elements, tokens, slide_w, slide_h):
+    return all(len(t.get("rows") or []) <= 6 for t in _tables(elements))
+
+
+def _check_table_cell_terseness(elements, tokens, slide_w, slide_h):
+    for t in _tables(elements):
+        cells = list(t.get("header") or [])
+        for row in (t.get("rows") or []):
+            cells.extend(row or [])
+        if not _all_terse(cells, 6):
+            return False
+    return True
+
+
+def _check_table_one_accent(elements, tokens, slide_w, slide_h):
+    return all(len(t.get("emphasis_rows") or []) <= 1 for t in _tables(elements))
+
+
 # ---------------------------------------------------------------------------
 # RULES registry
 # ---------------------------------------------------------------------------
@@ -602,5 +630,42 @@ RULES = [
         "source": "report#7 (grey-push, one accent)",
         "message": "At most one quadrant leads (accent); the rest are the grey field.",
         "check": _check_matrix_one_accent,
+    },
+    # --- table ---------------------------------------------------------------
+    {
+        "id": "table-count",
+        "tier": "quality",
+        "severity": "advisory",
+        "applies_to": "table-grid",
+        "source": "report#4 (Cowan)",
+        "message": (
+            "Keep a table to ~6 data rows; more is a spreadsheet — "
+            "cut rows or split the slide."
+        ),
+        "check": _check_table_count,
+    },
+    {
+        "id": "table-cell-terseness",
+        "tier": "quality",
+        "severity": "advisory",
+        "applies_to": "table-grid",
+        "source": "report#3 (terse cells)",
+        "message": (
+            "Table cells stay terse (<=~6 words each); a cell holding a "
+            "sentence belongs in prose, not a grid."
+        ),
+        "check": _check_table_cell_terseness,
+    },
+    {
+        "id": "table-one-accent",
+        "tier": "slop",
+        "severity": "advisory",
+        "applies_to": "table-grid",
+        "source": "report#7 (grey-push, one accent)",
+        "message": (
+            "At most one row leads (accent fill); the rest are the grey field, "
+            "not a rainbow."
+        ),
+        "check": _check_table_one_accent,
     },
 ]

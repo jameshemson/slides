@@ -147,6 +147,10 @@ EXPECTED_IDS = [
     # matrix
     "matrix-label-terseness",
     "matrix-one-accent",
+    # table
+    "table-count",
+    "table-cell-terseness",
+    "table-one-accent",
 ]
 
 REQUIRED_KEYS = {"id", "tier", "severity", "applies_to", "message", "source", "check"}
