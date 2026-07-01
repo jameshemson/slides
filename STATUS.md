@@ -8,6 +8,7 @@ All on `main`, each git-tagged with a GitHub release (latest first):
 
 | Version | What it added |
 |---------|---------------|
+| v0.12.0 | The table primitive + waterfall chart. `Block: table` draws a native, recipient-editable PowerPoint table styled from brand tokens (ink header band, paper rows on muted hairlines, ≤1 accent `!` row, numeric columns right-aligned), with `data:` CSV / `emphasis:` label, hard caps (2–5 cols, 1–8 rows, band fit) and three advisory rules. `Chart: type: waterfall` draws sign-coloured floating bars from one series of signed deltas (rises accent, falls spend-or-grey, muted connectors, ink auto-total via `total:`, signed labels honouring `format:`), CSV via `data:`, note-degrade without matplotlib. deck-spec.md condensed to stay under the 190-line reference ceiling (and a stale "scatter unsupported" claim fixed). |
 | v0.11.0 | Chart polish from real-usage feedback: a Chart `format:` (`$` / `%` / `$k` / `$m`, or `prefix:`/`suffix:`) formats value labels (`362` → `$362k`), large numbers abbreviate by default; long/many category labels rotate so they don't collide; the multi-series legend moved below the chart so it no longer crowds the slide title. |
 | v0.10.0 | The render-back visual-QA loop — the lint *with eyes*. `raster.py` rasterises a rendered deck to per-slide PNGs (+ a contact sheet) so `build-deck` can look at it for the things geometry can't see (overflow, font fallback, clutter). Pluggable backend, none required: headless LibreOffice preferred, Keynote/macOS fallback (opt-in, opens the app), else a clear degrade. PDF→PNG via PyMuPDF/poppler; a `looks_blank` check + CLI. build-deck Step 4 runs it automatically on LibreOffice. |
 | v0.9.0 | More diagram vocabulary + data→chart. `cycle` (3–6 stages on a ring) and `matrix` (a 2×2 of quadrants with optional axis captions). Icons on `process` and `comparison` items (completing icons across every block). A `Chart:` can read its data from a CSV (`data: file.csv`) — a spreadsheet exports straight to a chart, multiple series draw as grouped bars. Fixes a pre-existing charts.py bug where a second grouped series (or a de-emphasised bar) drew in paper/white; `muted` now falls back to grey, never paper. |
@@ -20,7 +21,7 @@ All on `main`, each git-tagged with a GitHub release (latest first):
 | v0.2.0 | Native charts: `build-deck` draws bar, column, pie, scatter, and line charts from a `Chart:` block (matplotlib), placed on-brand; degrades to a `VISUAL TO ADD` note when matplotlib is absent. |
 | v0.1.0 | Initial release: five skills, cross-harness pipeline, python-pptx renderer, two-layer slop detector. |
 
-Automated gates at this snapshot: `python3 -m unittest discover tests` 254 passing, `npm test` 44 passing, `npm run check-sync` in sync. `cairosvg` and `matplotlib` are installed locally: the icon raster path is verified (icons recolour to the brand accent and rasterise crisply) and the multi-series grouped-bar chart is verified visually (Revenue accent + Cost grey). On a machine without `cairosvg`, icons degrade to a note (as designed).
+Automated gates at this snapshot: `python3 -m unittest discover tests` 307 passing, `npm test` 44 passing, `npm run check-sync` in sync. `cairosvg` and `matplotlib` are installed locally: the icon raster path is verified (icons recolour to the brand accent and rasterise crisply) and the multi-series grouped-bar chart is verified visually (Revenue accent + Cost grey). On a machine without `cairosvg`, icons degrade to a note (as designed).
 
 The render-back visual-QA loop (v0.10.0) is scaffold-only in this environment: no
 rasteriser was installed. Its testable parts (backend detection, degradation,
@@ -40,10 +41,9 @@ like `matplotlib` for charts.
 
 Composed mode follow-ups shipped in v0.7.0: four more primitives, a `freeform`
 block, explicit grid placement (`Block: … at cols/rows`), stacking several blocks
-per slide, and a shape-aware lint. Still deferred by design: further primitives
-(table, funnel); the render-to-PNG vision loop (a pluggable rasteriser — local
-PowerPoint/Keynote if present, else LibreOffice headless, else degrade to the
-note); wiring the composition rules into `slop-check`; region-aware
+per slide, and a shape-aware lint. The render-to-PNG vision loop shipped in
+v0.10.0 and the table primitive in v0.12.0. Still deferred by design: a funnel
+primitive; wiring the composition rules into `slop-check`; region-aware
 breathing-room and small-number contrast. Concreteness stays doc-only (authored
 judgement, not a mechanical test).
 
@@ -57,6 +57,12 @@ These could not run in the build environment; each needs a human in Claude Code 
 - [ ] Re-verify that Codex repo-local discovery is still `.agents/skills/` against current Codex docs.
 - [ ] **Eyeball a `composed` stat-row slide** rendered from a real template against a placeholder-filled slide from the same template (open in any viewer — PowerPoint, Keynote, or a LibreOffice/Keynote PNG export; no specific tool required). The lint guarantees on-brand-by-tokens, not beautiful; confirm the composed slide sits in the template's own rhythm and reads as the same deck. (The automated test confirms the row aligns to the derived margins; the eye confirms it looks right.) While there, confirm the **advisory composition notes read as helpful, not noisy** on a real deck.
 - [ ] **Eyeball the v0.7.0 primitives** — `card-grid`, `comparison`, `process`, `timeline`, and a `freeform` slide — rendered from a real template. Confirm the boxes read on-brand and the compositions look intentional, not templated (the lint proves on-brand, not well-composed, especially for `freeform`). Confirm `narrative` actually reaches for a composition (and `freeform` when an idea fits none of the five) rather than defaulting to bullets.
+- [ ] **Eyeball the v0.12.0 table and waterfall** from a real template: open a
+  `Block: table` slide in **desktop PowerPoint** — confirm the muted row
+  hairlines (`a:lnB` raw XML, plan assumption A-002) survive, the cells are
+  editable, and no theme banding leaks; view a `type: waterfall` slide via the
+  LibreOffice render-back — confirm connectors touch bar corners and the signed
+  labels read cleanly.
 - [ ] **Eyeball the v0.8.0 vocabulary** with `cairosvg` installed: a `tree`, an `icon-list`, and a card/tree with a `[icon]` — confirm the icons recolour to the brand accent and sit crisply, the tree reads as an org chart, and the brand-derived type scale looks right (composed slides should feel like the brand). The raster path is skip-guarded in tests; this is the human confirmation.
 
 ## Deferred (next touch of those files)
