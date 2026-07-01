@@ -135,6 +135,10 @@ EXPECTED_IDS = [
     "timeline-terseness",
     # freeform
     "freeform-one-accent",
+    # tree
+    "tree-count",
+    "tree-label-terseness",
+    "tree-one-accent",
 ]
 
 REQUIRED_KEYS = {"id", "tier", "severity", "applies_to", "message", "source", "check"}
@@ -359,7 +363,7 @@ if __name__ == "__main__":
 import lint  # noqa: E402
 from primitives import (  # noqa: E402
     plan_stat_row, plan_card_grid, plan_comparison, plan_process, plan_timeline,
-    plan_freeform,
+    plan_freeform, plan_tree,
 )
 
 _INTEG_STATS = [
@@ -455,6 +459,21 @@ class TestNewPrimitiveReview(unittest.TestCase):
             [{"date": "26", "event": "Kick"}, {"date": "27", "event": "Ship"}],
             TOKENS, SLIDE_W, SLIDE_H)
         self.assertIn("timeline-emphasis", self._ids(els))
+
+    def test_tree_clean(self):
+        root = {"label": "CEO", "emphasis": False, "icon": None, "children": [
+            {"label": "Eng", "emphasis": True, "icon": None, "children": []},
+            {"label": "Sales", "emphasis": False, "icon": None, "children": []},
+        ]}
+        els = plan_tree(root, TOKENS, SLIDE_W, SLIDE_H)
+        self.assertEqual(self._ids(els), set())
+
+    def test_tree_two_accents_flag(self):
+        root = {"label": "CEO", "emphasis": True, "icon": None, "children": [
+            {"label": "Eng", "emphasis": True, "icon": None, "children": []},
+            {"label": "Ops", "emphasis": False, "icon": None, "children": []},
+        ]}
+        self.assertIn("tree-one-accent", self._ids(plan_tree(root, TOKENS, SLIDE_W, SLIDE_H)))
 
     def test_multiblock_rules_isolated(self):
         # A stat-row stacked with a process: stat rules see only stat elements,

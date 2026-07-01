@@ -18,8 +18,13 @@ import primitives
 import lint
 from primitives import (
     plan_stat_row, plan_card_grid, plan_comparison, plan_process,
-    plan_timeline, plan_freeform, ShapeError, _normalise_hex,
+    plan_timeline, plan_freeform, plan_tree, ShapeError, _normalise_hex,
 )
+
+
+def _node(label, *children, emphasis=False, icon=None):
+    return {"label": label, "emphasis": emphasis, "icon": icon,
+            "children": list(children)}
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 
@@ -278,6 +283,39 @@ class TestNewPrimitives(unittest.TestCase):
              "placement": {"cols": (1, 12), "rows": (1, 8)}},
         ], TOKENS, SLIDE_W, SLIDE_H)
         self.assertEqual(els[0]["fill"], "#4F81BD")  # role name -> brand hex
+
+    def test_tree_org_chart_lint_clean(self):
+        root = _node("CEO", _node("Eng"), _node("Sales"), _node("Ops"))
+        els = plan_tree(root, TOKENS, SLIDE_W, SLIDE_H)
+        self._lint_clean(els)
+        self.assertEqual(_roles(els).count("tree-node"), 4)
+        self.assertEqual(_roles(els).count("tree-edge"), 3)  # N-1 edges
+
+    def test_tree_depth_three_lint_clean(self):
+        root = _node("R", _node("A", _node("A1"), _node("A2")), _node("B"))
+        self._lint_clean(plan_tree(root, TOKENS, SLIDE_W, SLIDE_H))
+
+    def test_tree_emphasis_fills_accent(self):
+        root = _node("Vision", _node("Now", emphasis=True), _node("Next"))
+        els = plan_tree(root, TOKENS, SLIDE_W, SLIDE_H)
+        self.assertIn("#4F81BD", _fills(els))
+
+    def test_tree_with_icons_lower_cap(self):
+        # 7 icon'd nodes exceeds the with-icons cap of 6.
+        kids = [_node(f"c{i}", icon="growth") for i in range(6)]
+        root = _node("root", *kids)  # 7 nodes, all-but-root icon'd
+        with self.assertRaises(ShapeError):
+            plan_tree(root, TOKENS, SLIDE_W, SLIDE_H)
+
+    def test_tree_over_cap_raises(self):
+        root = _node("R", *[_node(f"c{i}") for i in range(9)])  # 10 nodes
+        with self.assertRaises(ShapeError):
+            plan_tree(root, TOKENS, SLIDE_W, SLIDE_H)
+
+    def test_tree_too_deep_raises(self):
+        root = _node("a", _node("b", _node("c", _node("d", _node("e")))))
+        with self.assertRaises(ShapeError):
+            plan_tree(root, TOKENS, SLIDE_W, SLIDE_H)
 
     def test_all_defaults_stay_under_cap(self):
         # 5-step process with details is the worst case; must fit the cap.
