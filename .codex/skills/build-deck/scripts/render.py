@@ -516,7 +516,7 @@ def _parse_composed_slide(number, lines):
 # is the vocabulary a composed slide may draw from; render dispatches on it too.
 COMPOSED_BLOCK_TYPES = (
     "stat-row", "card-grid", "comparison", "process", "timeline", "tree",
-    "freeform",
+    "icon-list", "freeform",
 )
 
 # Freeform vocabulary — the escape hatch. Colours are role names and sizes are
@@ -545,6 +545,22 @@ def _clean_item(item):
 def _pipe_fields(text):
     """Split a `a | b` item line into stripped fields."""
     return [p.strip() for p in text.split("|")]
+
+
+def _extract_icon(number, text):
+    """Pull a leading `[icon-name]` off an item, returning (name|None, rest).
+
+    Validates the name against the bundled icon set. Shared by card/process/tree
+    items so any of them may carry an optional icon."""
+    if text.startswith("[") and "]" in text:
+        end = text.find("]")
+        name = text[1:end].strip().lower()
+        rest = text[end + 1:].strip()
+        import icons as _icons  # noqa: PLC0415
+        if name not in _icons.available():
+            raise SpecError(f"slide {number}: unknown icon {name!r}")
+        return name, rest
+    return None, text
 
 
 def _require_name(number, name, allowed, what):
@@ -749,16 +765,18 @@ def _parse_composed_block(number, block):
         cards = []
         for item in items:
             emph, text = _clean_item(item)
+            icon, text = _extract_icon(number, text)
             fields = _pipe_fields(text)
             if not fields[0]:
                 raise SpecError(
                     f"slide {number}: card-grid line {item!r} needs a label "
-                    f"(write 'Label | optional body')"
+                    f"(write '[icon] Label | optional body')"
                 )
             cards.append({
                 "label": fields[0],
                 "body": fields[1] if len(fields) > 1 else "",
                 "emphasis": emph,
+                "icon": icon,
             })
         return {"type": "card-grid", "cards": cards}
 
@@ -804,6 +822,27 @@ def _parse_composed_block(number, block):
 
     if btype == "tree":
         return {"type": "tree", "root": _parse_tree_items(number, items)}
+
+    if btype == "icon-list":
+        rows = []
+        for item in items:
+            _emph, text = _clean_item(item)
+            if "|" not in text:
+                raise SpecError(
+                    f"slide {number}: icon-list line {item!r} must be "
+                    f"'icon | text'"
+                )
+            name, txt = text.split("|", 1)
+            name, txt = name.strip().lower(), txt.strip()
+            import icons as _icons  # noqa: PLC0415
+            if name not in _icons.available():
+                raise SpecError(f"slide {number}: unknown icon {name!r}")
+            if not txt:
+                raise SpecError(
+                    f"slide {number}: icon-list line {item!r} needs text"
+                )
+            rows.append({"icon": name, "text": txt})
+        return {"type": "icon-list", "rows": rows}
 
     # timeline
     nodes = []
@@ -1465,6 +1504,7 @@ def _render_composed_slide(prs, brand, spec, tokens, charts_dir):
         "process": (primitives.plan_process, "steps"),
         "timeline": (primitives.plan_timeline, "nodes"),
         "tree": (primitives.plan_tree, "root"),
+        "icon-list": (primitives.plan_icon_list, "rows"),
         "freeform": (primitives.plan_freeform, "elements"),
     }
     blocks = spec.get("blocks", [])

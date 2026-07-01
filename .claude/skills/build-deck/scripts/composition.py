@@ -283,6 +283,12 @@ def _check_tree_one_accent(elements, tokens, slide_w, slide_h):
     return _accent_boxes(_by_role(elements, "tree-node"), tokens) <= 1
 
 
+# --- icon-list ---------------------------------------------------------------
+
+def _check_iconlist_count(elements, tokens, slide_w, slide_h):
+    return 2 <= len(_by_role(elements, "iconlist-icon")) <= 6
+
+
 # ---------------------------------------------------------------------------
 # RULES registry
 # ---------------------------------------------------------------------------
@@ -530,5 +536,15 @@ RULES = [
             "At most one node leads (accent fill); the rest are the grey field."
         ),
         "check": _check_tree_one_accent,
+    },
+    # --- icon-list -----------------------------------------------------------
+    {
+        "id": "iconlist-count",
+        "tier": "quality",
+        "severity": "advisory",
+        "applies_to": "iconlist",
+        "source": "report#4 (Cowan)",
+        "message": "Keep an icon list to ~3-6 rows.",
+        "check": _check_iconlist_count,
     },
 ]

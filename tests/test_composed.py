@@ -408,3 +408,29 @@ class NewPrimitiveRenderTest(unittest.TestCase):
         proc, out = self._render_block(block, "tree2.pptx")
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn("exactly one root", proc.stderr + proc.stdout)
+
+    def test_icon_list_renders(self):
+        import icons
+        block = ("Block: icon-list\n"
+                 "growth | Revenue up\n"
+                 "team | Team scaled\n"
+                 "fast | Shipping weekly\n")
+        proc, out = self._render_block(block, "il.pptx")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        drawn = self._drawn(out)
+        # 3 text rows always draw; the 3 icons draw only with a rasteriser.
+        expected = 6 if icons.cairosvg_available() else 3
+        self.assertEqual(len(drawn), expected)
+
+    def test_icon_list_bad_icon_fails(self):
+        proc, out = self._render_block(
+            "Block: icon-list\nno-such | x\n", "ilbad.pptx")
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("no-such", proc.stderr + proc.stdout)
+
+    def test_card_icon_prefix_renders(self):
+        block = ("Block: card-grid\n"
+                 "[growth] Grow | markets\n"
+                 "[team] Serve | users\n")
+        proc, out = self._render_block(block, "cardicon.pptx")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
