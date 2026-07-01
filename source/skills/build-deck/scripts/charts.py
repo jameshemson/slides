@@ -60,13 +60,22 @@ def _normalise_hex(value):
     return "#" + text.upper()
 
 
+# Generic grey-push fallback for the muted role — used only when the brand names
+# no `muted`. It must never be the paper colour: a de-emphasised bar or a second
+# grouped series drawn in paper is invisible on a paper background. Generic
+# default, not a brand value (like the generic type-scale defaults elsewhere).
+_MUTED_FALLBACK = "#BFBFBF"
+_INK_FALLBACK = "#333333"
+
+
 def _resolve_colours(colours):
     """Resolve (emphasis, muted, spend, ink) from a brand colour dict (D-006).
 
     emphasis = colours['accent'] else 'growth' else first value.
-    muted    = colours['muted']  else last value.
+    muted    = colours['muted']  else a neutral grey (NEVER paper — a paper bar
+               is invisible on a paper background).
     spend    = colours['spend']  else emphasis.
-    ink      = colours['ink']    else muted.
+    ink      = colours['ink']    else a dark default.
     Raises ChartError if no usable colour is present.
     """
     if not isinstance(colours, dict) or not colours:
@@ -81,9 +90,9 @@ def _resolve_colours(colours):
         return _normalise_hex(colours.get(key))
 
     emphasis = pick("accent") or pick("growth") or ordered[0]
-    muted = pick("muted") or ordered[-1]
+    muted = pick("muted") or _MUTED_FALLBACK
     spend = pick("spend") or emphasis
-    ink = pick("ink") or muted
+    ink = pick("ink") or _INK_FALLBACK
     return emphasis, muted, spend, ink
 
 

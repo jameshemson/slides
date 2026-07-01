@@ -71,6 +71,8 @@ The defaults are good by construction; these warn when a spec strays.
 | `tree-label-terseness` | quality | Node labels ≤ 4 words. | report#3 |
 | `tree-one-accent` | slop | At most one node leads (accent); the rest are the grey field. | report#7 |
 | `icon-list-count` | quality | ~3–6 rows in an icon list. | report#4 (Cowan) |
+| `cycle-count` | quality | ~3–6 stages on a cycle. | report#4 (Cowan) |
+| `matrix-one-accent` | slop | At most one quadrant leads (accent); the rest are the grey field. | report#7 |
 | `freeform-one-accent` | slop | The one freeform rule: grey-push the field, keep the accent to one or two marks. | report#7 |
 
 The `freeform` block is otherwise deliberately advisory-free: it trades
