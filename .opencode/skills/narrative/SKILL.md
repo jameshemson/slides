@@ -69,7 +69,7 @@ Write `<deck>.deck.md`, conforming to [deck-spec.md](../presentation-craft/refer
 - Reserve `Visual:` for what code cannot draw at all — a photograph, a real diagram, an unsupported chart. A fixed role stays right for a true title, a section divider, a single hero statement, one image, or a chart with a line or two.
 - Only the fields the role allows, plus optional `Visual:` and `Notes:`; a `title-content` slide may also carry a `Chart:` block.
 - A `Visual:` field describes an image, diagram, or unsupported chart in plain words. `build-deck` records it as a note for a person to place; it does not draw it.
-- A `Chart:` block carries structured data (bar, column, line, pie, scatter, or waterfall) that `build-deck` draws as an on-brand chart. Use it when the data fits one of those; use `Visual:` for everything else (histograms, maps, diagrams, photos). The format is in [deck-spec.md](../presentation-craft/reference/deck-spec.md).
+- A `Chart:` block carries structured data (bar, column, line, pie, scatter, or waterfall) that `build-deck` draws as an on-brand chart — reach for `native: true` when the deck travels to be edited, a board pack the recipient will tweak in PowerPoint. Use it when the data fits one of those; use `Visual:` for everything else (histograms, maps, diagrams, photos). The format is in [deck-spec.md](../presentation-craft/reference/deck-spec.md).
 - `Notes:` carries what the presenter says. Notes are prose and held to the prose-slop standard.
 
 The spec carries content and structure only, never fonts, colours, or coordinates. Those live in the template and `brand.json`.

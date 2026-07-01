@@ -521,7 +521,7 @@ def _parse_composed_slide(number, lines, spec_dir=None):
 # is the vocabulary a composed slide may draw from; render dispatches on it too.
 COMPOSED_BLOCK_TYPES = (
     "stat-row", "card-grid", "comparison", "process", "timeline", "tree",
-    "cycle", "matrix", "icon-list", "table", "freeform",
+    "cycle", "matrix", "icon-list", "table", "chart", "freeform",
 )
 
 # Freeform vocabulary — the escape hatch. Colours are role names and sizes are
@@ -875,6 +875,13 @@ def _parse_composed_block(number, block, spec_dir=None):
         return {"type": "matrix",
                 "spec": {"x": xlab, "y": ylab, "quadrants": quads}}
 
+    if btype == "chart":
+        # Same `key: value` grammar `Chart:` already parses (data: CSV
+        # included), nested under a "chart" key exactly as `table` nests under
+        # "table" below (REQ-006/D-006). `_parse_chart_block` raises its own
+        # SpecErrors (e.g. "chart block has no 'type'") — nothing extra here.
+        return {"type": "chart", "chart": _parse_chart_block(number, items, spec_dir)}
+
     if btype == "table":
         # Key lines (matrix x:/y: precedent): `data:` names a CSV, `emphasis:`
         # marks a data row by its first cell. Every other item line is a table
@@ -1079,6 +1086,40 @@ def _parse_marker(number, value):
     return {"x": _chart_number(number, parts[0]), "label": parts[1].strip()}
 
 
+def _parse_bool_key(number, key, value):
+    """Parse a chart boolean key's value: true/yes or false/no, case-
+    insensitive. Raises SpecError naming the key and the bad token verbatim
+    (native-charts-plan.md D-001/D-009)."""
+    low = value.strip().lower()
+    if low in ("true", "yes"):
+        return True
+    if low in ("false", "no"):
+        return False
+    raise SpecError(
+        f"slide {number}: chart '{key}:' must be true or false, got "
+        f"{value.strip()!r}"
+    )
+
+
+def _parse_target(number, value):
+    """Parse a chart `target:` value into {'value': float, 'label': str|None}.
+
+    Grammar (D-009): 'target: 50' or 'target: 50 | goal' — the label is
+    optional. Raises SpecError naming the bad token when the value is not
+    numeric.
+    """
+    raw_value, _, raw_label = value.partition("|")
+    token = raw_value.strip()
+    try:
+        target_value = float(token)
+    except ValueError:
+        raise SpecError(
+            f"slide {number}: chart 'target:' value {token!r} is not a number"
+        )
+    label = raw_label.strip() or None
+    return {"value": target_value, "label": label}
+
+
 # Chart value-label format shorthands → {prefix?, suffix?, abbreviate?}.
 CHART_FORMAT_SHORTHANDS = {
     "$": {"prefix": "$"},
@@ -1168,14 +1209,22 @@ def _parse_chart_block(number, lines, spec_dir=None):
     Data is either typed inline (`categories`/`series`/`points`) or read from a
     CSV named by `data:` (resolved against the spec's directory) — not both.
 
+    `native:`/`stacked:`/`target:` (native-charts-plan.md REQ-001/004/005) are
+    ALWAYS present on the returned dict — default False/False/None — so
+    downstream code never `.get`-guesses. `stacked:` is legal only on a
+    multi-series bar/column chart (not combined with `emphasis:`); `target:`
+    is legal only on column/bar/line.
+
     Returns one of:
       bar/column: {type, categories: [str], series: [{name, values:[float]}],
-                   emphasis: str|None, callout: str|None}
+                   emphasis: str|None, callout: str|None, fmt, native, stacked,
+                   target}
       line:       {type, points: [(x,y)], markers: [{x,label}],
-                   callout: str|None}
+                   callout: str|None, fmt, native, stacked, target}
     """
     ctype = categories = callout = emphasis = data_file = None
     fmt_key = prefix_key = suffix_key = total_key = None
+    native_key = stacked_key = target_key = None
     points = None
     series = []
     markers = []
@@ -1205,6 +1254,12 @@ def _parse_chart_block(number, lines, spec_dir=None):
             suffix_key = value
         elif key == "total":
             total_key = value
+        elif key == "native":
+            native_key = value
+        elif key == "stacked":
+            stacked_key = value
+        elif key == "target":
+            target_key = value
         elif key == "categories":
             categories = [c.strip() for c in value.split(",") if c.strip()]
         elif key == "emphasis":
@@ -1268,6 +1323,31 @@ def _parse_chart_block(number, lines, spec_dir=None):
             f"not {ctype!r}"
         )
 
+    # native:/stacked:/target: (native-charts-plan.md REQ-001/004/005): always
+    # present on the returned dict. Type-legality is checked here (it depends
+    # only on ctype); stacked's series-count/emphasis conflicts are checked
+    # further below, once `series` is final (a `data:` CSV may still populate
+    # it).
+    native = (_parse_bool_key(number, "native", native_key)
+              if native_key is not None else False)
+
+    stacked = (_parse_bool_key(number, "stacked", stacked_key)
+               if stacked_key is not None else False)
+    if stacked and ctype not in ("bar", "column"):
+        raise SpecError(
+            f"slide {number}: chart 'stacked:' is only supported on bar or "
+            f"column charts, not {ctype!r}"
+        )
+
+    target = None
+    if target_key is not None:
+        if ctype not in ("column", "bar", "line"):
+            raise SpecError(
+                f"slide {number}: chart 'target:' is only supported on "
+                f"column, bar, or line charts, not {ctype!r}"
+            )
+        target = _parse_target(number, target_key)
+
     if data_file is not None:
         if categories or series or points:
             raise SpecError(
@@ -1319,11 +1399,24 @@ def _parse_chart_block(number, lines, spec_dir=None):
                 f"slide {number}: chart emphasis {emphasis!r} is not one of "
                 f"the categories"
             )
+        if stacked and len(series) < 2:
+            raise SpecError(
+                f"slide {number}: chart 'stacked:' needs at least two series, "
+                f"got {len(series)} (a single series has nothing to stack)"
+            )
+        if stacked and emphasis is not None:
+            raise SpecError(
+                f"slide {number}: chart 'stacked:' cannot combine with "
+                f"'emphasis:' (a stacked chart reads by series, emphasis "
+                f"names a category — drop one)"
+            )
         if ctype == "waterfall":
             return {"type": ctype, "categories": categories, "series": series,
-                    "callout": callout, "fmt": fmt, "total_label": total_label}
+                    "callout": callout, "fmt": fmt, "total_label": total_label,
+                    "native": native, "stacked": stacked, "target": target}
         return {"type": ctype, "categories": categories, "series": series,
-                "emphasis": emphasis, "callout": callout, "fmt": fmt}
+                "emphasis": emphasis, "callout": callout, "fmt": fmt,
+                "native": native, "stacked": stacked, "target": target}
 
     # line or scatter (point charts)
     if not points:
@@ -1343,7 +1436,8 @@ def _parse_chart_block(number, lines, spec_dir=None):
                 f"point"
             )
     return {"type": ctype, "points": points, "markers": markers,
-            "callout": callout, "fmt": fmt}
+            "callout": callout, "fmt": fmt,
+            "native": native, "stacked": stacked, "target": target}
 
 
 def _validate_slide_fields(number, role, fields):
@@ -1416,11 +1510,16 @@ def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None):
     chart_slides = []        # drawn natively
     fallback_slides = []     # matplotlib absent -> VISUAL TO ADD note
     charts_mod = "unset"     # imported lazily once, on the first chart slide
+    native_charts_mod = "unset"  # imported lazily once, on the first native chart
     font_family = "unset"    # resolved lazily once, when first drawing a chart
     font_warning = None
     composed_tokens = None   # resolved lazily once, on the first composed slide
     composed_advisories = []  # [(slide_number, [finding, ...])] — non-blocking
     icon_fallback_slides = []  # [(slide_number, [icon name, ...])] — rasteriser absent
+    # native-charts-plan.md D-005: one note per chart that requested `native:`
+    # but fell back to the matplotlib image (unsupportable type, or the
+    # native_charts backend is unavailable).
+    native_fallback_notes = []
 
     for spec in slides:
         number = spec["number"]
@@ -1430,13 +1529,16 @@ def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None):
             if composed_tokens is None:
                 import tokens  # noqa: PLC0415 — light; composed decks only
                 composed_tokens = tokens.resolve_tokens(brand, prs)
-            advisories, dropped_icons = _render_composed_slide(
-                prs, brand, spec, composed_tokens, charts_dir
+            advisories, dropped_icons, chart_fallback_notes = (
+                _render_composed_slide(
+                    prs, brand, spec, composed_tokens, charts_dir
+                )
             )
             if advisories:
                 composed_advisories.append((number, advisories))
             if dropped_icons:
                 icon_fallback_slides.append((number, dropped_icons))
+            native_fallback_notes.extend(chart_fallback_notes)
             continue
 
         if role not in layout_map:
@@ -1468,20 +1570,34 @@ def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None):
         chart = spec["fields"].get("Chart")
         extra_visual = None
         if chart:
-            if charts_mod == "unset":
+            # native-charts-plan.md D-002/D-005: `native: true` tries the
+            # native_charts backend first (lazy import, cached like charts_mod
+            # below); an unsupportable chart or a missing native_charts module
+            # falls back to the matplotlib image path with a run-summary note
+            # naming the reason — never an error.
+            native_ok = False
+            if chart["native"]:
+                if native_charts_mod == "unset":
+                    try:
+                        import native_charts as native_charts_mod  # noqa: PLC0415
+                    except ImportError:
+                        native_charts_mod = None
+                if native_charts_mod is None:
+                    reason = "native chart backend unavailable"
+                else:
+                    native_ok, reason = native_charts_mod.supported(chart)
+                if not native_ok:
+                    native_fallback_notes.append(
+                        f"slide {number}: {reason}; drawn as an image"
+                    )
+
+            if not native_ok and charts_mod == "unset":
                 try:
                     import charts as charts_mod  # noqa: PLC0415
                 except ImportError:
                     charts_mod = None
-            if charts_mod is None:
-                # Graceful degradation (D-011): record the chart as a note.
-                extra_visual = chart_to_note(chart)
-                fallback_slides.append(number)
-            else:
-                if font_family == "unset":
-                    font_family, font_warning = register_brand_font(
-                        brand, brand_path
-                    )
+
+            if native_ok or charts_mod is not None:
                 host = _object_placeholder(slide)
                 if host is None:
                     raise SpecError(
@@ -1499,16 +1615,31 @@ def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None):
                               if p._element is not host._element]
                 region = _chart_region(number, prs, slide, host, title_ph,
                                        has_body)
-                os.makedirs(charts_dir, exist_ok=True)
-                png = os.path.join(charts_dir, f"slide{number}.png")
-                try:
-                    charts_mod.render_png(
-                        chart, brand["colours"], font_family, png
+
+                if native_ok:
+                    native_charts_mod.insert(
+                        slide, chart, brand["colours"], region
                     )
-                except charts_mod.ChartError as exc:
-                    raise SpecError(f"slide {number}: {exc}")
-                _place_picture(slide, png, region)
-                chart_slides.append(number)
+                    chart_slides.append(number)
+                else:
+                    if font_family == "unset":
+                        font_family, font_warning = register_brand_font(
+                            brand, brand_path
+                        )
+                    os.makedirs(charts_dir, exist_ok=True)
+                    png = os.path.join(charts_dir, f"slide{number}.png")
+                    try:
+                        charts_mod.render_png(
+                            chart, brand["colours"], font_family, png
+                        )
+                    except charts_mod.ChartError as exc:
+                        raise SpecError(f"slide {number}: {exc}")
+                    _place_picture(slide, png, region)
+                    chart_slides.append(number)
+            else:
+                # Graceful degradation (D-011): record the chart as a note.
+                extra_visual = chart_to_note(chart)
+                fallback_slides.append(number)
 
         _drop_unused(unused)
         _apply_meta(slide, spec["meta"], extra_visual=extra_visual)
@@ -1523,11 +1654,13 @@ def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None):
     return _summary(out_path, len(slides), visual_slides, chart_slides,
                     fallback_slides, font_warning,
                     composed_advisories=composed_advisories,
-                    icon_fallback_slides=icon_fallback_slides)
+                    icon_fallback_slides=icon_fallback_slides,
+                    native_fallback_notes=native_fallback_notes)
 
 
 def _summary(out_path, n_slides, visual_slides, chart_slides, fallback_slides,
-             font_warning, composed_advisories=None, icon_fallback_slides=None):
+             font_warning, composed_advisories=None, icon_fallback_slides=None,
+             native_fallback_notes=None):
     """Compose the one-line run summary, naming charts, notes, and warnings."""
     parts = [f"rendered {n_slides} slide(s) to {out_path}"]
     if chart_slides:
@@ -1548,6 +1681,11 @@ def _summary(out_path, n_slides, visual_slides, chart_slides, fallback_slides,
             f"slide(s) fell back to VISUAL TO ADD notes "
             f"(slides {', '.join(map(str, fallback_slides))}); "
             f"pip install matplotlib to draw them"
+        )
+    if native_fallback_notes:
+        parts.append(
+            f"; {len(native_fallback_notes)} native chart fallback note(s): "
+            + "; ".join(native_fallback_notes)
         )
     if icon_fallback_slides:
         n = sum(len(names) for _, names in icon_fallback_slides)
@@ -1728,6 +1866,11 @@ def _render_composed_slide(prs, brand, spec, tokens, charts_dir):
     primitives.py is the only module that emits literals; lint.py is the gate
     that replaces D-002's structural guarantee. A lint or shape failure becomes
     a SpecError naming the slide, so no half-built deck is saved.
+
+    Returns (advisories, dropped_icons, native_fallback_notes): the advisory
+    composition findings, any icon names dropped for want of a rasteriser, and
+    one fallback note per `Block: chart` that requested `native: true` but
+    fell back to a matplotlib image (REQ-006/D-005/D-006).
     """
     import primitives  # noqa: PLC0415 — composed decks only
     import lint  # noqa: PLC0415
@@ -1780,8 +1923,28 @@ def _render_composed_slide(prs, brand, spec, tokens, charts_dir):
     blocks = spec.get("blocks", [])
     regions = _composed_regions(base_band, blocks, tokens)
     all_elements = []
-    for block, region in zip(blocks, regions):
+    # A `Block: chart` plans ONE inline element (D-006, mirrors the icons
+    # pattern below) purely so the lint sees its bbox — no primitives planner
+    # is involved. Fulfilment (native insert, matplotlib PNG, or a note)
+    # happens after primitives.draw, once the block index is known so two
+    # `Block: chart` on one slide never collide on a PNG name.
+    chart_plans = []  # [(element_dict, chart_dict, region, block_index), ...]
+    for i, (block, region) in enumerate(zip(blocks, regions)):
         btype = block.get("type")
+        if btype == "chart":
+            chart = block["chart"]
+            chart_el = {
+                "kind": "chart",
+                "role": "chart-figure",
+                "text": f"chart: {chart['type']}",
+                "left": region[0],
+                "top": region[1],
+                "width": region[2],
+                "height": region[3],
+            }
+            all_elements.append(chart_el)
+            chart_plans.append((chart_el, chart, region, i))
+            continue
         entry = plan.get(btype)
         if entry is None:
             raise SpecError(
@@ -1833,10 +1996,50 @@ def _render_composed_slide(prs, brand, spec, tokens, charts_dir):
                 if el.get("kind") != "icon" or el.get("png")
             ]
 
+    # Chart elements must never reach primitives.draw/_add_text (D-006's
+    # seam risk): remove the planned bbox placeholders now that lint has
+    # cleared them, and fulfil each afterwards.
+    if chart_plans:
+        chart_ids = {id(el) for el, _, _, _ in chart_plans}
+        all_elements = [el for el in all_elements if id(el) not in chart_ids]
+
     primitives.draw(slide, all_elements)
 
-    _apply_meta(slide, spec.get("meta", {}))
-    return advisories, dropped_icons
+    # Fulfil each planned chart: native insert when requested and supported,
+    # else a matplotlib PNG placed into the block's region, else (matplotlib
+    # absent) a VISUAL TO ADD note via the same extra_visual seam the
+    # title-content chart branch uses (D-005/D-006).
+    native_fallback_notes = []
+    chart_notes = []
+    for _el, chart, region, idx in chart_plans:
+        if chart["native"]:
+            try:
+                import native_charts  # noqa: PLC0415
+            except ImportError:
+                ok, reason = False, "native chart backend unavailable"
+            else:
+                ok, reason = native_charts.supported(chart)
+            if ok:
+                native_charts.insert(slide, chart, brand["colours"], region)
+                continue
+            native_fallback_notes.append(
+                f"slide {number}: {reason}; drawn as an image"
+            )
+        try:
+            import charts as charts_mod  # noqa: PLC0415
+        except ImportError:
+            chart_notes.append(chart_to_note(chart))
+            continue
+        os.makedirs(charts_dir, exist_ok=True)
+        png = os.path.join(charts_dir, f"slide{number}-block{idx}.png")
+        try:
+            charts_mod.render_png(chart, brand["colours"], None, png)
+        except charts_mod.ChartError as exc:
+            raise SpecError(f"slide {number}: {exc}")
+        _place_picture(slide, png, region)
+
+    _apply_meta(slide, spec.get("meta", {}), extra_visual=chart_notes or None)
+    return advisories, dropped_icons, native_fallback_notes
 
 
 def _apply_meta(slide, meta, extra_visual=None):

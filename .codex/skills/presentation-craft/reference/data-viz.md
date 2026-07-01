@@ -82,6 +82,26 @@ legend, stripped axes, the insight in the brand accent and the rest muted — an
 places it below the slide's one-line `Body`. The `Chart:` format is in
 [deck-spec.md](deck-spec.md).
 
+## Native or image
+
+The image is the default, and it carries the pack's full chart craft: emphasis
+colouring, direct labels, the annotation vocabulary of target lines, callouts,
+and markers. `native: true` trades that vocabulary for a chart the recipient
+can edit in PowerPoint. Reach for native when the deck travels to be edited —
+a board pack a CFO will tweak; keep the image when the chart carries the
+story's annotations. A chart that can't go native — a waterfall, or anything
+carrying an annotation — falls back to the image with a note in the run
+summary, never an error.
+
+## When to stack
+
+A stacked bar answers how the parts move with the whole across categories. If
+the point is one part's own trajectory, a line per series or small multiples
+reads better — a single series is hard to track once it's buried in a stack.
+If the point is the totals alone, that's the case a stack is built for: it
+labels only the total, not each segment, because the total is the number the
+audience needs.
+
 ## When a waterfall is the right chart
 
 A waterfall tells a composition-of-change story: a starting level, a run of signed
