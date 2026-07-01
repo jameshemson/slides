@@ -74,7 +74,7 @@ For paths (a) and (b), read the brand straight out of the file instead of making
 python3 ../build-deck/scripts/extract_brand.py .slides/template.pptx
 ```
 
-It prints JSON `{template, fonts:{heading,body}, colours:{name:#hex}, layouts:[...]}` — the theme's real heading/body fonts and its palette (accent1 as `accent`, then `accent2`..`accent6`, plus `ink` and `paper`), and the layouts for Step 4. Show the user what you read and let them **confirm or adjust** it: rename a colour, drop one they do not use, add a `muted` or `spend` the theme lacks. Use the confirmed values as the `fonts` and `colours` you write in Step 5. Because `extract_brand.py` already returns the layouts, paths (a)/(b) can skip the separate `inspect_template.py` call in Step 4 and map roles from this output. Path (c)'s starter was themed from the Step 2 answers, so it needs no extraction.
+It prints JSON `{template, fonts:{heading,body}, colours:{name:#hex}, layouts:[...], tokens:{type_scale, colour_roles}}` — the theme's real heading/body fonts and its palette (accent1 as `accent`, then `accent2`..`accent6`, plus `ink` and `paper`), the layouts for Step 4, and a starting design-token block (the composed role reads it; the type scale is derived from the master's own sizes). Show the user what you read and let them **confirm or adjust** it: rename a colour, drop one they do not use, add a `muted` or `spend` the theme lacks. Use the confirmed values as the `fonts` and `colours` you write in Step 5. Because `extract_brand.py` already returns the layouts, paths (a)/(b) can skip the separate `inspect_template.py` call in Step 4 and map roles from this output. Path (c)'s starter was themed from the Step 2 answers, so it needs no extraction.
 
 ## Step 4: Map the layouts
 

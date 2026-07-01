@@ -62,7 +62,8 @@ def main(argv=None):
         "colours": theme["colours"],
         "layouts": list_layouts(prs),
         "tokens": {
-            "type_scale": tokens.default_type_scale(),
+            "type_scale": (tokens.type_scale_from_master(prs)
+                           or tokens.default_type_scale()),
             "colour_roles": tokens.resolve_colour_roles(theme["colours"]),
         },
     }

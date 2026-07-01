@@ -53,6 +53,42 @@ FURNITURE_PLACEHOLDER_TYPES = frozenset(
 
 # DrawingML namespace, used only to locate elements when editing theme XML.
 _A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+# PresentationML namespace — used to read the master's txStyles (font sizes).
+_P_NS = "http://schemas.openxmlformats.org/presentationml/2006/main"
+
+
+def read_type_scale(prs):
+    """Read the master's title/body default font sizes (in points).
+
+    The theme's font scheme carries typefaces, not sizes — the real slide type
+    sizes live in the slide master's `p:txStyles` (titleStyle/bodyStyle level-1
+    `defRPr sz`, in hundredths of a point). Returns {"title": float?, "body":
+    float?} for whichever are present; an empty dict when unreadable, so the
+    caller (tokens.type_scale_from_master) falls back to the generic scale.
+    """
+    try:
+        masters = list(prs.slide_masters)
+    except AttributeError:
+        return {}
+    for master in masters:
+        tx = master.element.find(f"{{{_P_NS}}}txStyles")
+        if tx is None:
+            continue
+        out = {}
+        for tag, key in (("titleStyle", "title"), ("bodyStyle", "body")):
+            style = tx.find(f"{{{_P_NS}}}{tag}")
+            if style is None:
+                continue
+            lvl1 = style.find(f"{{{_A_NS}}}lvl1pPr")
+            def_rpr = lvl1.find(f"{{{_A_NS}}}defRPr") if lvl1 is not None else None
+            sz = def_rpr.get("sz") if def_rpr is not None else None
+            if sz:
+                try:
+                    out[key] = int(sz) / 100.0
+                except ValueError:
+                    pass
+        return out
+    return {}
 
 
 def load_template(path):

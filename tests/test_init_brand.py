@@ -127,12 +127,14 @@ class InitBrandTest(unittest.TestCase):
         self.assertIn("margin_x", grid)
         self.assertIn("columns", grid)
 
-        # type_scale: must have display == 40.0
+        # type_scale: the fixture master's real sizes (title 44 / body 32) derive
+        # a hero display of 62 (44*1.4); a bare template would fall back to 40.
         self.assertIn("type_scale", tok)
         self.assertAlmostEqual(
-            tok["type_scale"]["display"], 40.0,
-            msg="type_scale.display must be 40.0",
+            tok["type_scale"]["display"], 62.0,
+            msg="type_scale.display should be the brand-derived hero size",
         )
+        self.assertGreater(tok["type_scale"]["display"], tok["type_scale"]["h1"])
 
         # colour_roles: non-empty, must contain accent, ink, paper
         self.assertIn("colour_roles", tok)
