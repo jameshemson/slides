@@ -4,6 +4,26 @@ All notable changes to the slides skill pack are recorded here. The format
 follows [Keep a Changelog](https://keepachangelog.com/), and the pack uses
 [semantic versioning](https://semver.org/).
 
+## [0.10.0] - 2026-07-01
+
+The lint with eyes. `build-deck` can now rasterise a rendered deck and look at
+it — catching what geometry can't see (text that overflowed its box, a font that
+fell back, a slide that reads as cluttered). Back-compatible and optional.
+
+### Added
+
+- **A render-back visual-QA loop.** `raster.py` turns a rendered `.pptx` into
+  per-slide PNGs (plus a contact sheet), and `build-deck` gains a Step-4
+  render-back review that opens the images and checks for overflow, collisions,
+  and whether each composed slide reads as *composed*. The `.pptx`→PDF step uses
+  a pluggable backend — none bundled or required (like matplotlib/cairosvg):
+  headless **LibreOffice** preferred (portable, CI-friendly, the path Anthropic's
+  own pptx skill uses), else **Keynote** on macOS (experimental, opens the app so
+  it's opt-in), else a clear "install a rasteriser" message. PDF→PNG is
+  pure-Python (PyMuPDF) with a poppler (`pdftoppm`) fallback. Includes a
+  `looks_blank` slide check and a CLI (`raster.py <deck>.pptx --out-dir … --sheet
+  --check`).
+
 ## [0.9.0] - 2026-07-01
 
 More of the diagram vocabulary, and data that flows straight into a chart.
