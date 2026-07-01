@@ -8,6 +8,7 @@ All on `main`, each git-tagged with a GitHub release (latest first):
 
 | Version | What it added |
 |---------|---------------|
+| v0.10.0 | The render-back visual-QA loop — the lint *with eyes*. `raster.py` rasterises a rendered deck to per-slide PNGs (+ a contact sheet) so `build-deck` can look at it for the things geometry can't see (overflow, font fallback, clutter). Pluggable backend, none required: headless LibreOffice preferred, Keynote/macOS fallback (opt-in, opens the app), else a clear degrade. PDF→PNG via PyMuPDF/poppler; a `looks_blank` check + CLI. build-deck Step 4 runs it automatically on LibreOffice. |
 | v0.9.0 | More diagram vocabulary + data→chart. `cycle` (3–6 stages on a ring) and `matrix` (a 2×2 of quadrants with optional axis captions). Icons on `process` and `comparison` items (completing icons across every block). A `Chart:` can read its data from a CSV (`data: file.csv`) — a spreadsheet exports straight to a chart, multiple series draw as grouped bars. Fixes a pre-existing charts.py bug where a second grouped series (or a de-emphasised bar) drew in paper/white; `muted` now falls back to grey, never paper. |
 | v0.8.0 | A brand-constrained visual vocabulary. Icons (44 curated iconoir line icons, recoloured to a token colour, as an `icon-list`, a `[icon]` prefix on cards/tree, or in `freeform`; optional `cairosvg`, else skipped + noted). A hierarchy/`tree` primitive (indented list → tidy org chart / decomposition, elbow-connector edges, capped). The brand's **real type scale** read from the template master (`pptxlib.read_type_scale` → a hero display, monotonic, generic fallback) and a **shape-language** token (rounded/sharp), so composed slides read as the brand without copying its layouts. The Design philosophy is now in CLAUDE.md. Back-compatible; new tokens optional. |
 | v0.7.0 | Boxes, not bullets. The `composed` role grows from one primitive to five — `card-grid`, `comparison`, `process`, `timeline` alongside `stat-row` — drawn as real filled boxes, plus a `freeform` block that places token-bound boxes/text/arrows on the grid for anything the named shapes don't cover. Multi-block slides stack or place on a 12×12 grid; the mechanical lint is shape-aware; `composition.py` grows to 20 advisory rules. `narrative` now reaches for compositions (the fix for decks that came out as headings over bullets), and a committed `design-research.md` records the evidence base (the user's own decks + the canon) so it can't be lost to a scratchpad again. |
@@ -18,7 +19,15 @@ All on `main`, each git-tagged with a GitHub release (latest first):
 | v0.2.0 | Native charts: `build-deck` draws bar, column, pie, scatter, and line charts from a `Chart:` block (matplotlib), placed on-brand; degrades to a `VISUAL TO ADD` note when matplotlib is absent. |
 | v0.1.0 | Initial release: five skills, cross-harness pipeline, python-pptx renderer, two-layer slop detector. |
 
-Automated gates at this snapshot: `python3 -m unittest discover tests` 238 passing, `npm test` 44 passing, `npm run check-sync` in sync. `cairosvg` and `matplotlib` are installed locally: the icon raster path is verified (icons recolour to the brand accent and rasterise crisply) and the multi-series grouped-bar chart is verified visually (Revenue accent + Cost grey). On a machine without `cairosvg`, icons degrade to a note (as designed).
+Automated gates at this snapshot: `python3 -m unittest discover tests` 244 passing, `npm test` 44 passing, `npm run check-sync` in sync. `cairosvg` and `matplotlib` are installed locally: the icon raster path is verified (icons recolour to the brand accent and rasterise crisply) and the multi-series grouped-bar chart is verified visually (Revenue accent + Cost grey). On a machine without `cairosvg`, icons degrade to a note (as designed).
+
+The render-back visual-QA loop (v0.10.0) is scaffold-only in this environment: no
+rasteriser was installed. Its testable parts (backend detection, degradation,
+PDF→PNG, the blank check, contact sheet) pass; the `.pptx`→PDF step needs an
+external app (LibreOffice or Keynote) and is verified manually, not in CI. To
+enable the automatic headless render-back review: `brew install --cask
+libreoffice`. The Keynote backend works on macOS but opens the app, so build-deck
+runs it only if the user asks.
 
 Visual-vocabulary follow-ups deferred by design (v0.8.0): **logo capture** —
 python-pptx cannot write pictures to a master/layout, so a positive fixture/test
