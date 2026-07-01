@@ -4,6 +4,57 @@ All notable changes to the slides skill pack are recorded here. The format
 follows [Keep a Changelog](https://keepachangelog.com/), and the pack uses
 [semantic versioning](https://semver.org/).
 
+## [0.8.0] - 2026-07-01
+
+A brand-constrained visual vocabulary. The composed role gains icons, a
+hierarchy/tree diagram, and — the deeper win — the brand's *real* type scale, so
+composed slides read as the brand's own without copying its template layouts.
+Grounded in the Design philosophy now in CLAUDE.md: constrain to identity, let
+the model compose. Back-compatible: the six fixed roles and existing `brand.json`
+files render unchanged (the new tokens are optional).
+
+### Added
+
+- **Icons (iconoir).** 44 curated monochrome line icons (MIT, © Luca Burgio,
+  bundled with LICENSE) recoloured to a token colour and rasterised to PNG —
+  on-brand by construction. Usable as a `Block: icon-list` (icons as bullets), a
+  `[icon-name]` prefix on a `card-grid` or `tree` node, or in `freeform`
+  (`icon <name> <colour> at <placement>`). Rasterising needs the optional
+  `cairosvg`; absent, icons are skipped and the run summary says so (mirrors the
+  matplotlib chart fallback). Pure planners emit the icon element; `render.py`
+  resolves it to a PNG after the lint clears its token colour.
+- **A hierarchy/tree primitive (`Block: tree`).** An indented list (2-space =
+  one level, `[icon]`/`!` prefixes) renders a tidy org chart / decomposition:
+  token box nodes joined by one elbow connector per edge, deterministic layout,
+  node cap 8 (6 with icons) and depth ≤3. Serves org charts, decomposition trees,
+  and depth-1 mind maps from one routine.
+- **A real brand type scale.** `tokens.type_scale` is now read from the template
+  master's own title/body sizes (`pptxlib.read_type_scale`) instead of a generic
+  default: a hero `display` above the title, then `h1`/`body`/`caption`,
+  guaranteed monotonic, with a wholesale fallback to the generic scale when the
+  master can't be read. So composed slides use the brand's real type.
+- **A shape-language token.** `tokens.shape` (corner: rounded|sharp, hairline) is
+  honoured by every box primitive instead of a hardcoded rounded rectangle;
+  default stays rounded.
+- **Ten new advisory rules** for tree and icon-list; `lint` now exempts 1-D lines
+  (connectors/edges) from the overlap rule so tree edges route freely.
+
+### Changed
+
+- **Design philosophy is now in CLAUDE.md** — identity is the constraint,
+  composition is the craft, extract identity not layout, no generated imagery,
+  the lint is the only rigidity.
+- `narrative` reaches for the fuller vocabulary (tree, icons, icon-list);
+  composed slides without an explicit `tokens.type_scale` now use the
+  brand-derived scale rather than the generic one (an intended enrichment, still
+  lint-clean).
+
+### Deferred (tracked in STATUS)
+
+Logo capture (python-pptx cannot write pictures to masters, so it can't be
+cleanly fixture-tested — a follow-up); `[icon]` on process/comparison; shape
+auto-inference from template shapes.
+
 ## [0.7.0] - 2026-07-01
 
 Boxes, not bullets. The `composed` role grows from one primitive to five and
