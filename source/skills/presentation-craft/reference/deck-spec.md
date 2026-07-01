@@ -84,8 +84,12 @@ Each item line is pipe-separated. A leading `-`/`*` bullet is tolerated; a leadi
 | `comparison` | `header \| body?` (exactly two) | 2 | `!` the winning side |
 | `process` | `label \| detail?` | 3–5 steps | — (numbered in order) |
 | `timeline` | `date \| event` | 3–5 | `!` the turning point |
+| `tree` | an indented list (2-space = one level) | ≤8 (6 with icons), ≤3 deep | `!` the node that leads |
+| `icon-list` | `icon-name \| text` | 3–6 | — |
 
-Within a card or panel body, ` / ` breaks a line, so a few terse points share one box: `Fast / Focused / Owned`. A **comparison** must *resolve, not balance* — mark the winning side with `!`. A **card grid** holds 3–5 siblings with terse labels. A **process** is 3–5 numbered steps left to right, drawn as boxes joined by arrows (not a chevron ribbon). A **timeline** is dated milestones on a rail with one beat emphasised.
+Within a card or panel body, ` / ` breaks a line, so a few terse points share one box: `Fast / Focused / Owned`. A **comparison** must *resolve, not balance* — mark the winning side with `!`. A **card grid** holds 3–5 siblings with terse labels. A **process** is 3–5 numbered steps left to right, drawn as boxes joined by arrows (not a chevron ribbon). A **timeline** is dated milestones on a rail with one beat emphasised. A **tree** is an org chart / decomposition: indent to nest, `!` to lead a node. An **icon-list** replaces the bullet with an accent icon.
+
+**Icons.** A curated set of on-brand line icons (recoloured to a token colour) is available: as an `icon-list`, as a `[icon-name]` prefix on a `card-grid` or `tree` node, or in `freeform` (`icon <name> <colour> at <placement>`). Icons need `cairosvg` (`pip install cairosvg`); absent, they are skipped and the summary says so. See `assets/icons/` for the names.
 
 ### Freeform — compose anything else
 
@@ -157,7 +161,7 @@ Any slide may carry `Notes:` — what the presenter says, or, for a read deck, t
 - `fonts` — `{ "heading": "...", "body": "..." }`. Carried by the template; recorded here for reference and for `make_template.py`.
 - `colours` — named brand colours as hex. Same: the template owns them; this records them.
 - `layout_map` — maps each of the six roles (and, optionally, `composed`) to a layout index in the template. This is the join between a spec's semantic roles and the user's real layouts.
-- `tokens` (optional) — the design-token system the `composed` role draws from: `grid` (margins, columns, gutter, baseline — derived from the geometry of the template's own mapped layouts), `type_scale` (named point sizes: display, h1, body, caption), and `colour_roles` (ink, paper, accent, muted — mapped from the palette). Omit it and `build-deck` derives sensible defaults at render time; `init_brand.py`/`extract_brand.py` write a starting block you can edit. Fixed-role slides ignore `tokens`, so existing decks are unaffected.
+- `tokens` (optional) — the design-token system the `composed` role draws from: `grid` (margins, columns, gutter, baseline — from the template's mapped layouts), `type_scale` (display, h1, body, caption — **derived from the master's own title/body sizes**, so composed slides use the brand's real type), `colour_roles` (ink, paper, accent, muted — from the palette), and `shape` (corner: rounded|sharp, hairline — the brand's box style). Omit it and `build-deck` derives sensible defaults at render time; `init_brand.py`/`extract_brand.py` write a starting block you can edit. Fixed-role slides ignore `tokens`, so existing decks are unaffected.
 
 `render.py` validates the four required keys (`tokens` is optional) and reports the missing or malformed one by name rather than emitting a broken file.
 
