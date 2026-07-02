@@ -134,11 +134,19 @@ def main(argv=None):
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
+    if args.against:
+        # Architect-review finding: a read-only sync check (--against) must
+        # not litter an unrequested <deck>.import-report.md beside the
+        # user's deck on a clean exit-0 drift check. Only write the report
+        # here when --report was explicitly given — an explicit --report is
+        # a user request and is honoured; the default-path report is not.
+        if args.report:
+            report_path = _report_path(args.deck, args.out, args.report)
+            _write_report(report_path, args.deck, stamp_note, slide_reports)
+        return _run_against(extracted_parsed, args.against)
+
     report_path = _report_path(args.deck, args.out, args.report)
     _write_report(report_path, args.deck, stamp_note, slide_reports)
-
-    if args.against:
-        return _run_against(extracted_parsed, args.against)
 
     out_path = args.out or (os.path.splitext(args.deck)[0] + ".deck.md")
     out_dir = os.path.dirname(os.path.abspath(out_path))
