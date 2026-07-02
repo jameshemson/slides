@@ -48,10 +48,11 @@ print((Presentation('<deck>.pptx').core_properties.comments or '').strip())
 
 ## Step 3a: Tier 1 — sync the spec
 
-Run the drift check:
+Run the drift check — pass `--brand` so roles resolve exactly off the layout map rather than by heuristic guess:
 
 ```
-python3 ../build-deck/scripts/deck_to_spec.py <deck>.pptx --against <deck>.deck.md
+python3 ../build-deck/scripts/deck_to_spec.py <deck>.pptx --brand .slides/brand.json \
+    --against <deck>.deck.md
 ```
 
 **Exit 0** — deck and spec agree. Go to Step 4.
