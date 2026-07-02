@@ -372,5 +372,48 @@ class TestInsertVariants(unittest.TestCase):
                          XL_CHART_TYPE.XY_SCATTER_LINES_NO_MARKERS)
 
 
+class TestInsertCategoryLine(unittest.TestCase):
+    """A `categories:` + `series` line inserts as a native LINE chart with
+    per-series LINE colours (not fills), a legend at 2+ series, and its value
+    axis kept (no per-point data labels on a line)."""
+
+    def _chart(self, series, emphasis=None):
+        return {
+            "type": "line", "categories": ["Q1", "Q2"], "series": series,
+            "emphasis": emphasis, "callout": None, "fmt": {},
+            "native": True, "stacked": False, "target": None,
+        }
+
+    def test_category_line_is_native_line(self):
+        chart = self._chart([{"name": "Plan", "values": [10.0, 20.0]}])
+        prs, slide = _blank_slide()
+        gframe = native_charts.insert(slide, chart, COLOURS, REGION)
+        self.assertEqual(gframe.chart.chart_type, XL_CHART_TYPE.LINE)
+        self.assertFalse(gframe.chart.has_legend)
+
+    def test_emphasis_series_accent_others_muted(self):
+        chart = self._chart(
+            [{"name": "Plan", "values": [10.0, 20.0]},
+             {"name": "Actual", "values": [12.0, 18.0]}],
+            emphasis="Actual",
+        )
+        prs, slide = _blank_slide()
+        gframe = native_charts.insert(slide, chart, COLOURS, REGION)
+        series = gframe.chart.plots[0].series
+        line_rgbs = [s.format.line.color.rgb for s in series]
+        self.assertEqual(line_rgbs[1], ACCENT_RGB)   # the named series
+        self.assertEqual(line_rgbs[0], MUTED_RGB)    # the grey field
+        self.assertTrue(gframe.chart.has_legend)
+
+    def test_value_axis_kept_gridlines_dropped(self):
+        chart = self._chart([{"name": "Plan", "values": [10.0, 20.0]}])
+        prs, slide = _blank_slide()
+        gframe = native_charts.insert(slide, chart, COLOURS, REGION)
+        axis = gframe.chart.value_axis
+        self.assertFalse(axis.has_major_gridlines)
+        # No per-point data labels (they clutter overlapping lines).
+        self.assertFalse(gframe.chart.plots[0].has_data_labels)
+
+
 if __name__ == "__main__":
     unittest.main()

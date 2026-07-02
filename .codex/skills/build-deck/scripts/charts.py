@@ -454,29 +454,71 @@ def _draw_waterfall(ax, chart, emphasis, muted, spend, ink):
 
 
 def _draw_line(ax, chart, emphasis, muted, spend, ink):
-    points = chart["points"]
-    xs = [p[0] for p in points]
-    ys = [p[1] for p in points]
-    at = dict(points)
+    """A line chart in either data shape: x-y `points` (the original path) or
+    `categories` + one or more `series` (the category grammar). A single line
+    keeps the filled accent look; multiple series drop the fill (overlapping
+    fills muddy) and draw one line each — `emphasis` names the accent SERIES,
+    the rest cycle the subdued tones, legend below like grouped bars."""
     fmt = chart.get("fmt")
     target = chart.get("target")
-    ax.fill_between(xs, ys, color=emphasis, alpha=0.16, zorder=1)
-    ax.plot(xs, ys, color=emphasis, lw=_LINE_W, zorder=2,
-            solid_capstyle="round")
-    for m in chart.get("markers", []):
-        x = m["x"]
-        y = at[x]
-        ax.scatter([x], [y], s=90, color=spend, zorder=5)
-        ax.annotate(m["label"], (x, y), xytext=(0, -28),
-                    textcoords="offset points", ha="center",
-                    fontsize=_ANNOT_SIZE, fontweight="bold", color=ink)
-    top = max(ys) * 1.12 or 1
+
+    if "points" in chart:
+        points = chart["points"]
+        xs = [p[0] for p in points]
+        ys = [p[1] for p in points]
+        at = dict(points)
+        ax.fill_between(xs, ys, color=emphasis, alpha=0.16, zorder=1)
+        ax.plot(xs, ys, color=emphasis, lw=_LINE_W, zorder=2,
+                solid_capstyle="round")
+        for m in chart.get("markers", []):
+            x = m["x"]
+            y = at[x]
+            ax.scatter([x], [y], s=90, color=spend, zorder=5)
+            ax.annotate(m["label"], (x, y), xytext=(0, -28),
+                        textcoords="offset points", ha="center",
+                        fontsize=_ANNOT_SIZE, fontweight="bold", color=ink)
+        top = max(ys) * 1.12 or 1
+        span = max(xs)
+    else:
+        cats = chart["categories"]
+        series = chart["series"]
+        emph = chart.get("emphasis")
+        xs = list(range(len(cats)))
+        if len(series) == 1:
+            ys = series[0]["values"]
+            ax.fill_between(xs, ys, color=emphasis, alpha=0.16, zorder=1)
+            ax.plot(xs, ys, color=emphasis, lw=_LINE_W, zorder=2,
+                    solid_capstyle="round")
+        else:
+            palette = [emphasis, muted, spend]
+            others = [muted, spend]  # the grey field behind an emphasis line
+            other_i = 0
+            for i, s in enumerate(series):
+                if emph is None:
+                    col, z = palette[i % len(palette)], 2
+                elif s["name"] == emph:
+                    col, z = emphasis, 3
+                else:
+                    col, z = others[other_i % len(others)], 2
+                    other_i += 1
+                ax.plot(xs, s["values"], color=col, lw=_LINE_W, zorder=z,
+                        solid_capstyle="round", label=s["name"])
+            leg = ax.legend(loc="upper center", ncol=len(series),
+                            frameon=False, bbox_to_anchor=(0.5, -0.16),
+                            fontsize=_TICK_SIZE)
+            for t in leg.get_texts():
+                t.set_color(ink)
+        ax.set_xticks(xs)
+        _set_xlabels(ax, cats)
+        top = max(max(s["values"]) for s in series) * 1.12 or 1
+        span = len(cats) - 1
+
     if target:
         top = max(top, target["value"] * 1.1)
     ax.set_ylim(0, top)
     _strip(ax, muted, keep_x=True)
     if target:
-        _draw_target(ax, target, True, max(xs), spend, muted, emphasis, ink,
+        _draw_target(ax, target, True, span, spend, muted, emphasis, ink,
                      fmt)
     _callout(ax, chart, spend, ink)
 

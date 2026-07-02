@@ -83,8 +83,13 @@ def plan_stat_row(stats, tokens, slide_w, slide_h, region=None) -> list:
     number_pt = ts["display"]
     label_pt = ts["caption"]
 
+    # ' / ' breaks a label line (the card/panel body convention). Every label
+    # box takes the tallest label's line count so the row's bottoms align.
+    labels = [_split_body(s["label"]) for s in stats]
+    label_lines = max(lab.count("\n") + 1 for lab in labels)
+
     number_h = round(number_pt * EMU_PER_PT * LINE_HEIGHT)
-    label_h = round(label_pt * EMU_PER_PT * LINE_HEIGHT)
+    label_h = label_lines * round(label_pt * EMU_PER_PT * LINE_HEIGHT)
     row_block_h = number_h + baseline + label_h
 
     if region is None:
@@ -118,7 +123,7 @@ def plan_stat_row(stats, tokens, slide_w, slide_h, region=None) -> list:
         })
         elements.append({
             "role": "stat-label",
-            "text": str(stats[i]["label"]),
+            "text": labels[i],
             "left": cell_left,
             "top": row_top + number_h + baseline,
             "width": width_i,
@@ -217,19 +222,19 @@ def _split_body(text):
 
 
 def plan_card_grid(cards, tokens, slide_w, slide_h, region=None) -> list:
-    """A row of 3-5 equal panels — 'cluster by message: three or five topics'.
+    """A row of equal panels — 'cluster by message: three or five topics'.
 
     cards: list of {"label": str, "body": str?, "emphasis": bool?}. One card may
     be marked emphasis to lead (accent fill, reversed text); the rest are paper
     panels with a hairline outline (Gestalt Common Region — the box binds its
     contents). Grouping is the point; hierarchy is by the one emphasised card.
+    Count is advisory (card-count, ~3-5): past that, cells narrow until the
+    lint's overlap/margin checks refuse the geometry.
     """
     grid, ts, roles = _require(tokens, ("h1", "body"))
     n = len(cards)
     if n == 0:
         raise ShapeError("card-grid needs at least one card")
-    if n > 6:
-        raise ShapeError("card-grid takes at most 6 cards; split the slide")
 
     content_left, content_w = _content_span(tokens, slide_w, region)
     gutter = grid["gutter"]
@@ -381,14 +386,13 @@ def plan_process(steps, tokens, slide_w, slide_h, region=None) -> list:
     is a paper box with a big accent number, a bold label, and an optional light
     detail line; a muted arrow bridges the gap to the next. This is James's real
     'Plan -> Create -> Deliver' pattern, deliberately NOT a SmartArt chevron
-    ribbon.
+    ribbon. Count is advisory (process-count, ~3-5); past that the arrows and
+    cells shrink until the lint refuses the geometry.
     """
     grid, ts, roles = _require(tokens, ("h1", "body", "caption"))
     n = len(steps)
     if n == 0:
         raise ShapeError("process needs at least one step")
-    if n > 5:
-        raise ShapeError("process takes at most 5 steps; keep it to 3-5")
 
     content_left, content_w = _content_span(tokens, slide_w, region)
     gutter = grid["gutter"]
@@ -468,13 +472,13 @@ def plan_timeline(nodes, tokens, slide_w, slide_h, region=None) -> list:
     is the turn: mark it emphasis and it gets a larger accent dot and a bold
     label while the rest stay muted — a timeline still obeys grey-push + one
     accent, so it reads as a sequence with a hero beat, not an even dotted rule.
+    Count is advisory (timeline-count, ~3-6); at extreme counts the dots
+    collide and the lint's overlap check refuses the slide.
     """
     grid, ts, roles = _require(tokens, ("body",))
     n = len(nodes)
     if n == 0:
         raise ShapeError("timeline needs at least one milestone")
-    if n > 6:
-        raise ShapeError("timeline takes at most 6 milestones")
 
     content_left, content_w = _content_span(tokens, slide_w, region)
     gutter = grid["gutter"]
@@ -646,25 +650,17 @@ def plan_tree(root, tokens, slide_w, slide_h, region=None) -> list:
 
     `root` is a nested node dict {label, emphasis?, icon?, children:[...]}. Layout
     comes from tidytree (deterministic, non-overlapping for small trees). Node
-    boxes sit in per-depth rows; each edge is ONE elbow connector, so the tree
-    stays under the element cap: node = box+text (+icon) -> cap 8 (6 with icons),
-    depth <= 3. One box per node keeps same-depth nodes gutter-separated; the lint
-    exempts edges from the overlap rule, so edges may route between rows freely.
+    boxes sit in per-depth rows; each edge is ONE elbow connector. One box per
+    node keeps same-depth nodes gutter-separated; the lint exempts edges from
+    the overlap rule, so edges may route between rows freely. Node count and
+    depth are advisory (tree-count ~3-8, tree-depth <=3); a genuinely oversized
+    tree hits the width guard below or the lint's element cap.
     """
     import tidytree  # noqa: PLC0415 — tree slides only
 
     grid, ts, roles = _require(tokens, ("h1", "body"))
     rows, max_x, max_depth = tidytree.layout(root)
-    n = len(rows)
     has_icons = any((nd.get("icon") for nd, _, _ in rows))
-    cap = 6 if has_icons else 8
-    if n > cap:
-        raise ShapeError(
-            f"tree has {n} nodes; keep to {cap}"
-            f"{' with icons' if has_icons else ''} or fewer"
-        )
-    if max_depth > 3:
-        raise ShapeError("tree is too deep; keep to 3 levels or fewer")
 
     content_left, content_w = _content_span(tokens, slide_w, region)
     band_top, band_bottom = _band(tokens, slide_h, region)
@@ -754,15 +750,14 @@ def plan_icon_list(rows, tokens, slide_w, slide_h, region=None) -> list:
     """A list where an accent icon replaces the bullet: icon left, text right.
 
     rows: list of {"icon": name, "text": str}. Icons are the one accent (a
-    consistent marker, not a rainbow); the text is ink. Up to 6 rows stacked in
-    the band. Icons resolve to PNGs in render.py after the lint clears them.
+    consistent marker, not a rainbow); the text is ink. Rows stack in the band,
+    compressing as the count grows (advisory iconlist-count, ~3-6). Icons
+    resolve to PNGs in render.py after the lint clears them.
     """
     grid, ts, roles = _require(tokens, ("body",))
     n = len(rows)
     if n == 0:
         raise ShapeError("icon-list needs at least one row")
-    if n > 6:
-        raise ShapeError("icon-list takes at most 6 rows")
 
     content_left, content_w = _content_span(tokens, slide_w, region)
     band_top, band_bottom = _band(tokens, slide_h, region)
@@ -804,14 +799,13 @@ def plan_cycle(steps, tokens, slide_w, slide_h, region=None) -> list:
 
     steps: list of {"label": str}. Nodes are placed on a circle (top, clockwise);
     each edge runs node -> next -> ... -> back to the first, so the loop closes.
-    Node sizing is tied to the ring spacing so nodes never overlap.
+    Node sizing is tied to the ring spacing so nodes never overlap; stage count
+    is advisory (cycle-count, ~3-6) — a crowded ring just gets denser.
     """
     grid, ts, roles = _require(tokens, ("body",))
     n = len(steps)
     if n < 2:
         raise ShapeError("cycle needs at least 2 stages")
-    if n > 6:
-        raise ShapeError("cycle takes at most 6 stages")
 
     content_left, content_w = _content_span(tokens, slide_w, region)
     band_top, band_bottom = _band(tokens, slide_h, region)
@@ -990,8 +984,11 @@ def plan_table(table, tokens, slide_w, slide_h, region=None) -> list:
 
     Styling (D-002): header = ink fill + paper bold text; data rows = paper fill +
     ink text with a muted bottom hairline (except the last); an emphasis row = accent
-    fill + paper text. Hard caps (D-004): 2-5 columns, 1-8 data rows, and a band-fit
-    guard — all raise ShapeError, which render.py turns into a named SpecError.
+    fill + paper text. Column and row counts are advisory (table-column-count ~5,
+    table-count ~6 rows); the band-fit guard (D-004) is geometric — a long table
+    first steps its type down to caption to fit, and only when even caption
+    cannot fit does it raise ShapeError, which render.py turns into a named
+    SpecError. A one-column table stays a hard error (it is a list, not a table).
     """
     grid, ts, roles = _require(tokens, ("body",))
     header = list(table.get("header", []))
@@ -999,38 +996,42 @@ def plan_table(table, tokens, slide_w, slide_h, region=None) -> list:
     ncols = len(header)
     nrows = len(rows)
 
-    # Hard caps (D-004). A one-column table is a list; 6+ columns / 9+ data rows
-    # do not fit a slide legibly.
     if ncols < 2:
         raise ShapeError(
             "a one-column table is a list, not a table; use icon-list or bullets"
         )
-    if ncols > 5:
-        raise ShapeError("table takes at most 5 columns; split the slide")
     if nrows < 1:
         raise ShapeError("table needs at least one data row")
-    if nrows > 8:
-        raise ShapeError(
-            "table takes at most 8 data rows; cut rows or split the slide"
-        )
 
     ink, paper, accent = roles["ink"], roles["paper"], roles["accent"]
     stroke = roles.get("muted") or ink  # the row hairline (D-008 scalar key)
-    body_pt = ts["body"]
-
-    # Row height: one body line box plus a baseline of vertical padding.
-    row_h = _line_h(body_pt) + grid["baseline"]
 
     content_left, content_w = _content_span(tokens, slide_w, region)
     band_top, band_bottom = _band(tokens, slide_h, region)
     band_h = band_bottom - band_top
 
-    # Band-fit guard (D-004): header + data rows must fit the vertical band.
+    # Row height: one line box at cell_pt plus a baseline of vertical padding.
+    # cell_pt is the ONE source of the table's type size — the lint vector
+    # (font_pts) and the draw path (cell_pt) both read it, so they cannot
+    # diverge (D-008). Band-fit (D-004): header + data rows must fit the
+    # vertical band at body size; if not, step down to caption (still on the
+    # type scale, so the lint stays green) before giving up.
+    cell_pt = ts["body"]
+    font_stepped = False
+    row_h = _line_h(cell_pt) + grid["baseline"]
     total_h = (1 + nrows) * row_h
     if total_h > band_h:
+        caption_pt = ts.get("caption")
+        if caption_pt and caption_pt < cell_pt:
+            cell_pt = caption_pt
+            font_stepped = True
+            row_h = _line_h(cell_pt) + grid["baseline"]
+            total_h = (1 + nrows) * row_h
+    if total_h > band_h:
         fits = max(0, band_h // row_h - 1)
+        at_size = "even at caption size" if font_stepped else "in the band"
         raise ShapeError(
-            f"table needs {1 + nrows} rows but the band fits only {fits} rows; "
+            f"table needs {1 + nrows} rows but only {fits} rows fit {at_size}; "
             f"cut rows or split the slide"
         )
 
@@ -1074,7 +1075,7 @@ def plan_table(table, tokens, slide_w, slide_h, region=None) -> list:
         # D-008 vector keys (the lint checks every entry on a table element).
         "fills": fills,
         "text_colours": text_colours,
-        "font_pts": [body_pt],
+        "font_pts": [cell_pt],
         "stroke": stroke,          # scalar hairline colour (existing lint checks it)
         "col_aligns": col_aligns,
         # Advisory-rule fields (T-010 reads these) + payload the draw path needs.
@@ -1085,7 +1086,8 @@ def plan_table(table, tokens, slide_w, slide_h, region=None) -> list:
         "header_fill": ink, "header_text": paper,
         "row_fill": paper, "row_text": ink,
         "emph_fill": accent, "emph_text": paper,
-        "cell_pt": body_pt,
+        "cell_pt": cell_pt,
+        "font_stepped": font_stepped,
         "cell_margin": grid["gutter"] // 2,
     }]
 

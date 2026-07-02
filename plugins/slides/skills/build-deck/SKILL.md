@@ -50,7 +50,7 @@ python3 scripts/render.py --spec <deck>.deck.md \
 
 `render.py` reads the template path from `brand.json`'s `template` key. There is no `--template` argument. A relative `template` path resolves against the `brand.json` file's own directory, so the working directory does not matter.
 
-On success it exits 0 and prints a one-line summary. On a malformed spec or brand profile it exits 1, prints `error: ...` naming the offending slide, role, or key, and writes nothing.
+On success it exits 0 and prints a run summary (one line, plus a line per composition advisory). On a malformed spec or brand profile it exits 1, prints `error: ...` naming the offending slide, role, or key, and writes nothing.
 
 If the render fails, read the error. It names the fault: a slide numbered out of sequence, a role with more fields than its layout has placeholders, a missing `brand.json` key. Fix the spec or, for a layout-map fault, send the user back to `teach-slides` (via `$skill teach-slides` or `/skills`). Then run again.
 
