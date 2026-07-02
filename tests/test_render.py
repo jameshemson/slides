@@ -12,8 +12,10 @@ Until render.py exists these tests FAIL by design (REQ-003 Wave 0 gate): the
 subprocess call returns non-zero and no .pptx is produced. They pass once
 render.py turns the sample deck spec into a valid .pptx.
 """
+import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -1015,6 +1017,114 @@ class ComposedChartBlockTest(unittest.TestCase):
         self.assertEqual(chart["type"], "column")
         self.assertEqual(chart["categories"], ["A", "B"])
         self.assertEqual(chart["series"][0]["values"], [1, 2])
+
+
+class LineageStampTest(unittest.TestCase):
+    """REQ-001 / D-003: `build_deck` must stamp every rendered .pptx's
+    `core_properties.comments` with `slides-spec: <basename> sha256:<hash>`,
+    so a deck names the spec it came from. render.py does not yet touch
+    core_properties — these tests are pinned to fail red until T-004 adds
+    the stamp before `prs.save`.
+
+    tests/fixtures/sample-deck.md (reused, byte-for-byte, from RenderTest's
+    fixtures) is not itself named `<deck>.deck.md` per deck-spec.md's
+    documented convention, so its content is copied into this test's own
+    tmpdir under a conforming name before rendering — the stamp regex below
+    requires a literal `.deck.md` suffix, and the fixture file is left
+    untouched either way.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.mkdtemp(prefix="slides-lineage-test-")
+        with open(DECK_SPEC, "rb") as fh:
+            spec_bytes = fh.read()
+        cls.spec_path = os.path.join(cls._tmp, "sample.deck.md")
+        with open(cls.spec_path, "wb") as fh:
+            fh.write(spec_bytes)
+        cls.brand_path = os.path.join(cls._tmp, "brand.json")
+        with open(cls.brand_path, "w", encoding="utf-8") as fh:
+            json.dump(
+                {
+                    "template": TEMPLATE,
+                    "fonts": {"heading": "Calibri", "body": "Calibri"},
+                    "colours": {
+                        "primary": "#1F3A5F",
+                        "accent": "#E07A3F",
+                        "ink": "#1A1A1A",
+                        "paper": "#FFFFFF",
+                    },
+                    "layout_map": LAYOUT_MAP,
+                },
+                fh,
+            )
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls._tmp, ignore_errors=True)
+
+    def _render(self, name):
+        """Run render.py against the conforming-named spec copy into a fresh
+        output path. Returns the reopened Presentation."""
+        out_path = os.path.join(self._tmp, f"{name}.pptx")
+        result = subprocess.run(
+            [
+                sys.executable,
+                RENDER_PY,
+                "--spec", self.spec_path,
+                "--brand", self.brand_path,
+                "--out", out_path,
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            result.returncode,
+            0,
+            f"render.py exited {result.returncode}.\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}",
+        )
+        self.assertTrue(
+            os.path.exists(out_path), "render.py produced no .pptx"
+        )
+        return Presentation(out_path)
+
+    def test_stamp_matches_basename_and_spec_sha256(self):
+        stamp_re = re.compile(
+            r"^slides-spec: (?P<basename>.+\.deck\.md) "
+            r"sha256:(?P<sha>[0-9a-f]{64})$"
+        )
+        prs = self._render("stamped")
+        comments = prs.core_properties.comments
+        match = stamp_re.match(comments)
+        self.assertIsNotNone(
+            match,
+            f"core_properties.comments {comments!r} does not match "
+            f"{stamp_re.pattern!r}",
+        )
+        self.assertEqual(
+            match.group("basename"),
+            os.path.basename(self.spec_path),
+            "the stamped basename must equal the spec file's own basename",
+        )
+        with open(self.spec_path, "rb") as fh:
+            expected_sha = hashlib.sha256(fh.read()).hexdigest()
+        self.assertEqual(
+            match.group("sha"),
+            expected_sha,
+            "the stamped sha256 must equal hashlib.sha256 of the spec "
+            "file's bytes",
+        )
+
+    def test_stamp_is_deterministic_across_renders(self):
+        prs_a = self._render("run-a")
+        prs_b = self._render("run-b")
+        self.assertEqual(
+            prs_a.core_properties.comments,
+            prs_b.core_properties.comments,
+            "two renders of the same spec must produce the same lineage "
+            "stamp",
+        )
 
 
 if __name__ == "__main__":
