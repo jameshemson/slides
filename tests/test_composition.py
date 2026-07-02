@@ -137,6 +137,7 @@ EXPECTED_IDS = [
     "freeform-one-accent",
     # tree
     "tree-count",
+    "tree-depth",
     "tree-label-terseness",
     "tree-one-accent",
     # icon-list
@@ -149,6 +150,7 @@ EXPECTED_IDS = [
     "matrix-one-accent",
     # table
     "table-count",
+    "table-column-count",
     "table-cell-terseness",
     "table-one-accent",
 ]
@@ -266,6 +268,16 @@ class TestLabelTerseness(unittest.TestCase):
                 break
         rule = rule_by_id("label-terseness")
         self.assertFalse(rule["check"](elems, TOKENS, SLIDE_W, SLIDE_H))
+
+    def test_two_terse_lines_pass(self):
+        # A ' / '-broken label is judged per line: two terse lines are fine.
+        elems = good_elements()
+        for e in elems:
+            if e["role"] == "stat-label":
+                e["text"] = "Days\nto close"
+                break
+        rule = rule_by_id("label-terseness")
+        self.assertTrue(rule["check"](elems, TOKENS, SLIDE_W, SLIDE_H))
 
 
 class TestBreathingRoom(unittest.TestCase):
@@ -487,6 +499,18 @@ class TestNewPrimitiveReview(unittest.TestCase):
         ]}
         self.assertIn("tree-one-accent", self._ids(plan_tree(root, TOKENS, SLIDE_W, SLIDE_H)))
 
+    def test_tree_deep_flags(self):
+        # Four levels: tree-depth advises 3 or fewer (no longer a hard cap).
+        root = {"label": "a", "emphasis": False, "icon": None, "children": [
+            {"label": "b", "emphasis": False, "icon": None, "children": [
+                {"label": "c", "emphasis": False, "icon": None, "children": [
+                    {"label": "d", "emphasis": False, "icon": None,
+                     "children": []},
+                ]},
+            ]},
+        ]}
+        self.assertIn("tree-depth", self._ids(plan_tree(root, TOKENS, SLIDE_W, SLIDE_H)))
+
     def test_cycle_clean(self):
         els = plan_cycle([{"label": "Plan"}, {"label": "Build"}, {"label": "Learn"}],
                          TOKENS, SLIDE_W, SLIDE_H)
@@ -628,6 +652,24 @@ class TestTableCount(unittest.TestCase):
         _assert_rule_present(self, "table-count")
         rule = rule_by_id("table-count")
         els = [table_element(_terse_rows(7))]
+        self.assertFalse(rule["check"](els, TOKENS, SLIDE_W, SLIDE_H))
+
+
+class TestTableColumnCount(unittest.TestCase):
+    """table-column-count (quality): ~5 columns reads; 6 squeezes every cell."""
+
+    def test_pass(self):
+        _assert_rule_present(self, "table-column-count")
+        rule = rule_by_id("table-column-count")
+        els = [table_element(_terse_rows(3, ncols=5),
+                             header=["A", "B", "C", "D", "E"])]
+        self.assertTrue(rule["check"](els, TOKENS, SLIDE_W, SLIDE_H))
+
+    def test_trigger(self):
+        _assert_rule_present(self, "table-column-count")
+        rule = rule_by_id("table-column-count")
+        els = [table_element(_terse_rows(3, ncols=6),
+                             header=["A", "B", "C", "D", "E", "F"])]
         self.assertFalse(rule["check"](els, TOKENS, SLIDE_W, SLIDE_H))
 
 

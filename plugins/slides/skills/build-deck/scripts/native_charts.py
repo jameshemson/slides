@@ -28,12 +28,16 @@ REASON_WATERFALL = "waterfall has no native PowerPoint form"
 REASON_ANNOTATION = "target:/callout:/marker: are drawn annotations"
 
 # D-003's type map. Category charts (CategoryChartData) index on `stacked:`;
-# pie is never stacked (REQ-004 restricts `stacked:` to bar/column). Point
-# charts (XyChartData) carry no stacked/emphasis grammar at all.
+# pie and line are never stacked (REQ-004 restricts `stacked:` to bar/column).
+# Point charts (XyChartData) carry no stacked/emphasis grammar at all. `line`
+# appears in BOTH maps: a `points:` line is a point chart, a `categories:` +
+# `series` line (that is how a line carries multiple series) is a category
+# chart — insert() picks by the chart dict's data shape.
 _CATEGORY_XL_TYPE = {
     "column": (XL_CHART_TYPE.COLUMN_CLUSTERED, XL_CHART_TYPE.COLUMN_STACKED),
     "bar": (XL_CHART_TYPE.BAR_CLUSTERED, XL_CHART_TYPE.BAR_STACKED),
     "pie": (XL_CHART_TYPE.PIE, XL_CHART_TYPE.PIE),
+    "line": (XL_CHART_TYPE.LINE, XL_CHART_TYPE.LINE),
 }
 _POINT_XL_TYPE = {
     "line": XL_CHART_TYPE.XY_SCATTER_LINES_NO_MARKERS,
@@ -165,7 +169,7 @@ def insert(slide, chart, colours, region):
     ctype = chart["type"]
     left, top, width, height = region
 
-    if ctype in _POINT_XL_TYPE:
+    if ctype in _POINT_XL_TYPE and "points" in chart:
         xd = XyChartData()
         series = xd.add_series("Series 1")
         for x, y in chart["points"]:
@@ -186,10 +190,18 @@ def insert(slide, chart, colours, region):
         cd.add_series(s["name"], s["values"])
     gframe = slide.shapes.add_chart(xl_type, left, top, width, height, cd)
 
-    _fill_category(gframe.chart, chart, ctype, emphasis, muted, spend, ink)
-    _style_data_labels(gframe.chart, chart.get("fmt"))
-    _style_legend(gframe.chart, len(series_list))
-    _hide_value_axis(gframe.chart)
+    if ctype == "line":
+        # A line series is coloured by its LINE, not a fill, and carries no
+        # per-point data labels (they clutter overlapping lines) — so the
+        # value axis stays as the scale, gridlines dropped.
+        _line_series_colours(gframe.chart, chart, emphasis, muted, spend)
+        _style_legend(gframe.chart, len(series_list))
+        _soften_value_axis(gframe.chart)
+    else:
+        _fill_category(gframe.chart, chart, ctype, emphasis, muted, spend, ink)
+        _style_data_labels(gframe.chart, chart.get("fmt"))
+        _style_legend(gframe.chart, len(series_list))
+        _hide_value_axis(gframe.chart)
     return gframe
 
 
@@ -232,14 +244,36 @@ def _fill_category(pptx_chart, chart, ctype, emphasis, muted, spend, ink):
 
 
 def _style_point_series(series, ctype, emphasis):
-    """A line/scatter chart is always a single, un-emphasised series
-    (D-003/REQ-004 restrict `stacked:`/`emphasis:` to bar/column) — one accent
-    colour on the line (line) or the markers (scatter)."""
+    """A `points:`-shaped line/scatter chart is a single, un-emphasised
+    series (a multi-series line takes the category grammar instead) — one
+    accent colour on the line (line) or the markers (scatter)."""
     if ctype == "scatter":
         series.marker.format.fill.solid()
         series.marker.format.fill.fore_color.rgb = _rgb(emphasis)
     else:
         series.format.line.color.rgb = _rgb(emphasis)
+
+
+def _line_series_colours(pptx_chart, chart, emphasis, muted, spend):
+    """Per-series line colours for a category-shaped line chart, mirroring
+    charts._draw_line's category branch: no emphasis -> palette rotation
+    (accent/muted/spend); `emphasis: <series>` -> that series accent, the
+    rest cycling the subdued tones. Series are matched to the spec dicts
+    positionally (python-pptx keeps insertion order)."""
+    series = pptx_chart.plots[0].series
+    emph = chart.get("emphasis")
+    palette = [emphasis, muted, spend]
+    others = [muted, spend]
+    other_i = 0
+    for i, (s, spec) in enumerate(zip(series, chart["series"])):
+        if emph is None:
+            colour = palette[i % len(palette)]
+        elif spec["name"] == emph:
+            colour = emphasis
+        else:
+            colour = others[other_i % len(others)]
+            other_i += 1
+        s.format.line.color.rgb = _rgb(colour)
 
 
 def _style_data_labels(pptx_chart, fmt):
@@ -277,3 +311,11 @@ def _hide_value_axis(pptx_chart):
     value_axis.has_major_gridlines = False
     value_axis.has_minor_gridlines = False
     value_axis.visible = False
+
+
+def _soften_value_axis(pptx_chart):
+    """A category-line keeps its value axis (it carries no per-point data
+    labels, so the axis is the only scale) but drops the gridlines."""
+    value_axis = pptx_chart.value_axis
+    value_axis.has_major_gridlines = False
+    value_axis.has_minor_gridlines = False

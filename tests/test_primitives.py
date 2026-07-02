@@ -127,6 +127,20 @@ class TestPlanStatRow(unittest.TestCase):
         with self.assertRaises(ShapeError):
             plan_stat_row([], TOKENS, SLIDE_W, SLIDE_H)
 
+    def test_label_breaks_on_slash(self):
+        # ' / ' in a label becomes a line break (the card-body convention);
+        # every label box takes the tallest line count so bottoms align.
+        stats = [{"value": "56", "label": "Days / to close"},
+                 {"value": "4%", "label": "Win rate"}]
+        els = plan_stat_row(stats, TOKENS, SLIDE_W, SLIDE_H)
+        labels = [e for e in els if e["role"] == "stat-label"]
+        self.assertEqual(labels[0]["text"], "Days\nto close")
+        self.assertEqual(labels[1]["text"], "Win rate")
+        one_line = round(12.0 * primitives.EMU_PER_PT * primitives.LINE_HEIGHT)
+        for lab in labels:  # both boxes sized for two lines
+            self.assertEqual(lab["height"], 2 * one_line)
+        self.assertIsNone(lint.check(els, TOKENS, SLIDE_W, SLIDE_H))
+
     def test_draw_adds_nonplaceholder_shapes(self):
         prs = Presentation(TEMPLATE)
         slide = prs.slides.add_slide(prs.slide_layouts[5])
@@ -208,10 +222,13 @@ class TestNewPrimitives(unittest.TestCase):
         self._lint_clean(els)
         self.assertIn("#4F81BD", _fills(els))  # the hero card fills with accent
 
-    def test_card_grid_rejects_too_many(self):
-        with self.assertRaises(ShapeError):
-            plan_card_grid([{"label": str(i)} for i in range(7)],
-                           TOKENS, SLIDE_W, SLIDE_H)
+    def test_card_grid_over_good_count_is_advisory(self):
+        # 7 cards: no hard cap any more — plans lint-clean, card-count advises.
+        els = plan_card_grid([{"label": str(i)} for i in range(7)],
+                             TOKENS, SLIDE_W, SLIDE_H)
+        self._lint_clean(els)
+        ids = {f["rule_id"] for f in lint.review(els, TOKENS, SLIDE_W, SLIDE_H)}
+        self.assertIn("card-count", ids)
 
     def test_comparison_two_panels(self):
         els = plan_comparison(
@@ -239,10 +256,13 @@ class TestNewPrimitives(unittest.TestCase):
         num = next(e for e in els if e["role"] == "process-number")
         self.assertEqual(num["colour"], "#4F81BD")
 
-    def test_process_rejects_over_five(self):
-        with self.assertRaises(ShapeError):
-            plan_process([{"label": str(i)} for i in range(6)],
-                         TOKENS, SLIDE_W, SLIDE_H)
+    def test_process_over_five_is_advisory(self):
+        # 6 steps: no hard cap any more — plans lint-clean, process-count advises.
+        els = plan_process([{"label": str(i)} for i in range(6)],
+                           TOKENS, SLIDE_W, SLIDE_H)
+        self._lint_clean(els)
+        ids = {f["rule_id"] for f in lint.review(els, TOKENS, SLIDE_W, SLIDE_H)}
+        self.assertIn("process-count", ids)
 
     def test_timeline_dots_rail_labels(self):
         els = plan_timeline(
@@ -293,9 +313,13 @@ class TestNewPrimitives(unittest.TestCase):
             self.assertEqual(_roles(els).count("cycle-node"), n)
             self.assertEqual(_roles(els).count("cycle-edge"), n)  # closes the loop
 
-    def test_cycle_rejects_over_six(self):
-        with self.assertRaises(ShapeError):
-            plan_cycle([{"label": str(i)} for i in range(7)], TOKENS, SLIDE_W, SLIDE_H)
+    def test_cycle_over_six_is_advisory(self):
+        # 7 stages: the ring just gets denser — lint-clean, cycle-count advises.
+        els = plan_cycle([{"label": str(i)} for i in range(7)],
+                         TOKENS, SLIDE_W, SLIDE_H)
+        self._lint_clean(els)
+        ids = {f["rule_id"] for f in lint.review(els, TOKENS, SLIDE_W, SLIDE_H)}
+        self.assertIn("cycle-count", ids)
 
     def test_matrix_quadrants(self):
         spec = {"x": "Effort", "y": "Impact", "quadrants": [
@@ -372,22 +396,32 @@ class TestNewPrimitives(unittest.TestCase):
         els = plan_tree(root, TOKENS, SLIDE_W, SLIDE_H)
         self.assertIn("#4F81BD", _fills(els))
 
-    def test_tree_with_icons_lower_cap(self):
-        # 7 icon'd nodes exceeds the with-icons cap of 6.
+    def test_tree_with_icons_large_hits_element_cap(self):
+        # 7 icon'd nodes: no hard count cap — the planner plans it, and the
+        # lint's element cap (box+text+icon per node) is the backstop.
         kids = [_node(f"c{i}", icon="growth") for i in range(6)]
         root = _node("root", *kids)  # 7 nodes, all-but-root icon'd
-        with self.assertRaises(ShapeError):
-            plan_tree(root, TOKENS, SLIDE_W, SLIDE_H)
+        els = plan_tree(root, TOKENS, SLIDE_W, SLIDE_H)
+        with self.assertRaises(lint.LintError):
+            lint.check(els, TOKENS, SLIDE_W, SLIDE_H)
 
-    def test_tree_over_cap_raises(self):
+    def test_tree_large_hits_element_cap(self):
+        # 10 nodes plan without a ShapeError; 29 elements bust ELEMENT_CAP, and
+        # the tree-count advisory names the craft rule.
         root = _node("R", *[_node(f"c{i}") for i in range(9)])  # 10 nodes
-        with self.assertRaises(ShapeError):
-            plan_tree(root, TOKENS, SLIDE_W, SLIDE_H)
+        els = plan_tree(root, TOKENS, SLIDE_W, SLIDE_H)
+        with self.assertRaises(lint.LintError):
+            lint.check(els, TOKENS, SLIDE_W, SLIDE_H)
+        ids = {f["rule_id"] for f in lint.review(els, TOKENS, SLIDE_W, SLIDE_H)}
+        self.assertIn("tree-count", ids)
 
-    def test_tree_too_deep_raises(self):
+    def test_tree_deep_is_advisory(self):
+        # Depth 5: plans lint-clean; tree-depth advises 3 levels or fewer.
         root = _node("a", _node("b", _node("c", _node("d", _node("e")))))
-        with self.assertRaises(ShapeError):
-            plan_tree(root, TOKENS, SLIDE_W, SLIDE_H)
+        els = plan_tree(root, TOKENS, SLIDE_W, SLIDE_H)
+        self._lint_clean(els)
+        ids = {f["rule_id"] for f in lint.review(els, TOKENS, SLIDE_W, SLIDE_H)}
+        self.assertIn("tree-depth", ids)
 
     def test_all_defaults_stay_under_cap(self):
         # 5-step process with details is the worst case; must fit the cap.
@@ -481,19 +515,30 @@ class TestPlanTable(unittest.TestCase):
         self.assertIn(TOKENS["type_scale"]["body"], el["font_pts"])
         self.assertTrue(all(p == TOKENS["type_scale"]["body"] for p in el["font_pts"]))
 
-    def test_rejects_nine_data_rows(self):
+    def test_nine_data_rows_plan_at_body(self):
+        # 9 data rows: no hard row cap — the full band fits them at body size
+        # (no step-down), and the table-count advisory names the craft rule.
         table = {"header": ["A", "B", "C"],
                  "rows": [{"cells": [str(i), "x", "y"], "emphasis": False}
-                          for i in range(9)]}          # cap is 8 data rows
-        with self.assertRaises(ShapeError):
-            self._plan(table)
+                          for i in range(9)]}
+        els = self._plan(table)
+        self.assertEqual(len(els), 1)
+        self.assertEqual(els[0]["font_pts"], [TOKENS["type_scale"]["body"]])
+        self.assertFalse(els[0]["font_stepped"])
+        self.assertIsNone(lint.check(els, TOKENS, SLIDE_W, SLIDE_H))
+        ids = {f["rule_id"] for f in lint.review(els, TOKENS, SLIDE_W, SLIDE_H)}
+        self.assertIn("table-count", ids)
 
-    def test_rejects_six_columns(self):
+    def test_six_columns_is_advisory(self):
+        # 6 columns: no hard column cap — table-column-count advises.
         table = {"header": ["A", "B", "C", "D", "E", "F"],
                  "rows": [{"cells": ["1", "2", "3", "4", "5", "6"],
-                           "emphasis": False}]}          # cap is 5 columns
-        with self.assertRaises(ShapeError):
-            self._plan(table)
+                           "emphasis": False}]}
+        els = self._plan(table)
+        self.assertEqual(len(els), 1)
+        self.assertIsNone(lint.check(els, TOKENS, SLIDE_W, SLIDE_H))
+        ids = {f["rule_id"] for f in lint.review(els, TOKENS, SLIDE_W, SLIDE_H)}
+        self.assertIn("table-column-count", ids)
 
     def test_rejects_one_column(self):
         table = {"header": ["Only"],

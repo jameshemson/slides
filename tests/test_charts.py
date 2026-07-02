@@ -261,6 +261,47 @@ class TestWaterfallRender(unittest.TestCase):
         self.assertGreater(os.path.getsize(out), 0)
 
 
+class TestCategoryLineRender(unittest.TestCase):
+    """`type: line` with the category grammar draws — one series keeps the
+    filled accent look, several series draw one line each with a legend."""
+
+    def _png(self, chart):
+        fd, out = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        charts.render_png(chart, BRAND["colours"], None, out)
+        self.assertTrue(os.path.isfile(out))
+        self.assertGreater(os.path.getsize(out), 0)
+
+    def test_single_series_renders(self):
+        self._png({
+            "type": "line",
+            "categories": ["Q1", "Q2", "Q3"],
+            "series": [{"name": "Plan", "values": [10, 20, 30]}],
+            "emphasis": None, "callout": None, "fmt": {},
+            "native": False, "stacked": False, "target": None,
+        })
+
+    def test_multi_series_with_emphasis_renders(self):
+        self._png({
+            "type": "line",
+            "categories": ["Q1", "Q2", "Q3"],
+            "series": [{"name": "Plan", "values": [10, 20, 30]},
+                       {"name": "Actual", "values": [12, 18, 33]},
+                       {"name": "Stretch", "values": [14, 24, 40]}],
+            "emphasis": "Actual", "callout": "the gap closes", "fmt": {},
+            "native": False, "stacked": False, "target": None,
+        })
+
+    def test_points_line_still_renders(self):
+        self._png({
+            "type": "line",
+            "points": [(0, 10), (1, 20), (2, 15)],
+            "markers": [{"x": 1, "label": "Peak"}],
+            "callout": None, "fmt": {},
+            "native": False, "stacked": False, "target": None,
+        })
+
+
 # --- stacked bars (T-002, REQ-004, D-007) -------------------------------------
 #
 # charts._stack_bottoms(series_values) -> list[list[float]] is the pure

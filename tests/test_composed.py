@@ -117,6 +117,17 @@ class ComposedRenderTest(unittest.TestCase):
         self.assertIsNotNone(slide.shapes.title)
         self.assertEqual(slide.shapes.title.text, "What moved this quarter")
 
+    def test_stat_label_breaks_on_slash(self):
+        # ' / ' in a stat label renders as a two-line label, end to end.
+        spec = ("---\ndeck: d\naudience: a\n---\n\n## Slide 1\nlayout: composed\n"
+                "Block: stat-row\n56 | Days / to close\n4% | Win rate\n")
+        proc, out = _run(spec, "twoline-label.pptx")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        prs = Presentation(out)
+        drawn = [s for s in prs.slides[0].shapes if not s.is_placeholder]
+        texts = [s.text_frame.text for s in drawn if s.has_text_frame]
+        self.assertIn("Days\nto close", texts)
+
 
 class ComposedLintGateTest(unittest.TestCase):
     """The mechanical lint is wired into the render gate."""
@@ -194,10 +205,17 @@ class ComposedSpecErrorTest(unittest.TestCase):
                 "Block: card-grid at cols 1-6\nA | x\nBlock: process\nPlan\n")
         self._assert_fails(spec, "mix of placed")
 
-    def test_too_many_blocks_rejected(self):
+    def test_five_blocks_render_with_advisory(self):
+        # Five blocks: no longer a hard cap — the deck renders (icon-list rows
+        # compress into their stacked regions) and the block-count advisory,
+        # message included, reaches the summary.
         spec = ("---\ndeck: d\naudience: a\n---\n\n## Slide 1\nlayout: composed\n"
-                + "".join("Block: stat-row\n1 | a\n" for _ in range(5)))
-        self._assert_fails(spec, "at most 4 blocks")
+                + "".join(f"Block: icon-list\ngrowth | row {i}\n"
+                          for i in range(5)))
+        proc, out = _run(spec, "five-blocks.pptx")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("block-count", proc.stdout)
+        self.assertIn("at most 4 blocks", proc.stdout)
 
     def test_bad_placement_rejected(self):
         spec = ("---\ndeck: d\naudience: a\n---\n\n## Slide 1\nlayout: composed\n"
@@ -305,11 +323,24 @@ class NewPrimitiveRenderTest(unittest.TestCase):
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn("exactly two", proc.stderr + proc.stdout)
 
-    def test_process_over_five_fails(self):
+    def test_process_over_five_renders_with_advisory(self):
+        # 6 steps: no hard cap any more — renders, process-count advises.
         block = "Block: process\n" + "".join(f"S{i}\n" for i in range(6))
-        proc, out = self._render_block(block, "bad2.pptx")
+        proc, out = self._render_block(block, "six-steps.pptx")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("process-count", proc.stdout)
+
+    def test_extreme_process_fails_lint_with_hint(self):
+        # 12 steps bust the element cap: the lint text arrives verbatim AND the
+        # overload hint restores the old caps' "split the slide" guidance.
+        block = "Block: process\n" + "".join(f"S{i}\n" for i in range(12))
+        proc, out = self._render_block(block, "twelve-steps.pptx")
         self.assertNotEqual(proc.returncode, 0)
-        self.assertIn("at most 5", proc.stderr + proc.stdout)
+        combined = proc.stderr + proc.stdout
+        self.assertIn("failed lint", combined)
+        self.assertIn("[count]", combined)
+        self.assertIn("hint: the process block has 12 items", combined)
+        self.assertIn("split the slide", combined)
 
     def test_two_blocks_stack(self):
         # Two unplaced blocks stack top to bottom on one slide, no overlap.
@@ -539,40 +570,50 @@ class TableRenderTest(unittest.TestCase):
                 self.assertIn(rgb, palette,
                               f"cell ({r},{c}) fill {rgb} is off-palette {palette}")
 
-    def test_nine_data_rows_fails_with_row_cap(self):
-        # D-004 (pinned in tests/test_primitives.py TestPlanTable): the cap allows
-        # 8 data rows and rejects 9. A full band (no Title) isolates the row-count
-        # cap as the failure mode, distinct from the band-fit guard below.
+    def test_nine_data_rows_render_with_advisory(self):
+        # No hard row cap any more: a full band (no Title) fits 9 data rows at
+        # body size, so the deck renders and table-count advises (D-004's
+        # band-fit guard is now the only hard stop, tested below).
         spec = (
             "---\ndeck: d\naudience: a\n---\n\n## Slide 1\nlayout: composed\n"
             "Block: table\nMetric | Q1 | Q2\n"
             + "".join(f"r{i} | {i} | {i}\n" for i in range(9))
         )
         proc, out = _run(spec, out_name="ninerow.pptx")
-        self.assertNotEqual(proc.returncode, 0)
-        combined = proc.stderr + proc.stdout
-        self.assertIn("error:", combined)
-        self.assertIn("row", combined.lower())            # names the row cap
-        # The row-count cap message, not the band-fit guard ("band fits only").
-        self.assertIn("at most 8 data rows", combined)
-        self.assertFalse(os.path.isfile(out),
-                         "a half-built .pptx was written")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertTrue(os.path.isfile(out))
+        self.assertIn("table-count", proc.stdout)
+        self.assertNotIn("stepped down", proc.stdout)  # body size still fits
 
-    def test_eight_data_rows_under_title_hits_band_fit_guard(self):
-        # A separate, legitimate failure mode (D-004 band-fit guard): under a
-        # Title the fixture's band is short, so even 8 data rows overflow it and
-        # the guard fires naming how many rows fit — distinct from the row cap.
+    def test_eight_data_rows_under_title_step_down_to_caption(self):
+        # Under a Title the fixture's band is short: 8 data rows overflow at
+        # body size, so the table steps down to caption (still on the type
+        # scale) and the run summary owns up to it.
         spec = (
             "---\ndeck: d\naudience: a\n---\n\n## Slide 1\nlayout: composed\n"
             "Title: Big\nBlock: table\nMetric | Q1 | Q2\n"
             + "".join(f"r{i} | {i} | {i}\n" for i in range(8))
         )
         proc, out = _run(spec, out_name="eightrow.pptx")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertTrue(os.path.isfile(out))
+        self.assertIn("stepped down to caption size", proc.stdout)
+
+    def test_many_rows_under_title_still_fail_band_fit(self):
+        # The band-fit guard survives as the hard geometric stop: 30 data rows
+        # under a Title overflow the band even at caption size, the error names
+        # how many rows fit, and no half-built .pptx is written.
+        spec = (
+            "---\ndeck: d\naudience: a\n---\n\n## Slide 1\nlayout: composed\n"
+            "Title: Big\nBlock: table\nMetric | Q1 | Q2\n"
+            + "".join(f"r{i} | {i} | {i}\n" for i in range(30))
+        )
+        proc, out = _run(spec, out_name="thirtyrow.pptx")
         self.assertNotEqual(proc.returncode, 0)
         combined = proc.stderr + proc.stdout
         self.assertIn("error:", combined)
-        self.assertIn("row", combined.lower())
-        self.assertIn("band fits only", combined)
+        self.assertIn("even at caption size", combined)
+        self.assertIn("cut rows or split the slide", combined)
         self.assertFalse(os.path.isfile(out))
 
     def test_table_beside_stat_row_places_and_lints_clean(self):

@@ -798,6 +798,131 @@ class WaterfallParseTest(unittest.TestCase):
         self.assertIn("50", note)  # computed total: 40 - 15 + 25
 
 
+class CategoryLineParseTest(unittest.TestCase):
+    """`type: line` is dual-shaped: `points:` keeps the x-y path, while the
+    category grammar (categories + one or more series) is how a line chart
+    carries multiple series. `emphasis:` on a category-line names a SERIES.
+    """
+
+    def _parse_chart(self, lines, spec_dir=None):
+        return render._parse_chart_block(1, lines, spec_dir)
+
+    def test_category_line_parses_like_column(self):
+        chart = self._parse_chart([
+            "type: line",
+            "categories: Q1, Q2, Q3",
+            "series Plan: 10, 20, 30",
+            "series Actual: 12, 18, 33",
+        ])
+        self.assertEqual(chart["type"], "line")
+        self.assertEqual(chart["categories"], ["Q1", "Q2", "Q3"])
+        self.assertEqual([s["name"] for s in chart["series"]],
+                         ["Plan", "Actual"])
+        self.assertNotIn("points", chart)
+
+    def test_points_line_still_parses(self):
+        chart = self._parse_chart(["type: line", "points: 0 10, 1 20"])
+        self.assertEqual(chart["points"], [(0.0, 10.0), (1.0, 20.0)])
+        self.assertNotIn("categories", chart)
+
+    def test_both_grammars_raise(self):
+        with self.assertRaisesRegex(render.SpecError, r"not both"):
+            self._parse_chart([
+                "type: line",
+                "points: 0 10, 1 20",
+                "categories: A, B",
+                "series X: 1, 2",
+            ])
+
+    def test_neither_grammar_raises(self):
+        with self.assertRaisesRegex(render.SpecError, r"'series', or 'points'"):
+            self._parse_chart(["type: line", "callout: hi"])
+
+    def test_emphasis_names_a_series(self):
+        chart = self._parse_chart([
+            "type: line",
+            "categories: Q1, Q2",
+            "series Plan: 10, 20",
+            "series Actual: 12, 18",
+            "emphasis: Actual",
+        ])
+        self.assertEqual(chart["emphasis"], "Actual")
+
+    def test_emphasis_not_a_series_raises_teaching(self):
+        # Q1 is a category; on a line chart emphasis must name a series.
+        with self.assertRaisesRegex(render.SpecError,
+                                    r"names a\s+series, not a\s+category"):
+            self._parse_chart([
+                "type: line",
+                "categories: Q1, Q2",
+                "series Plan: 10, 20",
+                "emphasis: Q1",
+            ])
+
+    def test_marker_on_category_line_raises(self):
+        with self.assertRaisesRegex(render.SpecError, r"marker"):
+            self._parse_chart([
+                "type: line",
+                "categories: Q1, Q2",
+                "series Plan: 10, 20",
+                "marker: 1 Late",
+            ])
+
+    def test_series_length_mismatch_raises(self):
+        with self.assertRaisesRegex(render.SpecError, r"length mismatch"):
+            self._parse_chart([
+                "type: line",
+                "categories: Q1, Q2, Q3",
+                "series Plan: 10, 20",
+            ])
+
+    def test_csv_three_columns_reads_as_series(self):
+        tmp = tempfile.mkdtemp(prefix="slides-catline-parse-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        with open(os.path.join(tmp, "trend.csv"), "w", encoding="utf-8") as fh:
+            fh.write("Quarter,Plan,Actual\nQ1,10,12\nQ2,20,18\n")
+        chart = self._parse_chart(["type: line", "data: trend.csv"],
+                                  spec_dir=tmp)
+        self.assertEqual(chart["categories"], ["Q1", "Q2"])
+        self.assertEqual([s["name"] for s in chart["series"]],
+                         ["Plan", "Actual"])
+
+    def test_csv_text_first_column_reads_as_series(self):
+        # Two columns, but a non-numeric first column is category labels.
+        tmp = tempfile.mkdtemp(prefix="slides-catline-parse-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        with open(os.path.join(tmp, "trend.csv"), "w", encoding="utf-8") as fh:
+            fh.write("Quarter,Plan\nQ1,10\nQ2,20\n")
+        chart = self._parse_chart(["type: line", "data: trend.csv"],
+                                  spec_dir=tmp)
+        self.assertEqual(chart["categories"], ["Q1", "Q2"])
+        self.assertEqual(len(chart["series"]), 1)
+
+    def test_csv_two_numeric_columns_stay_points(self):
+        # Back-compat pin: an x,y CSV keeps the point shape.
+        tmp = tempfile.mkdtemp(prefix="slides-catline-parse-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        with open(os.path.join(tmp, "xy.csv"), "w", encoding="utf-8") as fh:
+            fh.write("x,y\n0,10\n1,20\n")
+        chart = self._parse_chart(["type: line", "data: xy.csv"],
+                                  spec_dir=tmp)
+        self.assertEqual(chart["points"], [(0.0, 10.0), (1.0, 20.0)])
+        self.assertNotIn("categories", chart)
+
+    def test_chart_to_note_handles_category_line(self):
+        # The matplotlib-absent note must not KeyError on a category-line.
+        chart = self._parse_chart([
+            "type: line",
+            "categories: Q1, Q2",
+            "series Plan: 10, 20",
+            "series Actual: 12, 18",
+        ])
+        note = render.chart_to_note(chart)
+        self.assertIn("Line chart", note)
+        self.assertIn("Plan", note)
+        self.assertIn("Actual", note)
+
+
 # --- T-001 (Wave 0, red-first), continued: native-charts-plan.md REQ-001,
 # REQ-003, REQ-004, REQ-005, REQ-006; decisions D-001, D-005, D-009.
 #

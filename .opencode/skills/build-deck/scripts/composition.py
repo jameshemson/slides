@@ -142,7 +142,14 @@ def _check_value_terseness(elements, tokens, slide_w, slide_h):
 
 
 def _check_label_terseness(elements, tokens, slide_w, slide_h):
-    return all(len(e["text"].split()) <= 3 for e in _labels(elements))
+    # Per line: a stat label may break on ' / ' (already "\n" by planning
+    # time), and a two-line label of terse lines is not a wordy label.
+    return all(
+        len(line.split()) <= 3
+        for e in _labels(elements)
+        for line in str(e["text"]).split("\n")
+        if line.strip()
+    )
 
 
 def _check_breathing_room(elements, tokens, slide_w, slide_h):
@@ -275,6 +282,11 @@ def _check_tree_count(elements, tokens, slide_w, slide_h):
     return 2 <= len(_by_role(elements, "tree-node")) <= 8
 
 
+def _check_tree_depth(elements, tokens, slide_w, slide_h):
+    # Node boxes sit in per-depth rows, so distinct tops count the levels.
+    return len({e["top"] for e in _by_role(elements, "tree-node")}) <= 3
+
+
 def _check_tree_label_terseness(elements, tokens, slide_w, slide_h):
     return _all_terse((e["text"] for e in _by_role(elements, "tree-label")), 4)
 
@@ -321,6 +333,10 @@ def _check_table_count(elements, tokens, slide_w, slide_h):
     return all(len(t.get("rows") or []) <= 6 for t in _tables(elements))
 
 
+def _check_table_column_count(elements, tokens, slide_w, slide_h):
+    return all(len(t.get("header") or []) <= 5 for t in _tables(elements))
+
+
 def _check_table_cell_terseness(elements, tokens, slide_w, slide_h):
     for t in _tables(elements):
         cells = list(t.get("header") or [])
@@ -338,6 +354,21 @@ def _check_table_one_accent(elements, tokens, slide_w, slide_h):
 # ---------------------------------------------------------------------------
 # RULES registry
 # ---------------------------------------------------------------------------
+
+# Block-count is a slide-structure note, not an element-family rule, so it
+# cannot live in RULES (lint.review gates rules by primitive family and never
+# sees the parsed blocks). render.py appends this finding itself when a
+# composed slide carries more than MAX_COMPOSED_BLOCKS blocks — same shape as
+# a review finding, same advisory guarantee.
+BLOCK_COUNT = {
+    "rule_id": "block-count",
+    "tier": "quality",
+    "severity": "advisory",
+    "message": (
+        "A composed slide reads best with at most 4 blocks; "
+        "more is a wall — split the slide."
+    ),
+}
 
 RULES = [
     {
@@ -388,7 +419,7 @@ RULES = [
         "severity": "advisory",
         "applies_to": "stat-row",
         "source": "report#3 (user decks §F)",
-        "message": "Labels stay to <=3 words.",
+        "message": "Labels stay to <=3 words per line.",
         "check": _check_label_terseness,
     },
     {
@@ -564,6 +595,15 @@ RULES = [
         "check": _check_tree_count,
     },
     {
+        "id": "tree-depth",
+        "tier": "quality",
+        "severity": "advisory",
+        "applies_to": "tree",
+        "source": "report#4 (Cowan); org-chart legibility",
+        "message": "Keep a tree to 3 levels or fewer; deeper is a diagram, not a slide.",
+        "check": _check_tree_depth,
+    },
+    {
         "id": "tree-label-terseness",
         "tier": "quality",
         "severity": "advisory",
@@ -643,6 +683,18 @@ RULES = [
             "cut rows or split the slide."
         ),
         "check": _check_table_count,
+    },
+    {
+        "id": "table-column-count",
+        "tier": "quality",
+        "severity": "advisory",
+        "applies_to": "table-grid",
+        "source": "report#4 (Cowan); column legibility at body width",
+        "message": (
+            "Keep a table to ~5 columns; more squeezes every cell — "
+            "cut columns or split the slide."
+        ),
+        "check": _check_table_column_count,
     },
     {
         "id": "table-cell-terseness",

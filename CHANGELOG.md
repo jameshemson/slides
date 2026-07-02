@@ -4,6 +4,57 @@ All notable changes to the slides skill pack are recorded here. The format
 follows [Keep a Changelog](https://keepachangelog.com/), and the pack uses
 [semantic versioning](https://semver.org/).
 
+## [0.15.0] - 2026-07-02
+
+The guardrails learn their place. Real deck-building kept hitting hard
+content caps that were taste dressed up as validation — a 9-row table, a
+6-step process, a second series on a line chart all killed the whole render.
+The pack's own philosophy says the lint is the only rigidity; now the code
+agrees: definitional constraints stay hard, taste caps advise, and the
+mechanical lint remains the one gate.
+
+### Changed
+
+- **Per-primitive count caps are advisory.** Card-grid, process, timeline,
+  tree (count and depth), icon-list, cycle, and table column/row caps no
+  longer fail the render; the existing composition advisory rules carry the
+  craft guidance instead, now printed with their teaching message in the run
+  summary, not just a rule id. The 4-block composed-slide cap is advisory too
+  (`block-count`). Still hard: the mechanical lint (on-token colour,
+  type-scale size, margins, overlap, the 24-element cap) and the definitional
+  constraints — comparison has two sides, a matrix four quadrants, a tree one
+  root, a table at least two columns, pie and waterfall exactly one series,
+  `stacked:` at least two.
+- **Layout steering rebalanced.** The spec-writing guidance now asks the
+  beat's form first — a set, a contrast, a sequence, data → `composed` or a
+  `Chart:` — with the fixed roles carrying the framing beats, and repeats the
+  anti-bullets warning at the point where layouts are actually chosen.
+  Title-and-bullets becomes a deliberate choice for a genuinely prose beat,
+  not the fallback.
+
+### Added
+
+- **Multi-series line charts.** `type: line` now also takes the category
+  grammar — `categories:` + one or more `series <Name>:` lines, or a CSV —
+  drawing one line per series with a legend below; `emphasis:` on a line
+  names the *series* to accent (the rest go muted). Works native too
+  (`native: true` → a real editable LINE chart with per-series line colours,
+  value axis kept, gridlines dropped). `points:` stays for x-y lines;
+  `marker:` stays points-only. A 3+-column line CSV previously truncated
+  silently to x,y — it now reads as multi-series (a fix).
+- **Table step-down.** A table that overflows its band at body size now steps
+  its type down to caption (still on the type scale, so the lint stays green)
+  and the run summary owns up to it; only when even caption size cannot fit
+  does the render fail, naming how many rows fit.
+- **Stat labels break lines.** ` / ` in a stat-row label breaks the line
+  (the card-body convention): `56 | Days / to close`. Label boxes align
+  across the row; the terseness advisory judges per line.
+- **A teaching hint on geometric failure.** When a composed slide fails the
+  lint because a block simply carries too many items, the error now appends
+  the old caps' guidance — "cut items or split the slide" — after the lint's
+  own violation list.
+- **New advisories**: `tree-depth`, `table-column-count`, `block-count`.
+
 ## [0.14.0] - 2026-07-02
 
 The round trip: the pipeline stops being one-directional. Until now a

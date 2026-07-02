@@ -74,7 +74,9 @@ CHART_ALLOWED_ROLES = {"title-content"}
 # charts.CHART_TYPES (render.py must not import charts — and thus matplotlib —
 # at module load, so the list is duplicated rather than imported).
 # Two data shapes: category charts (categories + series) and point charts
-# (x/y points).
+# (x/y points). `line` is dual: `points:` keeps the x-y path, while
+# `categories:` + one or more `series` joins the category pipeline (that is
+# how a line chart carries multiple series).
 CHART_TYPES = ("bar", "column", "line", "pie", "scatter", "waterfall")
 CATEGORY_CHART_TYPES = ("bar", "column", "pie", "waterfall")
 POINT_CHART_TYPES = ("line", "scatter")
@@ -369,8 +371,10 @@ def _prescan_layout(lines):
     return None
 
 
-# A composed slide takes a handful of blocks at most; more is a wall, not a
-# composition. The advisory count rules police items within a block.
+# A composed slide reads best with a handful of blocks; more is a wall, not a
+# composition. Advisory threshold (the block-count note fires past it) — the
+# lint's element cap is the hard backstop, and the advisory count rules police
+# items within a block.
 MAX_COMPOSED_BLOCKS = 4
 
 # 'at <placement>' shortcuts: half-band placements on the 12x12 block grid.
@@ -489,11 +493,6 @@ def _parse_composed_slide(number, lines, spec_dir=None):
         raise SpecError(
             f"slide {number}: composed slide has no 'Block:' (need at least "
             f"one, e.g. 'Block: stat-row')"
-        )
-    if len(blocks) > MAX_COMPOSED_BLOCKS:
-        raise SpecError(
-            f"slide {number}: a composed slide takes at most "
-            f"{MAX_COMPOSED_BLOCKS} blocks, got {len(blocks)}; split the slide"
         )
     placed = [b for b in blocks if b.get("placement") is not None]
     if placed and len(placed) != len(blocks):
@@ -1057,6 +1056,15 @@ def _chart_number(number, token):
         )
 
 
+def _is_chart_number(token):
+    """True when a CSV cell would parse as a chart number (shape probing)."""
+    try:
+        float(str(token).strip())
+        return True
+    except ValueError:
+        return False
+
+
 def _parse_points(number, value):
     """Parse a line chart's `points:` value into a list of (x, y) float pairs.
 
@@ -1153,7 +1161,16 @@ def _read_chart_csv(number, path, ctype):
             f"least one data row"
         )
     header, body = [c.strip() for c in rows[0]], rows[1:]
-    if ctype in CATEGORY_CHART_TYPES:
+    category_shape = ctype in CATEGORY_CHART_TYPES
+    if ctype == "line":
+        # A line CSV is dual-shaped: 3+ columns (several series) or a
+        # non-numeric first column (category labels) read as a category
+        # chart; exactly two numeric columns stay x,y points (back-compat).
+        # To force categories with 2 numeric columns, use inline
+        # `categories:` + `series` instead of `data:`.
+        category_shape = (len(header) >= 3
+                          or not all(_is_chart_number(r[0]) for r in body))
+    if category_shape:
         if len(header) < 2:
             raise SpecError(
                 f"slide {number}: chart data {path!r} needs a category column "
@@ -1362,15 +1379,30 @@ def _parse_chart_block(number, lines, spec_dir=None):
         series = loaded.get("series", [])
         points = loaded.get("points")
 
-    if ctype in CATEGORY_CHART_TYPES:
+    # `line` is dual-shaped: `points:` keeps the x-y path; the category
+    # grammar (categories + series) is how a line carries multiple series.
+    if ctype == "line" and points is not None and (categories or series):
+        raise SpecError(
+            f"slide {number}: a line chart takes either 'points:' or "
+            f"'categories:' + 'series', not both"
+        )
+    category_line = ctype == "line" and points is None
+
+    if ctype in CATEGORY_CHART_TYPES or category_line:
         if not categories:
             raise SpecError(
                 f"slide {number}: chart type {ctype!r} needs 'categories'"
+                + (" + 'series', or 'points'" if category_line else "")
             )
         if not series:
             raise SpecError(
                 f"slide {number}: chart type {ctype!r} needs at least one "
                 f"'series'"
+            )
+        if category_line and markers:
+            raise SpecError(
+                f"slide {number}: chart 'marker:' needs a points line (it is "
+                f"x-keyed); use 'callout:' instead"
             )
         if ctype == "pie" and len(series) != 1:
             raise SpecError(
@@ -1395,7 +1427,18 @@ def _parse_chart_block(number, lines, spec_dir=None):
                     f"{len(s['values'])} values but there are "
                     f"{len(categories)} categories (length mismatch)"
                 )
-        if emphasis is not None and emphasis not in categories:
+        if category_line:
+            # On a line, emphasis names the SERIES to accent (the one line
+            # that carries the point) — not a category, which has no single
+            # mark to colour on a line chart.
+            if emphasis is not None and emphasis not in {s["name"]
+                                                         for s in series}:
+                raise SpecError(
+                    f"slide {number}: chart emphasis {emphasis!r} is not one "
+                    f"of the series names (on a line chart, emphasis names a "
+                    f"series, not a category)"
+                )
+        elif emphasis is not None and emphasis not in categories:
             raise SpecError(
                 f"slide {number}: chart emphasis {emphasis!r} is not one of "
                 f"the categories"
@@ -1419,7 +1462,7 @@ def _parse_chart_block(number, lines, spec_dir=None):
                 "emphasis": emphasis, "callout": callout, "fmt": fmt,
                 "native": native, "stacked": stacked, "target": target}
 
-    # line or scatter (point charts)
+    # scatter, or a line given `points:` (a category-shaped line routed above)
     if not points:
         raise SpecError(
             f"slide {number}: chart type {ctype!r} needs 'points'"
@@ -1523,10 +1566,11 @@ def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None,
     composed_tokens = None   # resolved lazily once, on the first composed slide
     composed_advisories = []  # [(slide_number, [finding, ...])] — non-blocking
     icon_fallback_slides = []  # [(slide_number, [icon name, ...])] — rasteriser absent
-    # native-charts-plan.md D-005: one note per chart that requested `native:`
-    # but fell back to the matplotlib image (unsupportable type, or the
-    # native_charts backend is unavailable).
-    native_fallback_notes = []
+    # Non-blocking render adjustments, one note each: a chart that requested
+    # `native:` but fell back to the matplotlib image (native-charts-plan.md
+    # D-005 — unsupportable type, or the backend is unavailable), or a table
+    # stepped down to caption size to fit its band.
+    render_notes = []
 
     for spec in slides:
         number = spec["number"]
@@ -1536,7 +1580,7 @@ def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None,
             if composed_tokens is None:
                 import tokens  # noqa: PLC0415 — light; composed decks only
                 composed_tokens = tokens.resolve_tokens(brand, prs)
-            (advisories, dropped_icons, chart_fallback_notes, font_family,
+            (advisories, dropped_icons, slide_render_notes, font_family,
              font_warning) = _render_composed_slide(
                 prs, brand, spec, composed_tokens, charts_dir,
                 font_family, font_warning, brand_path
@@ -1545,7 +1589,7 @@ def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None,
                 composed_advisories.append((number, advisories))
             if dropped_icons:
                 icon_fallback_slides.append((number, dropped_icons))
-            native_fallback_notes.extend(chart_fallback_notes)
+            render_notes.extend(slide_render_notes)
             continue
 
         if role not in layout_map:
@@ -1594,7 +1638,7 @@ def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None,
                 else:
                     native_ok, reason = native_charts_mod.supported(chart)
                 if not native_ok:
-                    native_fallback_notes.append(
+                    render_notes.append(
                         f"slide {number}: {reason}; drawn as an image"
                     )
 
@@ -1677,12 +1721,12 @@ def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None,
                     fallback_slides, font_warning,
                     composed_advisories=composed_advisories,
                     icon_fallback_slides=icon_fallback_slides,
-                    native_fallback_notes=native_fallback_notes)
+                    render_notes=render_notes)
 
 
 def _summary(out_path, n_slides, visual_slides, chart_slides, fallback_slides,
              font_warning, composed_advisories=None, icon_fallback_slides=None,
-             native_fallback_notes=None):
+             render_notes=None):
     """Compose the one-line run summary, naming charts, notes, and warnings."""
     parts = [f"rendered {n_slides} slide(s) to {out_path}"]
     if chart_slides:
@@ -1704,10 +1748,10 @@ def _summary(out_path, n_slides, visual_slides, chart_slides, fallback_slides,
             f"(slides {', '.join(map(str, fallback_slides))}); "
             f"pip install matplotlib to draw them"
         )
-    if native_fallback_notes:
+    if render_notes:
         parts.append(
-            f"; {len(native_fallback_notes)} native chart fallback note(s): "
-            + "; ".join(native_fallback_notes)
+            f"; {len(render_notes)} render note(s): "
+            + "; ".join(render_notes)
         )
     if icon_fallback_slides:
         n = sum(len(names) for _, names in icon_fallback_slides)
@@ -1720,11 +1764,14 @@ def _summary(out_path, n_slides, visual_slides, chart_slides, fallback_slides,
         parts.append(f" [warning: {font_warning}]")
     if composed_advisories:
         n = sum(len(f) for _, f in composed_advisories)
+        # One finding per line, id + message: the note should teach the craft
+        # rule it is nudging toward, not just name it.
         parts.append(
-            f"; {n} composition advisory note(s) (not blocking): "
-            + "; ".join(
-                f"slide {num} {', '.join(fd['rule_id'] for fd in finds)}"
+            f"; {n} composition advisory note(s) (not blocking):\n"
+            + "\n".join(
+                f"  slide {num} [{fd['rule_id']}] {fd.get('message', '')}"
                 for num, finds in composed_advisories
+                for fd in finds
             )
         )
     return "".join(parts)
@@ -1881,6 +1928,42 @@ def _icon_px(el):
     return max(48, min(px, 512))
 
 
+def _overload_hint(blocks):
+    """One teaching line for a composed slide that failed the lint because a
+    block simply carries too many items. The count caps are advisory now, so
+    the geometry is what refuses — this restores the old caps' "split the
+    slide" guidance exactly when that happens. Returns "" when no block looks
+    overloaded (the lint failure is then something else).
+    """
+    def tree_nodes(node):
+        return 1 + sum(tree_nodes(c) for c in (node.get("children") or []))
+
+    # (parsed-items key, count fn, count past which a block rarely fits)
+    heavy = {
+        "stat-row": ("stats", len, 5),
+        "card-grid": ("cards", len, 5),
+        "process": ("steps", len, 5),
+        "timeline": ("nodes", len, 6),
+        "icon-list": ("rows", len, 6),
+        "cycle": ("stages", len, 6),
+        "tree": ("root", tree_nodes, 8),
+        "table": ("table", lambda t: len(t.get("rows") or []), 8),
+    }
+    for block in blocks:
+        entry = heavy.get(block.get("type"))
+        if entry is None:
+            continue
+        key, count, good = entry
+        n = count(block.get(key) or {})
+        if n > good:
+            noun = "rows" if block["type"] == "table" else "items"
+            return (
+                f"hint: the {block['type']} block has {n} {noun}; that many "
+                f"rarely fits — cut {noun} or split the slide"
+            )
+    return ""
+
+
 def _render_composed_slide(prs, brand, spec, tokens, charts_dir,
                             font_family, font_warning, brand_path):
     """Render a composed slide: fill an optional title, then draw token-bound
@@ -1896,11 +1979,12 @@ def _render_composed_slide(prs, brand, spec, tokens, charts_dir,
     the same registered brand font as the title-content path, resolved at
     most once per run regardless of which path hits it first.
 
-    Returns (advisories, dropped_icons, native_fallback_notes, font_family,
+    Returns (advisories, dropped_icons, render_notes, font_family,
     font_warning): the advisory composition findings, any icon names dropped
-    for want of a rasteriser, one fallback note per `Block: chart` that
-    requested `native: true` but fell back to a matplotlib image
-    (REQ-006/D-005/D-006), and the (possibly just-resolved) font state.
+    for want of a rasteriser, one note per non-blocking render adjustment (a
+    `Block: chart` that requested `native: true` but fell back to a matplotlib
+    image, REQ-006/D-005/D-006; a table stepped down to caption size), and the
+    (possibly just-resolved) font state.
     """
     import primitives  # noqa: PLC0415 — composed decks only
     import lint  # noqa: PLC0415
@@ -1991,17 +2075,30 @@ def _render_composed_slide(prs, brand, spec, tokens, charts_dir,
     try:
         lint.check(all_elements, tokens, slide_w, slide_h)
     except lint.LintError as exc:
+        hint = _overload_hint(blocks)
         raise SpecError(
             f"slide {number}: composed slide failed lint:\n{exc}"
+            + (f"\n{hint}" if hint else "")
         )
 
     # Advisory composition review — non-blocking. Wrapped so a broken advisory
     # layer can never change the render's exit code (the gate above already
-    # passed). Returns findings for the run summary.
+    # passed). Returns findings for the run summary. The block-count note
+    # (formerly a hard cap) rides the same guarantee.
     try:
         advisories = lint.review(all_elements, tokens, slide_w, slide_h)
+        if len(blocks) > MAX_COMPOSED_BLOCKS:
+            import composition  # noqa: PLC0415 — the advisory voice lives there
+            advisories = list(advisories) + [dict(composition.BLOCK_COUNT)]
     except Exception:  # noqa: BLE001 — advisory must never block a render
         advisories = []
+
+    # Non-blocking render adjustments the summary should own up to.
+    render_notes = [
+        f"slide {number}: table stepped down to caption size to fit the band"
+        for el in all_elements
+        if el.get("kind") == "table" and el.get("font_stepped")
+    ]
 
     # Resolve icon elements to recoloured PNGs — AFTER the lint has cleared their
     # token colour, so the planners stay pure (the charts pattern). A missing
@@ -2039,7 +2136,6 @@ def _render_composed_slide(prs, brand, spec, tokens, charts_dir,
     # else a matplotlib PNG placed into the block's region, else (matplotlib
     # absent) a VISUAL TO ADD note via the same extra_visual seam the
     # title-content chart branch uses (D-005/D-006).
-    native_fallback_notes = []
     chart_notes = []
     for _el, chart, region, idx in chart_plans:
         if chart["native"]:
@@ -2052,7 +2148,7 @@ def _render_composed_slide(prs, brand, spec, tokens, charts_dir,
             if ok:
                 native_charts.insert(slide, chart, brand["colours"], region)
                 continue
-            native_fallback_notes.append(
+            render_notes.append(
                 f"slide {number}: {reason}; drawn as an image"
             )
         try:
@@ -2071,7 +2167,7 @@ def _render_composed_slide(prs, brand, spec, tokens, charts_dir,
         _place_picture(slide, png, region)
 
     _apply_meta(slide, spec.get("meta", {}), extra_visual=chart_notes or None)
-    return (advisories, dropped_icons, native_fallback_notes, font_family,
+    return (advisories, dropped_icons, render_notes, font_family,
             font_warning)
 
 
@@ -2260,7 +2356,8 @@ def chart_to_note(chart):
     exactly what chart belongs on the slide.
     """
     ctype = chart["type"]
-    if ctype in ("bar", "column", "pie"):
+    if ctype in ("bar", "column", "pie") or (ctype == "line"
+                                             and "categories" in chart):
         cats = chart["categories"]
         series = "; ".join(
             f"{s['name']}: "
