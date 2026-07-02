@@ -4,6 +4,34 @@ All notable changes to the slides skill pack are recorded here. The format
 follows [Keep a Changelog](https://keepachangelog.com/), and the pack uses
 [semantic versioning](https://semver.org/).
 
+## [0.14.0] - 2026-07-02
+
+The round trip: the pipeline stops being one-directional. Until now a
+rendered deck was a dead end — any change, yours or a colleague's, had no
+path back through the brand, lint, and slop gates. Now a rendered deck can
+come back.
+
+### Added
+
+- **The revise skill (the pack's sixth).** Change a rendered deck by
+  conversation: reads the deck's lineage, syncs or extracts its spec,
+  reconciles hand-edits (each difference shown, fold-in or spec-wins),
+  revises at slide level with the narrative craft, slop-checks what changed,
+  and re-renders through the same brand and lint gates — never overwriting
+  without a yes. Works on decks the pack rendered AND on foreign `.pptx`
+  files (best-effort import with an honest per-slide report).
+- **A lineage stamp.** Every rendered deck's core-properties comments now
+  carries `slides-spec: <spec basename> sha256:<hash>`, so a deck can name
+  the spec it came from (a template's own comments are overwritten by
+  design).
+- **`deck_to_spec.py`.** The renderer's inverse for the fixed roles:
+  layout-map inversion with collision handling, heuristic role inference for
+  foreign decks, `Visual:` restored from `VISUAL TO ADD` notes, pictures and
+  native charts flagged for re-declaration, composed slides flattened with a
+  report line, self-validated against the parser (it can never emit a spec
+  `render.py` rejects), and an `--against` mode that diffs a deck's text
+  against a spec (exit 2 on drift) — the mechanical hand-edit detector.
+
 ## [0.13.0] - 2026-07-02
 
 Charts the recipient can edit, plus the chart follow-ups real decks kept
