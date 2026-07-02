@@ -59,7 +59,13 @@ python3 ../build-deck/scripts/deck_to_spec.py <deck>.pptx --brand .slides/brand.
 
 **Exit 0** — deck and spec agree. Go to Step 4.
 
-**Exit 2** — the deck (or the spec) changed since the last render. Before reconciling anything, check which side moved: hash the spec file on disk and compare it to the sha in the stamp you read in Step 2. If they match, only the pptx was hand-edited — walk each diff line below. If they don't match, the *spec* was edited since render too — this isn't a simple hand-edit, so stop and ask the user which file is newer (check modification times) and which one should win before touching either.
+**Exit 2** — the deck (or the spec) changed since the last render. Before reconciling anything, check which side moved: hash the spec file on disk and compare it to the sha in the stamp you read in Step 2.
+
+```
+python3 -c "import hashlib; print(hashlib.sha256(open('<deck>.deck.md','rb').read()).hexdigest())"
+```
+
+Compare the printed hash to the stamp's `sha256:` field verbatim. If they match, only the pptx was hand-edited — walk each diff line below. If they don't match, the *spec* was edited since render too — this isn't a simple hand-edit, so stop and ask the user which file is newer (check modification times) and which one should win before touching either.
 
 Once you know the pptx alone changed, walk the diff output — each line names a slide and field with both texts, `slide 4 Title: pptx='…' spec='…'` — and for each one ask: fold the pptx's version into the spec (the default), or let the spec win and discard the hand-edit. A slide that exists in one file but not the other gets the same choice: fold it in as a new spec slide, or leave it out. Apply what's chosen by editing the spec file directly.
 

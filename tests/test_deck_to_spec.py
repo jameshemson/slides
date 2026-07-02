@@ -24,6 +24,7 @@ setUpClass with a named "deck_to_spec.py not yet implemented" AssertionError
 here on purpose: a green run must mean the contract is met, never "there was
 nothing to check yet".
 """
+import glob
 import json
 import os
 import shutil
@@ -438,6 +439,47 @@ class AgainstTest(unittest.TestCase):
             f"stdout: {proc.stdout}\nstderr: {proc.stderr}",
         )
         self.assertIn("Role", proc.stdout)
+
+    def test_against_without_report_writes_no_report_file(self):
+        """Architect-review finding: a read-only --against sync check must
+        not litter an unrequested <deck>.import-report.md beside the user's
+        deck, even on a clean exit-0 drift check. No --report given, no
+        report file anywhere under the temp dir."""
+        proc = _extract([
+            self.out_path, "--brand", self.brand_path,
+            "--against", self.spec_path,
+        ])
+        self.assertEqual(
+            proc.returncode, 0,
+            f"expected no drift for an unedited render.\n"
+            f"stdout: {proc.stdout}\nstderr: {proc.stderr}",
+        )
+        self.assertEqual(
+            glob.glob(os.path.join(self._tmp, "**", "*.import-report.md"),
+                      recursive=True),
+            [],
+            "--against without --report must not write an import report",
+        )
+
+    def test_against_with_explicit_report_writes_it(self):
+        """Sibling case: an explicit --report is a user request and is
+        honoured even in --against mode — only the unrequested default-path
+        report must not fire."""
+        report_path = os.path.join(self._tmp, "explicit.import-report.md")
+        proc = _extract([
+            self.out_path, "--brand", self.brand_path,
+            "--against", self.spec_path,
+            "--report", report_path,
+        ])
+        self.assertEqual(
+            proc.returncode, 0,
+            f"expected no drift for an unedited render.\n"
+            f"stdout: {proc.stdout}\nstderr: {proc.stderr}",
+        )
+        self.assertTrue(
+            os.path.isfile(report_path),
+            "--against with an explicit --report must write it",
+        )
 
 
 class ForeignTest(unittest.TestCase):
