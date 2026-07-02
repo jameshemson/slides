@@ -1,7 +1,7 @@
 {
   "name": "slides",
   "description": "A 6-skill pack for going from a vague idea to a finished, on-brand, slop-free .pptx deck. 5 user-invocable skills: teach-slides, narrative, build-deck, slop-check, revise.",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "author": {
     "name": "James Hemson"
   },
