@@ -4,9 +4,9 @@ description: Core knowledge for making on-brand, slop-free presentations. Premis
 ---
 
 This skill holds the presentation craft that the slides skill pack is built on. It
-is not invoked on its own. The teach-slides, narrative, build-deck, and slop-check
-skills each load it first, so the premise, the method, and the slop detector govern
-every deck the pack produces.
+is not invoked on its own. The teach-slides, narrative, build-deck, slop-check, and
+revise skills each load it first, so the premise, the method, and the slop detector
+govern every deck the pack produces.
 
 ## Premise
 
