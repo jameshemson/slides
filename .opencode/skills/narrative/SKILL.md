@@ -76,4 +76,4 @@ The spec carries content and structure only, never fonts, colours, or coordinate
 
 A half-finished spec is a valid file. If the conversation has to pause, write what you have. The user, or a later run, can resume from it.
 
-When the spec is written, name the file and point the user at `build-deck` (via the skill tool) to render it, or `slop-check` (via the skill tool) to audit it first.
+When the spec is written, name the file and point the user at `build-deck` (via the skill tool) to render it, `slop-check` (via the skill tool) to audit it first, or `revise` (via the skill tool) to change it after rendering.

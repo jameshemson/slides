@@ -1,7 +1,7 @@
 {
   "name": "slides",
   "version": "0.13.0",
-  "description": "A 5-skill pack for going from a vague idea to a finished, on-brand, slop-free .pptx deck. 4 user-invocable skills: teach-slides, narrative, build-deck, slop-check.",
+  "description": "A 6-skill pack for going from a vague idea to a finished, on-brand, slop-free .pptx deck. 5 user-invocable skills: teach-slides, narrative, build-deck, slop-check, revise.",
   "author": {
     "name": "James Hemson"
   },
@@ -13,7 +13,7 @@
   "interface": {
     "displayName": "slides",
     "shortDescription": "From a vague idea to a finished, on-brand, slop-free PowerPoint deck.",
-    "longDescription": "Five skills that work standalone or chained: teach-slides onboards you to presentation craft; narrative shapes a vague idea into a tight deck story; build-deck renders an on-brand .pptx; slop-check audits a deck for generic, AI-flavoured slop. presentation-craft is the shared knowledge base behind all of them.",
+    "longDescription": "Six skills that work standalone or chained: teach-slides onboards you to presentation craft; narrative shapes a vague idea into a tight deck story; build-deck renders an on-brand .pptx; slop-check audits a deck for generic, AI-flavoured slop; revise changes a rendered deck by conversation — syncing its spec, reconciling hand-edits, and re-rendering through the same gates. presentation-craft is the shared knowledge base behind all of them.",
     "developerName": "James Hemson",
     "category": "Productivity"
   }

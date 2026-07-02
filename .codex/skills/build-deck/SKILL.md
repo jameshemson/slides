@@ -83,4 +83,4 @@ Print the render summary. It states how many slides were written, which carry a 
 
 A `Chart:` block is drawn natively and placed on the slide (PNGs are written to a `.charts/` folder beside the `.pptx` and embedded in it). A `Visual:` field is recorded in the slide's speaker notes, prefixed `VISUAL TO ADD:`, and is not drawn — tell the user which slides carry one and that placing it in PowerPoint is their step. If the summary reports a matplotlib fallback, tell the user that those chart slides became notes and that `pip install matplotlib` will draw them on the next run.
 
-Tell the user where the `.pptx` was written. To audit the finished deck, point them at `slop-check` (via `$skill slop-check` or `/skills`).
+Tell the user where the `.pptx` was written. To audit the finished deck, point them at `slop-check` (via `$skill slop-check` or `/skills`). To change it later, point them at `revise` (via `$skill revise` or `/skills`).

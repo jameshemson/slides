@@ -193,7 +193,7 @@ test('codex, codex-plugin, and codex-cross sandbox outputs are byte-identical (v
     '\n' +
     'See also $ARGUMENTS and /slides:build-deck.\n';
 
-  const names = ['build-deck', 'narrative', 'slop-check', 'teach-slides'];
+  const names = ['build-deck', 'narrative', 'revise', 'slop-check', 'teach-slides'];
   for (const n of names) {
     writeSource(`${n}/SKILL.md`, sample);
   }
@@ -293,7 +293,7 @@ test('real source/skills: each provider emits expected skill set with no Claude-
   }
 });
 
-test('real source/commands: opencode emits exactly the four expected commands with @include bodies', () => {
+test('real source/commands: opencode emits exactly the five expected commands with @include bodies', () => {
   cpSync(join(ROOT, 'source/skills'), join(sandbox, 'source/skills'), {
     recursive: true,
   });
@@ -310,7 +310,7 @@ test('real source/commands: opencode emits exactly the four expected commands wi
   const emitted = readdirSync(join(sandbox, '.opencode/commands')).sort();
   assert.deepEqual(
     emitted,
-    ['build-deck.md', 'narrative.md', 'slop-check.md', 'teach-slides.md'],
+    ['build-deck.md', 'narrative.md', 'revise.md', 'slop-check.md', 'teach-slides.md'],
     `Unexpected command file set: ${JSON.stringify(emitted)}`,
   );
 
