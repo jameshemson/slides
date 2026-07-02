@@ -80,4 +80,4 @@ The spec carries content and structure only, never fonts, colours, or coordinate
 
 A half-finished spec is a valid file. If the conversation has to pause, write what you have. The user, or a later run, can resume from it.
 
-When the spec is written, name the file and point the user at /slides:build-deck to render it, or /slides:slop-check to audit it first.
+When the spec is written, name the file and point the user at /slides:build-deck to render it, /slides:slop-check to audit it first, or /slides:revise to change it after rendering.
