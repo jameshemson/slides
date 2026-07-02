@@ -1,6 +1,6 @@
 # Status
 
-A snapshot of where the slides skill pack stands. Last updated 2026-07-01.
+A snapshot of where the slides skill pack stands. Last updated 2026-07-02.
 
 ## Released
 
@@ -8,6 +8,7 @@ All on `main`, each git-tagged with a GitHub release (latest first):
 
 | Version | What it added |
 |---------|---------------|
+| v0.13.0 | Native editable charts + the chart follow-ups. `native: true` on a `Chart:` draws a real PowerPoint chart (GraphicFrame the recipient edits, styled from brand colours: emphasis accent + muted rest, no gridlines, hidden value axis, `format:` → Excel number formats, legend below only multi-series; a fully-native deck needs no matplotlib). What can't go native — `waterfall` (chartEx, unwritable by python-pptx) or drawn annotations (`target:`/`callout:`/`marker:`) — falls back to the image with a run-summary note. Plus `stacked: true` (both backends), `target: <value> [\| label]` goal lines (image path), and `Block: chart` on composed slides. CI shipped alongside: a GitHub Action runs the three-part gate on push/PR to main. |
 | v0.12.0 | The table primitive + waterfall chart. `Block: table` draws a native, recipient-editable PowerPoint table styled from brand tokens (ink header band, paper rows on muted hairlines, ≤1 accent `!` row, numeric columns right-aligned), with `data:` CSV / `emphasis:` label, hard caps (2–5 cols, 1–8 rows, band fit) and three advisory rules. `Chart: type: waterfall` draws sign-coloured floating bars from one series of signed deltas (rises accent, falls spend-or-grey, muted connectors, ink auto-total via `total:`, signed labels honouring `format:`), CSV via `data:`, note-degrade without matplotlib. deck-spec.md condensed to stay under the 190-line reference ceiling (and a stale "scatter unsupported" claim fixed). |
 | v0.11.0 | Chart polish from real-usage feedback: a Chart `format:` (`$` / `%` / `$k` / `$m`, or `prefix:`/`suffix:`) formats value labels (`362` → `$362k`), large numbers abbreviate by default; long/many category labels rotate so they don't collide; the multi-series legend moved below the chart so it no longer crowds the slide title. |
 | v0.10.0 | The render-back visual-QA loop — the lint *with eyes*. `raster.py` rasterises a rendered deck to per-slide PNGs (+ a contact sheet) so `build-deck` can look at it for the things geometry can't see (overflow, font fallback, clutter). Pluggable backend, none required: headless LibreOffice preferred, Keynote/macOS fallback (opt-in, opens the app), else a clear degrade. PDF→PNG via PyMuPDF/poppler; a `looks_blank` check + CLI. build-deck Step 4 runs it automatically on LibreOffice. |
@@ -21,7 +22,7 @@ All on `main`, each git-tagged with a GitHub release (latest first):
 | v0.2.0 | Native charts: `build-deck` draws bar, column, pie, scatter, and line charts from a `Chart:` block (matplotlib), placed on-brand; degrades to a `VISUAL TO ADD` note when matplotlib is absent. |
 | v0.1.0 | Initial release: five skills, cross-harness pipeline, python-pptx renderer, two-layer slop detector. |
 
-Automated gates at this snapshot: `python3 -m unittest discover tests` 307 passing, `npm test` 44 passing, `npm run check-sync` in sync. `cairosvg` and `matplotlib` are installed locally: the icon raster path is verified (icons recolour to the brand accent and rasterise crisply) and the multi-series grouped-bar chart is verified visually (Revenue accent + Cost grey). On a machine without `cairosvg`, icons degrade to a note (as designed).
+Automated gates at this snapshot: `python3 -m unittest discover tests` 367 passing, `npm test` 44 passing, `npm run check-sync` in sync — now also enforced by CI (`.github/workflows/ci.yml`) on every push/PR to main. `cairosvg` and `matplotlib` are installed locally: the icon raster path is verified (icons recolour to the brand accent and rasterise crisply) and the multi-series grouped-bar chart is verified visually (Revenue accent + Cost grey). On a machine without `cairosvg`, icons degrade to a note (as designed).
 
 The render-back visual-QA loop (v0.10.0) is scaffold-only in this environment: no
 rasteriser was installed. Its testable parts (backend detection, degradation,
@@ -57,6 +58,12 @@ These could not run in the build environment; each needs a human in Claude Code 
 - [ ] Re-verify that Codex repo-local discovery is still `.agents/skills/` against current Codex docs.
 - [ ] **Eyeball a `composed` stat-row slide** rendered from a real template against a placeholder-filled slide from the same template (open in any viewer — PowerPoint, Keynote, or a LibreOffice/Keynote PNG export; no specific tool required). The lint guarantees on-brand-by-tokens, not beautiful; confirm the composed slide sits in the template's own rhythm and reads as the same deck. (The automated test confirms the row aligns to the derived margins; the eye confirms it looks right.) While there, confirm the **advisory composition notes read as helpful, not noisy** on a real deck.
 - [ ] **Eyeball the v0.7.0 primitives** — `card-grid`, `comparison`, `process`, `timeline`, and a `freeform` slide — rendered from a real template. Confirm the boxes read on-brand and the compositions look intentional, not templated (the lint proves on-brand, not well-composed, especially for `freeform`). Confirm `narrative` actually reaches for a composition (and `freeform` when an idea fits none of the five) rather than defaulting to bullets.
+- [ ] **Open a v0.13.0 `native: true` chart in desktop PowerPoint**: edit a
+  value and confirm the chart re-plots; confirm the styling (accent emphasis,
+  muted rest, no gridlines, hidden value axis) reads as the brand, not as
+  default PowerPoint (plan assumption A-002 — the read-back tests prove the
+  XML, not the look). Render-back a mixed deck (native chart, stacked, target,
+  composed `Block: chart`) and eyeball.
 - [ ] **Eyeball the v0.12.0 table and waterfall** from a real template: open a
   `Block: table` slide in **desktop PowerPoint** — confirm the muted row
   hairlines (`a:lnB` raw XML, plan assumption A-002) survive, the cells are
@@ -69,6 +76,7 @@ These could not run in the build environment; each needs a human in Claude Code 
 
 - DEF-001: extract a `_render_chart_slide` helper from `build_deck` in `render.py` (the chart branch is long).
 - DEF-002: promote `charts.py`'s recurring inline tuning constants (axis headroom, label offset, fill alpha, marker size, legend anchor) to named module constants.
+- DEF-003: extract the stacked branch of `charts.py`'s `_draw_bars` into a `_draw_stacked_bars` helper, mirroring the `_draw_waterfall` split (`_draw_bars` is ~146 lines after v0.13.0; architect-review note).
 
 ## Unconfirmed
 

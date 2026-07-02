@@ -4,7 +4,7 @@ All notable changes to the slides skill pack are recorded here. The format
 follows [Keep a Changelog](https://keepachangelog.com/), and the pack uses
 [semantic versioning](https://semver.org/).
 
-## [0.13.0] - 2026-07-01
+## [0.13.0] - 2026-07-02
 
 Charts the recipient can edit, plus the chart follow-ups real decks kept
 asking for — a stacked composition, a goal line, a chart on a composed slide.
