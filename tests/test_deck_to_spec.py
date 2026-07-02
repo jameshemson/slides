@@ -400,6 +400,45 @@ class AgainstTest(unittest.TestCase):
         self.assertIn(original_title.lower(), stdout_low)
         self.assertIn(mutated_title.lower(), stdout_low)
 
+    def test_against_with_brand_resolves_quote_role_no_false_drift(self):
+        """Regression pin for revise/SKILL.md's Step 3a (the Tier-1 sync
+        command must pass --brand). The fixture brand's layout_map maps
+        `quote` and `section` to the same layout index (2) — a legal
+        collision seen in real brand.json files. Slide 4 of the fixture
+        spec is that quote slide. With --brand supplied, --against inverts
+        the layout_map deterministically, so an untouched deck must report
+        no drift at all, role included."""
+        proc = _extract([
+            self.out_path, "--brand", self.brand_path,
+            "--against", self.spec_path,
+        ])
+        self.assertEqual(
+            proc.returncode, 0,
+            "expected no drift on an unedited deck when --brand is given "
+            "(quote/section share layout index 2 in the fixture brand).\n"
+            f"stdout: {proc.stdout}\nstderr: {proc.stderr}",
+        )
+
+    def test_against_without_brand_false_positives_on_role_collision(self):
+        """Pins WHY revise/SKILL.md's Step 3a must pass --brand: dropping
+        the flag falls --against to heuristic role inference, which has no
+        layout_map to invert. On this fixture's quote slide (layout index
+        2, shared with section) the heuristic misreads the role as
+        title-content and reports a false 'Role' drift line — exit 2 — on
+        a deck that was never hand-edited. This is the bug that was live
+        in Step 3a's documented command before --brand was added there."""
+        proc = _extract([
+            self.out_path,
+            "--against", self.spec_path,
+        ])
+        self.assertEqual(
+            proc.returncode, 2,
+            "expected a false-positive drift exit without --brand "
+            "(heuristic role inference on the quote/section collision).\n"
+            f"stdout: {proc.stdout}\nstderr: {proc.stderr}",
+        )
+        self.assertIn("Role", proc.stdout)
+
 
 class ForeignTest(unittest.TestCase):
     """REQ-002 foreign tier: a deck with no lineage stamp and no --brand to
