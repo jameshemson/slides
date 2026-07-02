@@ -13,18 +13,19 @@ const opencodeCommandsDir = join(ROOT, '.opencode/commands');
 const sourceCommandsDir = join(ROOT, 'source/commands');
 const sourceSkillsDir = join(ROOT, 'source/skills');
 
-// All five slides skills are portable — no provider excludes any of them.
+// All six slides skills are portable — no provider excludes any of them.
 const PORTABLE_SKILLS = [
   'build-deck',
   'narrative',
   'presentation-craft',
+  'revise',
   'slop-check',
   'teach-slides',
 ];
 
-// The four user-invocable skills have OpenCode command wrappers;
+// The five user-invocable skills have OpenCode command wrappers;
 // presentation-craft is a non-invocable knowledge base and has none.
-const COMMAND_SKILLS = ['build-deck', 'narrative', 'slop-check', 'teach-slides'];
+const COMMAND_SKILLS = ['build-deck', 'narrative', 'revise', 'slop-check', 'teach-slides'];
 
 function readDescription(mdPath) {
   const content = readFileSync(mdPath, 'utf8');
@@ -97,7 +98,7 @@ test('plugins/slides/skills directory exists', () => {
   assert.ok(statSync(codexSkillsDir).isDirectory());
 });
 
-test('plugins/slides/skills contains exactly the five portable skills', () => {
+test('plugins/slides/skills contains exactly the six portable skills', () => {
   const entries = readdirSync(codexSkillsDir).sort();
   assert.deepEqual(entries, PORTABLE_SKILLS);
 });
@@ -136,12 +137,12 @@ test('Codex marketplace category is a non-empty string', () => {
   assert.ok(market.plugins[0].category.length > 0);
 });
 
-test('.codex/skills/ contains exactly the five portable skills', () => {
+test('.codex/skills/ contains exactly the six portable skills', () => {
   const entries = readdirSync(codexCrossSkillsDir).sort();
   assert.deepEqual(entries, PORTABLE_SKILLS);
 });
 
-test('.opencode/commands/ contains exactly the four expected command files', () => {
+test('.opencode/commands/ contains exactly the five expected command files', () => {
   const entries = readdirSync(opencodeCommandsDir).sort();
   assert.deepEqual(
     entries,

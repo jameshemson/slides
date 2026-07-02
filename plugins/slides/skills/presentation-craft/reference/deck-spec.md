@@ -42,7 +42,7 @@ Each slide is a `## Slide N` heading, with `N` counting up from 1 with no gaps. 
 
 ## Layout roles
 
-A role is a *semantic* job, not a template layout. `build-deck` resolves each role to one of the user's own template layouts through `brand.json`'s `layout_map`, then fills that layout's placeholders. Six fixed roles cover most decks; a seventh mode, `composed`, composes brand-locked primitives on the grid (see [The composed role](#the-composed-role)).
+A role is a *semantic* job, not a template layout. `build-deck` resolves each role to one of the user's own template layouts through `brand.json`'s `layout_map`, then fills that layout's placeholders. Six fixed roles cover most decks; a seventh mode, `composed`, composes brand-locked primitives on the grid (see [The composed role](#the-composed-role)). `Body`, `Left`, and `Right` are block fields: a tight bullet list, or one or two short paragraphs — one idea per slide still holds, so a `title-content` slide carries one point and the few lines that earn it, not a wall.
 
 | Role | Job | Fields (in order) |
 |------|-----|-------------------|
@@ -52,8 +52,6 @@ A role is a *semantic* job, not a template layout. `build-deck` resolves each ro
 | `title-content` | A heading and its supporting content | `Title`, `Body` |
 | `two-column` | A two-part comparison or pairing | `Title`, `Left`, `Right` |
 | `quote` | A quotation given room to breathe | `Quote`, `Attribution` (optional) |
-
-`Body`, `Left`, and `Right` are block fields: a tight bullet list, or one or two short paragraphs. One idea per slide still holds — a `title-content` slide carries one point and the few lines that earn it, not a wall.
 
 ## The composed role
 
@@ -134,8 +132,6 @@ A `title-content` slide may carry a `Chart:` block: structured data `build-deck`
 - **Category charts** — `type: bar` (horizontal), `type: column` (vertical), `type: pie` (part-to-whole), or `type: waterfall` (a running total built from signed deltas). Need `categories:` (comma-separated labels) and `series <Name>:` (comma-separated numbers, one per category). `bar`/`column` take one or more series; `pie` and `waterfall` take exactly one. On `bar`/`column`/`pie`, optional `emphasis:` names the one category to colour in the brand accent (one slice, for a pie); the rest go muted (a waterfall colours by sign instead — see below). Optional `callout:` is a short annotation. A multi-series `bar`/`column` may add `stacked: true` to draw one full-width bar per category, one total label per stack (needs ≥2 series; not combined with `emphasis:`).
 - **Point charts** — `type: line` (filled) or `type: scatter` (dots). Need `points:` as comma-separated `x y` pairs. Optional `marker: <x> <label>` annotates the point at that x. Optional `callout:`. `emphasis:` does not apply.
 
-Instead of typing the data inline, a chart may read it from a CSV with `data: <file.csv>` (resolved against the spec's folder) — `data:` and the inline `categories`/`series`/`points` are mutually exclusive. A category chart's CSV is a header row (`category, Series1, Series2, …`) then one row per category; a point chart's first two columns are `x, y`. So a spreadsheet exports straight to a chart, and multiple series draw as grouped bars. Format the value labels with `format:` — `$` (currency), `%` (percent), or `$k` / `$m` (currency in thousands / millions, so `362` reads as `$362k`); or set `prefix:` / `suffix:` directly. Large numbers abbreviate by default (`362000` → `362k`); `format: plain` keeps them exact. `native: true` draws a native, editable PowerPoint chart instead of an image, for `bar`/`column`/`pie`/`line`/`scatter`; a chart PowerPoint can't draw that way (`waterfall`) or one carrying a drawn annotation (`target:`, `callout:`, `marker:`) falls back to the image automatically and the run summary names why. Without `format:`, native value labels show exact numbers (`General`) — the image path's automatic abbreviation isn't expressible natively. Optional `target: <value> [| label]` draws a goal line on `column`, `bar`, or `line` charts (image path), extending the axis to include it.
-
 ```
 ## Slide 4
 layout: title-content
@@ -148,7 +144,7 @@ Chart:
   series Balance: 76900, 34300, 37400, 21900, 24600, 27300
 ```
 
-A **waterfall** shows how a starting figure becomes an ending one — a running total built from signed changes. It is a category chart with exactly one `series` of signed deltas: a positive number rises, a negative one falls, and `build-deck` appends a computed total bar at the end. Rises take the brand accent, falls a distinct spend tone (a muted grey when the brand names no spend colour), and the total bar sits in ink — so the sign already carries the emphasis. `emphasis:` is therefore rejected on a waterfall; use `callout:` to point at a bar. The delta labels are signed (`+$40k` / `-$15k`); the total is unsigned. `total: Closing` renames the total bar, `total: none` drops it. Like every chart, a waterfall can read its deltas from a CSV with `data:`.
+Instead of typing the data inline, a chart may read it from a CSV with `data: <file.csv>` (resolved against the spec's folder) — `data:` and the inline `categories`/`series`/`points` are mutually exclusive. A category chart's CSV is a header row (`category, Series1, Series2, …`) then one row per category; a point chart's first two columns are `x, y`. So a spreadsheet exports straight to a chart, and multiple series draw as grouped bars. Format the value labels with `format:` — `$` (currency), `%` (percent), or `$k` / `$m` (currency in thousands / millions, so `362` reads as `$362k`); or set `prefix:` / `suffix:` directly. Large numbers abbreviate by default (`362000` → `362k`); `format: plain` keeps them exact. `native: true` draws a native, editable PowerPoint chart instead of an image, for `bar`/`column`/`pie`/`line`/`scatter`; a chart PowerPoint can't draw that way (`waterfall`) or one carrying a drawn annotation (`target:`, `callout:`, `marker:`) falls back to the image automatically and the run summary names why. Without `format:`, native value labels show exact numbers (`General`) — the image path's automatic abbreviation isn't expressible natively. Optional `target: <value> [| label]` draws a goal line on `column`, `bar`, or `line` charts (image path), extending the axis to include it. A **waterfall** shows how a starting figure becomes an ending one — a running total built from signed changes. It is a category chart with exactly one `series` of signed deltas: a positive number rises, a negative one falls, and `build-deck` appends a computed total bar at the end. Rises take the brand accent, falls a distinct spend tone (a muted grey when the brand names no spend colour), and the total bar sits in ink — so the sign already carries the emphasis. `emphasis:` is therefore rejected on a waterfall; use `callout:` to point at a bar. The delta labels are signed (`+$40k` / `-$15k`); the total is unsigned. `total: Closing` renames the total bar, `total: none` drops it. Like every chart, a waterfall can read its deltas from a CSV with `data:`.
 
 ```
 ## Slide 5
@@ -180,6 +176,11 @@ Any slide may carry `Notes:` — what the presenter says, or, for a read deck, t
 - `tokens` (optional) — the design-token system the `composed` role draws from: `grid` (margins, columns, gutter, baseline — from the template's mapped layouts), `type_scale` (display, h1, body, caption — **derived from the master's own title/body sizes**, so composed slides use the brand's real type), `colour_roles` (ink, paper, accent, muted — from the palette), and `shape` (corner: rounded|sharp, hairline — the brand's box style). Omit it and `build-deck` derives sensible defaults at render time; `init_brand.py`/`extract_brand.py` write a starting block you can edit. Fixed-role slides ignore `tokens`, so existing decks are unaffected.
 
 `render.py` validates the four required keys (`tokens` is optional) and reports the missing or malformed one by name rather than emitting a broken file. `teach-slides` can fill `fonts` and `colours` automatically: pointed at a template or an existing deck, `extract_brand.py` reads the heading and body fonts and the palette (accent colours plus `ink` and `paper`) straight from the file's theme, so the profile reflects the real deck instead of hand-typed values, and the user confirms or adjusts what it read. `init_brand.py` goes one step further — it writes a complete `brand.json` (`template`, `fonts`, `colours`, and a proposed `layout_map`) from a single template or deck, so a project can be brand-ready without the full interview; `build-deck` and `narrative` offer this when `.slides/` is missing, and the user confirms the result and can refine it later with `teach-slides`.
+
+## The lineage stamp
+
+`build-deck` stamps every rendered deck's `core_properties.comments` with `slides-spec: <spec basename> sha256:<sha256 of the spec file>`, overwriting whatever a template's own comments field held — a generated deck's comments are the pack's to set, by design.
+The `revise` skill reads the stamp to find and sync a deck's spec (`deck_to_spec.py --against`); a deck with no stamp, or whose named spec no longer exists, is imported best-effort instead (the foreign tier).
 
 ## Rules the spec must hold
 

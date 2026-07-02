@@ -31,6 +31,7 @@ never emits a half-built .pptx.
 """
 import argparse
 import csv
+import hashlib
 import json
 import os
 import re
@@ -104,7 +105,7 @@ def main(argv=None):
         slides = parse_spec(args.spec)
         summary = build_deck(
             brand, slides, args.out,
-            charts_dir=charts_dir, brand_path=args.brand,
+            charts_dir=charts_dir, brand_path=args.brand, spec_path=args.spec,
         )
     except SpecError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -1481,12 +1482,18 @@ def _validate_slide_fields(number, role, fields):
 # --- rendering ---------------------------------------------------------------
 
 
-def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None):
+def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None,
+                spec_path=None):
     """Render parsed slides into a .pptx at out_path. Returns a summary string.
 
     A slide carrying a `Chart` is drawn natively: charts.py renders a PNG and
     it is placed below the body line. If matplotlib is not importable the chart
     degrades to a `VISUAL TO ADD:` note (D-011) so the deck still builds.
+
+    spec_path (REQ-001/D-003), when given, stamps the rendered deck's
+    core_properties.comments with `slides-spec: <basename> sha256:<sha>` so
+    a deck names the spec it came from; direct in-process callers that omit
+    it get no stamp.
     """
     template = brand["template"]
     if not os.path.isfile(template):
@@ -1649,6 +1656,21 @@ def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None):
     out_dir = os.path.dirname(os.path.abspath(out_path))
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
+
+    if spec_path is not None:
+        # Lineage stamp (REQ-001/D-003): deck_to_spec.py / the revise skill
+        # read this back to find the spec a rendered deck came from. The
+        # fixture template (and any user template) may already carry text in
+        # core_properties.comments (e.g. python-pptx's own default) — that is
+        # overwritten unconditionally, by design (plan risk 4): on a
+        # generated deck, the comments field is ours.
+        with open(spec_path, "rb") as fh:
+            spec_bytes = fh.read()
+        prs.core_properties.comments = (
+            f"slides-spec: {os.path.basename(spec_path)} "
+            f"sha256:{hashlib.sha256(spec_bytes).hexdigest()}"
+        )
+
     prs.save(out_path)
 
     return _summary(out_path, len(slides), visual_slides, chart_slides,
