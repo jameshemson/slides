@@ -34,7 +34,26 @@ except Exception:  # noqa: BLE001
 class TestBackendDetection(unittest.TestCase):
     def test_available_backend_is_known_or_none(self):
         self.assertIn(raster.available_backend(),
-                      ("libreoffice", "keynote", None))
+                      ("libreoffice", "powerpoint", "keynote", None))
+
+    def test_powerpoint_detection_never_crashes(self):
+        # Platform-dependent (app bundle on macOS, COM registration on
+        # Windows, always False elsewhere) — the contract is a clean bool.
+        self.assertIn(raster._powerpoint_available(), (True, False))
+
+    def test_powerpoint_preferred_over_keynote_after_libreoffice(self):
+        # Backend priority is libreoffice > powerpoint > keynote: headless
+        # first, then the app the deck is destined for.
+        originals = (raster._libreoffice_bin, raster._powerpoint_available,
+                     raster._keynote_available)
+        raster._libreoffice_bin = lambda: None
+        raster._powerpoint_available = lambda: True
+        raster._keynote_available = lambda: True
+        try:
+            self.assertEqual(raster.available_backend(), "powerpoint")
+        finally:
+            (raster._libreoffice_bin, raster._powerpoint_available,
+             raster._keynote_available) = originals
 
     def test_no_backend_raises_named_error(self):
         original = raster.available_backend

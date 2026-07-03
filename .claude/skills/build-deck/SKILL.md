@@ -58,10 +58,13 @@ If the render fails, read the error. It names the fault: a slide numbered out of
 
 ## Step 4: Render-back visual check
 
-The mechanical lint proves a slide is on-brand and on-grid, but it cannot see the
-rendered pixels — text that overflowed its box, a font that fell back, a slide
-that reads as cluttered. This step is the lint *with eyes*: rasterise the deck and
-look at it. It needs a deck-to-image backend, so it is optional and degrades.
+The mechanical lint proves a slide is on-brand and on-grid, and the planners
+estimate word-wrap so a text box is drawn at the height its text actually needs
+(a block whose text cannot fit fails the render with a named error instead).
+But an estimate is not pixels — a font that fell back, an edge case the wrap
+estimate missed, a slide that reads as cluttered. This step is the lint *with
+eyes*: rasterise the deck and look at it. It needs a deck-to-image backend, so
+it is optional and degrades.
 
 Check for a backend: `python3 -c "import sys; sys.path.insert(0,'scripts'); import raster; print(raster.available_backend())"`.
 
@@ -72,6 +75,12 @@ Check for a backend: `python3 -c "import sys; sys.path.insert(0,'scripts'); impo
   composed slide read as *composed*, or templated? Report what you see as
   suggestions (the deck already rendered), and note any `[check] likely-blank`
   slide from the summary.
+- **`powerpoint`**: the user's own Microsoft PowerPoint does the render-back —
+  the same `raster.py` command, and the deck is checked by the very app it will
+  be presented from. On **Windows** this drives PowerPoint over COM with no
+  visible window, so run it automatically like LibreOffice. On **macOS** it
+  **opens the PowerPoint app** (and may prompt once for automation permission),
+  so say so and run it on the user's yes.
 - **`keynote`** (macOS): the render-back works via Keynote, but it **opens the
   Keynote app** (and may prompt for automation permission), so do not run it
   automatically — tell the user it is available and run it only if they ask.

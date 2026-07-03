@@ -4,6 +4,49 @@ All notable changes to the slides skill pack are recorded here. The format
 follows [Keep a Changelog](https://keepachangelog.com/), and the pack uses
 [semantic versioning](https://semver.org/).
 
+## [0.16.0] - 2026-07-03
+
+The text fits the box. Real use surfaced the one overlap the lint could not
+see: planners sized text boxes by counting explicit ` / ` breaks, the renderer
+word-wraps, and long text rendered straight out of its box over whatever sat
+below. The declared rectangles were clean, so the overlap rule never fired.
+Now the planners measure text the way the renderer will wrap it. And the
+render-back check learned to use the app most decks are destined for: the
+user's own PowerPoint.
+
+### Fixed
+
+- **Rendered text no longer spills out of its box.** Every planner estimates
+  where word-wrap will break each text element (greedy wrap at an average
+  glyph width, deliberately generous) and sizes the box to the lines the text
+  actually needs. Card bodies, comparison panels, process steps, stat labels,
+  timeline labels and icon-list rows grow to fit, panels grow with them, and
+  the row still aligns on the deepest wrap. When a block's text wraps deeper
+  than the band can hold, the render fails with a named error saying what to
+  cut ("card text wraps deeper than the band holds — cut card text, drop a
+  card, or split the slide") instead of drawing the spill.
+
+### Changed
+
+- **Fixed-geometry primitives refuse text that cannot fit.** A tree node
+  label, cycle stage label, or freeform text element that wraps past its box
+  now fails the render with a named error naming the element and the fix. A
+  matrix quadrant body that outgrows its cell errors too (previously it was
+  silently truncated or dropped). The estimate is average-width based, not
+  font metrics, so the render-back check remains the ground truth for edge
+  cases like ALL-CAPS headers.
+
+### Added
+
+- **PowerPoint as the render-back's eyes.** `raster.py` now detects Microsoft
+  PowerPoint and drives it as the deck-to-image backend (priority: LibreOffice,
+  then PowerPoint, then Keynote). On Windows it runs over COM via PowerShell
+  with no visible window, so build-deck runs the visual check automatically,
+  exactly like the LibreOffice path. On macOS it goes through AppleScript,
+  which opens the app and may prompt once for automation permission, so
+  build-deck offers it and runs on the user's yes. No more "install
+  LibreOffice" when the deck's own app is already installed.
+
 ## [0.15.0] - 2026-07-02
 
 The guardrails learn their place. Real deck-building kept hitting hard

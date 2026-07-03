@@ -583,5 +583,106 @@ class TestPlanTable(unittest.TestCase):
         self.assertEqual(aligns[2], "right")   # "$1.5M" / "9%"      — numeric
 
 
+class TestWrapAwareHeights(unittest.TestCase):
+    """Planners estimate word-wrap, so declared heights cover the rendered
+    text — the fix for text spilling out of its box and overlapping the
+    element below, which the box-only lint could not see."""
+
+    LONG = ("A genuinely long run of body copy that the renderer will "
+            "word-wrap across several lines inside a narrow card cell")
+
+    def test_wrapped_lines_counts_wrap_not_just_breaks(self):
+        wide = primitives._wrapped_lines("short", 3000000, 18.0)
+        self.assertEqual(wide, 1)
+        narrow = primitives._wrapped_lines(self.LONG, 1500000, 18.0)
+        self.assertGreater(narrow, 2)
+        # Explicit breaks still count.
+        self.assertEqual(primitives._wrapped_lines("a\nb\nc", 3000000, 18.0), 3)
+        # Wider box or smaller type never needs MORE lines.
+        self.assertLessEqual(
+            primitives._wrapped_lines(self.LONG, 3000000, 18.0), narrow)
+        self.assertLessEqual(
+            primitives._wrapped_lines(self.LONG, 1500000, 12.0), narrow)
+
+    def test_card_body_box_grows_to_wrapped_height(self):
+        cards = [{"label": "One", "body": self.LONG},
+                 {"label": "Two", "body": "Short."}]
+        els = plan_card_grid(cards, TOKENS, SLIDE_W, SLIDE_H)
+        body = next(e for e in els if e["role"] == "card-body")
+        two_lines = 2 * primitives._line_h(TOKENS["type_scale"]["body"])
+        self.assertGreater(body["height"], two_lines)
+        # And the text still sits inside its panel — the lint stays clean.
+        lint.check(els, TOKENS, SLIDE_W, SLIDE_H)
+
+    def test_card_text_too_deep_for_band_raises(self):
+        cards = [{"label": "One", "body": " / ".join([self.LONG] * 6)}
+                 for _ in range(3)]
+        short_band = (457200, 1600200, 8229600, 1200000)
+        with self.assertRaises(ShapeError) as cm:
+            plan_card_grid(cards, TOKENS, SLIDE_W, SLIDE_H, region=short_band)
+        self.assertIn("wraps deeper", str(cm.exception))
+
+    def test_comparison_panels_grow_and_stay_lint_clean(self):
+        sides = [{"header": "Before", "body": self.LONG},
+                 {"header": "After", "body": "Better."}]
+        els = plan_comparison(sides, TOKENS, SLIDE_W, SLIDE_H)
+        lint.check(els, TOKENS, SLIDE_W, SLIDE_H)
+
+    def test_timeline_long_events_grow_label_and_stay_lint_clean(self):
+        nodes = [{"date": "Q1", "event": self.LONG},
+                 {"date": "Q2", "event": "Ship"},
+                 {"date": "Q3", "event": "Scale"}]
+        els = plan_timeline(nodes, TOKENS, SLIDE_W, SLIDE_H)
+        label = next(e for e in els if e["role"] == "timeline-label")
+        line_h = primitives._line_h(TOKENS["type_scale"]["body"])
+        self.assertGreater(label["height"], 2 * line_h)
+        lint.check(els, TOKENS, SLIDE_W, SLIDE_H)
+
+    def test_icon_list_rows_grow_to_wrapped_text(self):
+        rows = [{"icon": "check", "text": self.LONG},
+                {"icon": "check", "text": "Short."}]
+        els = plan_icon_list(rows, TOKENS, SLIDE_W, SLIDE_H)
+        text = next(e for e in els if e["role"] == "iconlist-text")
+        self.assertGreater(
+            text["height"], primitives._line_h(TOKENS["type_scale"]["body"]))
+        lint.check(els, TOKENS, SLIDE_W, SLIDE_H)
+
+    def test_matrix_body_too_deep_for_cell_raises(self):
+        quads = [{"label": "Q", "body": " / ".join([self.LONG] * 4)}
+                 for _ in range(4)]
+        with self.assertRaises(ShapeError) as cm:
+            plan_matrix({"quadrants": quads}, TOKENS, SLIDE_W, SLIDE_H)
+        self.assertIn("wraps deeper", str(cm.exception))
+
+    def test_freeform_text_overflowing_placement_raises(self):
+        els = [{"kind": "text", "text": self.LONG, "scale": "h1",
+                "colour": "ink", "placement": {"cols": (1, 3), "rows": (1, 2)}}]
+        with self.assertRaises(ShapeError) as cm:
+            plan_freeform(els, TOKENS, SLIDE_W, SLIDE_H)
+        self.assertIn("overflows its placement", str(cm.exception))
+
+    def test_tree_label_too_long_for_node_raises(self):
+        root = _node("Root", *[_node(self.LONG)] + [_node("B"), _node("C")])
+        with self.assertRaises(ShapeError) as cm:
+            plan_tree(root, TOKENS, SLIDE_W, SLIDE_H)
+        self.assertIn("wraps deeper", str(cm.exception))
+
+    def test_cycle_label_too_long_for_node_raises(self):
+        steps = [{"label": self.LONG}, {"label": "B"}, {"label": "C"}]
+        with self.assertRaises(ShapeError) as cm:
+            plan_cycle(steps, TOKENS, SLIDE_W, SLIDE_H)
+        self.assertIn("wraps deeper", str(cm.exception))
+
+    def test_stat_row_long_labels_grow_and_stay_lint_clean(self):
+        stats = [{"value": "56", "label": "Average number of days from first "
+                                          "contact to a signed agreement"},
+                 {"value": "4%", "label": "Win rate"}]
+        els = plan_stat_row(stats, TOKENS, SLIDE_W, SLIDE_H)
+        label = next(e for e in els if e["role"] == "stat-label")
+        line_h = primitives._line_h(TOKENS["type_scale"]["caption"])
+        self.assertGreater(label["height"], line_h)
+        lint.check(els, TOKENS, SLIDE_W, SLIDE_H)
+
+
 if __name__ == "__main__":
     unittest.main()

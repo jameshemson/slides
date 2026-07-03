@@ -1,6 +1,6 @@
 # Status
 
-A snapshot of where the slides skill pack stands. Last updated 2026-07-02.
+A snapshot of where the slides skill pack stands. Last updated 2026-07-03.
 
 ## Released
 
@@ -8,6 +8,7 @@ All on `main`, each git-tagged with a GitHub release (latest first):
 
 | Version | What it added |
 |---------|---------------|
+| v0.16.0 | The text fits the box. Planners now estimate where the renderer's word-wrap will break each text element and size the box to the lines the text actually needs — card/comparison/process panels, stat labels, timeline labels and icon-list rows grow to fit (rows still align on the deepest wrap), and a block whose text wraps deeper than its band fails the render with a named error saying what to cut. Fixed-geometry primitives (tree, cycle, matrix, freeform text) refuse text that can't fit instead of spilling or silently dropping it. This closes the one overlap the lint couldn't see: declared boxes were clean while rendered text spilled over the element below. Plus: a `powerpoint` render-back backend in `raster.py` (priority LibreOffice → PowerPoint → Keynote) — Windows drives PowerPoint over COM via PowerShell with no visible window (auto-run), macOS via AppleScript (opens the app, ask-first), so the visual check uses the app the deck ships in rather than demanding a LibreOffice install. |
 | v0.15.0 | The guardrails learn their place. Per-primitive count caps (card-grid, process, timeline, tree count/depth, icon-list, cycle, table cols/rows, the 4-block composed cap) stop failing the render and become advisory — the existing composition rules carry the craft guidance, now printed with their teaching message in the run summary; a composed slide that genuinely can't fit gets the lint's violation list plus a "cut items or split the slide" hint. Still hard: the mechanical lint and the definitional constraints (comparison=2, matrix=4, one tree root, ≥2 table columns, pie/waterfall exactly one series, stacked ≥2). Plus: a long table steps its type down to caption before failing (summary note); multi-series line charts via the category grammar on `type: line` (image + native, `emphasis:` names the series, CSV by shape); stat labels break lines on ` / `; and the layout steering rebalanced so the spec-writing step asks the beat's form first — title-and-bullets is a deliberate choice, not the fallback. |
 | v0.14.0 | The round trip — the pipeline stops being one-directional. A sixth skill, `revise`: change a rendered deck by conversation (sync via the new lineage stamp every render writes into core-properties comments; reconcile hand-edits difference-by-difference with `deck_to_spec.py --against`, exit 2 on drift; revise at slide level; slop-check what changed; re-render confirm-gated). Foreign `.pptx` files import best-effort with an honest per-slide report (`deck_to_spec.py`: layout-map inversion with collision handling, heuristics, `Visual:` restoration, composed slides flattened, self-validated against the parser). Six skills across all five harness outputs. |
 | v0.13.0 | Native editable charts + the chart follow-ups. `native: true` on a `Chart:` draws a real PowerPoint chart (GraphicFrame the recipient edits, styled from brand colours: emphasis accent + muted rest, no gridlines, hidden value axis, `format:` → Excel number formats, legend below only multi-series; a fully-native deck needs no matplotlib). What can't go native — `waterfall` (chartEx, unwritable by python-pptx) or drawn annotations (`target:`/`callout:`/`marker:`) — falls back to the image with a run-summary note. Plus `stacked: true` (both backends), `target: <value> [\| label]` goal lines (image path), and `Block: chart` on composed slides. CI shipped alongside: a GitHub Action runs the three-part gate on push/PR to main. |
@@ -24,15 +25,17 @@ All on `main`, each git-tagged with a GitHub release (latest first):
 | v0.2.0 | Native charts: `build-deck` draws bar, column, pie, scatter, and line charts from a `Chart:` block (matplotlib), placed on-brand; degrades to a `VISUAL TO ADD` note when matplotlib is absent. |
 | v0.1.0 | Initial release: five skills, cross-harness pipeline, python-pptx renderer, two-layer slop detector. |
 
-Automated gates at this snapshot: `python3 -m unittest discover tests` 421 passing, `npm test` 44 passing, `npm run check-sync` in sync — enforced by CI (`.github/workflows/ci.yml`) on every push/PR to main. `cairosvg` and `matplotlib` are installed locally: the icon raster path is verified (icons recolour to the brand accent and rasterise crisply) and the multi-series grouped-bar chart is verified visually (Revenue accent + Cost grey). On a machine without `cairosvg`, icons degrade to a note (as designed).
+Automated gates at this snapshot: `python3 -m unittest discover tests` 434 passing, `npm test` 44 passing, `npm run check-sync` in sync — enforced by CI (`.github/workflows/ci.yml`) on every push/PR to main. `cairosvg` and `matplotlib` are installed locally: the icon raster path is verified (icons recolour to the brand accent and rasterise crisply) and the multi-series grouped-bar chart is verified visually (Revenue accent + Cost grey). On a machine without `cairosvg`, icons degrade to a note (as designed).
 
 The render-back visual-QA loop (v0.10.0) is scaffold-only in this environment: no
 rasteriser was installed. Its testable parts (backend detection, degradation,
 PDF→PNG, the blank check, contact sheet) pass; the `.pptx`→PDF step needs an
-external app (LibreOffice or Keynote) and is verified manually, not in CI. To
-enable the automatic headless render-back review: `brew install --cask
-libreoffice`. The Keynote backend works on macOS but opens the app, so build-deck
-runs it only if the user asks.
+external app (LibreOffice, PowerPoint, or Keynote) and is verified manually, not
+in CI. To enable the automatic headless render-back review: `brew install --cask
+libreoffice`. The PowerPoint backend (v0.16.0) runs automatically on Windows
+(COM, hidden window) and ask-first on macOS (AppleScript opens the app); the
+Keynote backend works on macOS but opens the app, so build-deck runs it only if
+the user asks.
 
 Visual-vocabulary follow-ups deferred by design (v0.8.0): **logo capture** —
 python-pptx cannot write pictures to a master/layout, so a positive fixture/test
@@ -85,6 +88,13 @@ These could not run in the build environment; each needs a human in Claude Code 
   the advisory-with-message run summary — confirm it reads as coaching, not
   nagging, when a real deck trips two or three notes at once.
 - [ ] **Eyeball the v0.8.0 vocabulary** with `cairosvg` installed: a `tree`, an `icon-list`, and a card/tree with a `[icon]` — confirm the icons recolour to the brand accent and sit crisply, the tree reads as an org chart, and the brand-derived type scale looks right (composed slides should feel like the brand). The raster path is skip-guarded in tests; this is the human confirmation.
+- [ ] **Run the v0.16.0 PowerPoint render-back once on each platform**: on
+  Windows, confirm the COM path exports the PDF with no visible window; on
+  macOS, confirm the AppleScript path exports after the one-time automation
+  prompt. (The wrap-aware geometry is verified by tests and a python-pptx
+  smoke render; the backend needs a real PowerPoint.) While there, eyeball a
+  card-grid with a long body: the card should be taller, the text inside it,
+  and a genuinely overlong spec should fail with the "wraps deeper" error.
 
 ## Deferred (next touch of those files)
 
