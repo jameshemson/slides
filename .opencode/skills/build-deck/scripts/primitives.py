@@ -22,6 +22,11 @@ from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 # allowed (generic, not brand values).
 EMU_PER_PT = 12700
 LINE_HEIGHT = 1.2
+# Average glyph advance as a fraction of the point size, for a mixed-case
+# proportional face (~0.45-0.55em across common sans faces). Used to estimate
+# where the renderer's word-wrap will break; deliberately a touch generous so
+# a planner errs toward allocating MORE height, never less.
+AVG_CHAR_W = 0.52
 # Optical centre: place the row's vertical centre slightly above the geometric
 # centre (~45% from the top). Dead-centre reads as marginally low; the optical
 # centre is the conventional resting point for a single focal element.
@@ -84,9 +89,10 @@ def plan_stat_row(stats, tokens, slide_w, slide_h, region=None) -> list:
     label_pt = ts["caption"]
 
     # ' / ' breaks a label line (the card/panel body convention). Every label
-    # box takes the tallest label's line count so the row's bottoms align.
+    # box takes the tallest label's line count — wrap-estimated at the cell
+    # width, not just explicit breaks — so the row's bottoms align.
     labels = [_split_body(s["label"]) for s in stats]
-    label_lines = max(lab.count("\n") + 1 for lab in labels)
+    label_lines = max(_wrapped_lines(lab, cell_w, label_pt) for lab in labels)
 
     number_h = round(number_pt * EMU_PER_PT * LINE_HEIGHT)
     label_h = label_lines * round(label_pt * EMU_PER_PT * LINE_HEIGHT)
@@ -99,6 +105,12 @@ def plan_stat_row(stats, tokens, slide_w, slide_h, region=None) -> list:
         _l, t, _w, h = region
         band_top = t
         band_bottom = t + h
+
+    if row_block_h > band_bottom - band_top:
+        raise ShapeError(
+            f"stat labels wrap to {label_lines} line(s) and the row no longer "
+            f"fits its band — shorten the labels or use fewer stats"
+        )
 
     row_top = band_top + round((band_bottom - band_top - row_block_h) * OPTICAL_CENTRE)
 
@@ -150,6 +162,41 @@ _STROKE_EMU = EMU_PER_PT  # 1pt hairline panel outline (generic, not a brand val
 def _line_h(font_pt) -> int:
     """Line box height in EMU for a point size (matches plan_stat_row)."""
     return round(font_pt * EMU_PER_PT * LINE_HEIGHT)
+
+
+def _wrapped_lines(text, width_emu, font_pt) -> int:
+    """Estimate the line count of `text` word-wrapped in a box `width_emu` wide.
+
+    The renderer draws every text element with word_wrap on, so a line longer
+    than its box wraps at render time — invisible to a planner that counts only
+    explicit '\\n' breaks, which is exactly how rendered text used to spill out
+    of its box and overlap the element below. This is the planner's stand-in
+    for that line-breaker: each '\\n' segment is greedily wrapped at an average
+    glyph width (AVG_CHAR_W). An estimate, not font metrics — the render-back
+    check stays the ground truth — but it errs generous, so declared heights
+    cover what the renderer will actually draw.
+    """
+    per_line = max(1, int(width_emu / (font_pt * EMU_PER_PT * AVG_CHAR_W)))
+    total = 0
+    for segment in str(text).split("\n"):
+        words = segment.split()
+        if not words:
+            total += 1
+            continue
+        lines, current = 1, len(words[0])
+        for word in words[1:]:
+            if current + 1 + len(word) <= per_line:
+                current += 1 + len(word)
+            else:
+                lines += 1
+                current = len(word)
+        total += lines
+    return total
+
+
+def _text_h(text, width_emu, font_pt) -> int:
+    """Estimated rendered height in EMU of `text` wrapped in a `width_emu` box."""
+    return _wrapped_lines(text, width_emu, font_pt) * _line_h(font_pt)
 
 
 def _require(tokens, ts_keys):
@@ -245,15 +292,29 @@ def plan_card_grid(cards, tokens, slide_w, slide_h, region=None) -> list:
     band_h = band_bottom - band_top
 
     label_pt, body_pt = ts["h1"], ts["body"]
-    label_h = _line_h(label_pt)
+    # Wrap-estimated at the narrowest cell so every card's declared box covers
+    # what the renderer will draw; the tallest wrap sets the shared height so
+    # the row's bottoms stay aligned.
+    text_w = min(cw for _cl, cw in cells) - 2 * pad
+    label_h = max(_text_h(str(c.get("label", "")), text_w, label_pt)
+                  for c in cards)
     has_body = any((c.get("body") or "").strip() for c in cards)
-    body_alloc = 2 * _line_h(body_pt) if has_body else 0
+    body_alloc = max(
+        (_text_h(_split_body(c["body"]), text_w, body_pt)
+         for c in cards if (c.get("body") or "").strip()),
+        default=0,
+    )
     has_icons = any(c.get("icon") for c in cards)
-    icon_side = label_h if has_icons else 0
+    icon_side = _line_h(label_pt) if has_icons else 0
 
     inner_h = ((icon_side + baseline) if has_icons else 0) + label_h \
         + (baseline + body_alloc if has_body else 0)
-    card_h = min(inner_h + 2 * pad, band_h)
+    if inner_h + 2 * pad > band_h:
+        raise ShapeError(
+            "card text wraps deeper than the band holds — cut card text, "
+            "drop a card, or split the slide"
+        )
+    card_h = inner_h + 2 * pad
     card_top = band_top + round((band_h - card_h) * OPTICAL_CENTRE)
 
     elements = []
@@ -321,18 +382,26 @@ def plan_comparison(sides, tokens, slide_w, slide_h, region=None) -> list:
     band_h = band_bottom - band_top
 
     header_pt, body_pt = ts["h1"], ts["body"]
-    header_h = _line_h(header_pt)
-    max_lines = 1
-    for s in sides:
-        lines = _split_body(s.get("body") or "").split("\n")
-        max_lines = max(max_lines, len([x for x in lines if x]))
-    max_lines = min(max_lines, 6)
-    body_alloc = max_lines * _line_h(body_pt)
+    # Wrap-estimated at the panel's text width; the taller side sets the
+    # shared panel height so the pair stays level.
+    text_w = min(cw for _cl, cw in cells) - 2 * pad
+    header_h = max(_text_h(str(s.get("header", "")), text_w, header_pt)
+                   for s in sides)
+    body_alloc = max(
+        (_text_h(_split_body(s["body"]), text_w, body_pt)
+         for s in sides if (s.get("body") or "").strip()),
+        default=_line_h(body_pt),
+    )
     has_icons = any(s.get("icon") for s in sides)
-    icon_side = header_h if has_icons else 0
+    icon_side = _line_h(header_pt) if has_icons else 0
     inner_h = ((icon_side + baseline) if has_icons else 0) + header_h \
         + baseline + body_alloc
-    panel_h = min(inner_h + 2 * pad, band_h)
+    if inner_h + 2 * pad > band_h:
+        raise ShapeError(
+            "comparison text wraps deeper than the band holds — cut the "
+            "panel bodies or split the slide"
+        )
+    panel_h = inner_h + 2 * pad
     panel_top = band_top + round((band_h - panel_h) * OPTICAL_CENTRE)
 
     elements = []
@@ -403,10 +472,25 @@ def plan_process(steps, tokens, slide_w, slide_h, region=None) -> list:
     band_h = band_bottom - band_top
 
     num_pt, label_pt, detail_pt = ts["h1"], ts["body"], ts["caption"]
-    num_h, label_h, detail_h = _line_h(num_pt), _line_h(label_pt), _line_h(detail_pt)
+    num_h = _line_h(num_pt)
+    # Wrap-estimated at the narrowest step's text width; the deepest wrap sets
+    # the shared heights so every box stays level.
+    text_w = min(cw for _cl, cw in cells) - 2 * pad
+    label_h = max(_text_h(str(s.get("label", "")), text_w, label_pt)
+                  for s in steps)
     has_detail = any((s.get("detail") or "").strip() for s in steps)
+    detail_h = max(
+        (_text_h(_split_body(s["detail"]), text_w, detail_pt)
+         for s in steps if (s.get("detail") or "").strip()),
+        default=0,
+    )
     inner_h = num_h + baseline + label_h + (baseline + detail_h if has_detail else 0)
-    box_h = min(inner_h + 2 * pad, band_h)
+    if inner_h + 2 * pad > band_h:
+        raise ShapeError(
+            "process text wraps deeper than the band holds — cut the step "
+            "labels/details or use fewer steps"
+        )
+    box_h = inner_h + 2 * pad
     box_top = band_top + round((band_h - box_h) * OPTICAL_CENTRE)
 
     elements = []
@@ -489,12 +573,25 @@ def plan_timeline(nodes, tokens, slide_w, slide_h, region=None) -> list:
 
     label_pt = ts["body"]
     line_h = _line_h(label_pt)
-    label_h = 2 * line_h
+    # Each label is date-over-event; wrap-estimate both at the cell width and
+    # let the deepest label set the shared height so the rail stays level.
+    texts = []
+    for nd in nodes:
+        date = str(nd.get("date", "")).strip()
+        event = str(nd.get("event", "")).strip()
+        texts.append(f"{date}\n{event}" if date and event else (date or event))
+    label_w = min(cw for _cl, cw in cells)
+    label_h = max(_text_h(t, label_w, label_pt) for t in texts)
     dot_d = line_h
     emph_dot_d = dot_d + baseline
     rail_h = max(EMU_PER_PT // 2, dot_d // 8)
 
-    block_h = min(emph_dot_d + baseline + label_h, band_h)
+    block_h = emph_dot_d + baseline + label_h
+    if block_h > band_h:
+        raise ShapeError(
+            "timeline labels wrap deeper than the band holds — shorten the "
+            "events or use fewer milestones"
+        )
     block_top = band_top + round((band_h - block_h) * OPTICAL_CENTRE)
     rail_y = block_top + emph_dot_d // 2
     label_top = rail_y + emph_dot_d // 2 + baseline
@@ -514,11 +611,8 @@ def plan_timeline(nodes, tokens, slide_w, slide_h, region=None) -> list:
             "width": d, "height": d,
             "fill": roles["accent"] if emph else roles["ink"],
         })
-        date = str(nd.get("date", "")).strip()
-        event = str(nd.get("event", "")).strip()
-        text = f"{date}\n{event}" if date and event else (date or event)
         elements.append({
-            "role": "timeline-label", "text": text,
+            "role": "timeline-label", "text": texts[i],
             "left": cl, "top": label_top, "width": cw, "height": label_h,
             "font_pt": label_pt, "align": "center",
             "colour": roles["accent"] if emph else roles["ink"], "bold": emph,
@@ -602,10 +696,22 @@ def plan_freeform(elements, tokens, slide_w, slide_h, region=None) -> list:
                 box["stroke_w"] = _STROKE_EMU
             out.append(box)
         elif kind == "text":
+            # The author placed this box; middle-anchored text that wraps past
+            # it spills BOTH ways into the neighbours, so refuse a placement
+            # that cannot hold its text rather than render the spill.
+            font_pt = ts[el["scale"]]
+            needed = _wrapped_lines(el["text"], w, font_pt)
+            if needed * _line_h(font_pt) > h:
+                snippet = str(el["text"])[:40]
+                raise ShapeError(
+                    f"freeform text {snippet!r} wraps to ~{needed} line(s) at "
+                    f"{el['scale']} size and overflows its placement — give it "
+                    f"more rows, a smaller scale, or shorter text"
+                )
             out.append({
                 "role": "freeform-text", "text": el["text"],
                 "left": l, "top": t, "width": w, "height": h,
-                "font_pt": ts[el["scale"]], "colour": roles[el["colour"]],
+                "font_pt": font_pt, "colour": roles[el["colour"]],
                 "anchor": "middle",
             })
         elif kind == "arrow":
@@ -704,8 +810,16 @@ def plan_tree(root, tokens, slide_w, slide_h, region=None) -> list:
             panel["stroke_w"] = _STROKE_EMU
         elements.append(panel)
         text_colour = roles["paper"] if emph else roles["ink"]
+        iside = max(1, min(icon_side, node_w - 2 * pad,
+                           node_h - label_h - 2 * pad)) if node.get("icon") else 0
+        # The tree's rows fix the node box, so the label must fit IT.
+        if _text_h(str(node["label"]), node_w - 2 * pad, label_pt) \
+                > node_h - 2 * pad - iside:
+            raise ShapeError(
+                f"tree node label {str(node['label'])!r} wraps deeper than its "
+                f"box — shorten the label or prune the tree"
+            )
         if node.get("icon"):
-            iside = max(1, min(icon_side, node_w - 2 * pad, node_h - label_h - 2 * pad))
             elements.append({
                 "role": "tree-icon", "kind": "icon", "name": node["icon"],
                 "left": c - iside // 2, "top": t + pad, "width": iside, "height": iside,
@@ -765,14 +879,21 @@ def plan_icon_list(rows, tokens, slide_w, slide_h, region=None) -> list:
     baseline, gutter = grid["baseline"], grid["gutter"]
     text_pt = ts["body"]
     line_h = _line_h(text_pt)
-    row_h = line_h + baseline
-    if row_h * n > band_h:
-        row_h = band_h // n
-    block_h = row_h * n
-    top0 = band_top + round((band_h - block_h) * OPTICAL_CENTRE)
-    icon_side = max(1, min(line_h, row_h - baseline))
+    icon_side = line_h
     text_left = content_left + icon_side + gutter
     text_w = content_w - icon_side - gutter
+    # Every row takes the deepest wrapped text's height so the rows align.
+    text_h = max(_text_h(str(r["text"]), text_w, text_pt) for r in rows)
+    row_h = text_h + baseline
+    if row_h * n > band_h:
+        row_h = band_h // n
+        if row_h < text_h:
+            raise ShapeError(
+                "icon-list text wraps deeper than the band holds — cut the "
+                "row text or use fewer rows"
+            )
+    block_h = row_h * n
+    top0 = band_top + round((band_h - block_h) * OPTICAL_CENTRE)
 
     elements = []
     for i, r in enumerate(rows):
@@ -784,8 +905,8 @@ def plan_icon_list(rows, tokens, slide_w, slide_h, region=None) -> list:
         })
         elements.append({
             "role": "iconlist-text", "text": str(r["text"]),
-            "left": text_left, "top": rt + (row_h - line_h) // 2,
-            "width": text_w, "height": line_h,
+            "left": text_left, "top": rt + (row_h - text_h) // 2,
+            "width": text_w, "height": text_h,
             "font_pt": text_pt, "colour": roles["ink"], "anchor": "middle",
         })
     return elements
@@ -829,6 +950,13 @@ def plan_cycle(steps, tokens, slide_w, slide_h, region=None) -> list:
     elements = []
     for i, (px, py) in enumerate(centres):
         left, top = px - node_w // 2, py - node_h // 2
+        # The ring spacing fixes the node box, so the label must fit IT.
+        label = str(steps[i].get("label", ""))
+        if _text_h(label, node_w, label_pt) > node_h:
+            raise ShapeError(
+                f"cycle stage label {label!r} wraps deeper than its node — "
+                f"shorten the label or use fewer stages"
+            )
         elements.append({
             "role": "cycle-node", "kind": "box", "container": True,
             "shape": _corner_shape(tokens),
@@ -836,7 +964,7 @@ def plan_cycle(steps, tokens, slide_w, slide_h, region=None) -> list:
             "fill": roles["paper"], "stroke": roles["ink"], "stroke_w": _STROKE_EMU,
         })
         elements.append({
-            "role": "cycle-label", "text": str(steps[i].get("label", "")),
+            "role": "cycle-label", "text": label,
             "left": left, "top": top, "width": node_w, "height": node_h,
             "font_pt": label_pt, "colour": roles["ink"],
             "align": "center", "anchor": "middle",
@@ -882,7 +1010,6 @@ def plan_matrix(spec, tokens, slide_w, slide_h, region=None) -> list:
     pad = gutter
     baseline = grid["baseline"]
     label_pt, body_pt, cap_pt = ts["h1"], ts["body"], ts["body"]
-    label_h = _line_h(label_pt)
     cap_h = _line_h(cap_pt)
 
     xlab = (spec.get("x") or "").strip()
@@ -897,13 +1024,27 @@ def plan_matrix(spec, tokens, slide_w, slide_h, region=None) -> list:
     row_tops = [grid_top, grid_top + cell_h + gutter]
     coords = [(0, 0), (1, 0), (0, 1), (1, 1)]  # TL, TR, BL, BR
 
+    # The 2x2 geometry fixes the cell, so text must fit IT: wrap-estimate the
+    # labels and bodies and refuse the slide when a cell cannot hold its text.
+    text_w = min(cw for _cl, cw in cols) - 2 * pad
+    label_h = max(_text_h(str(q.get("label", "")), text_w, label_pt)
+                  for q in quads)
     if cell_h < 2 * pad + label_h:
         raise ShapeError(
-            "matrix needs more room; drop the axis labels or use a full slide"
+            "matrix needs more room; shorten the quadrant labels, drop the "
+            "axis labels, or use a full slide"
         )
-    # Body must fit inside the cell (the region can be short under a title).
     avail = cell_h - 2 * pad - label_h - baseline
-    body_alloc = min(2 * _line_h(body_pt), avail) if avail >= _line_h(body_pt) else 0
+    body_alloc = max(
+        (_text_h(_split_body(q["body"]), text_w, body_pt)
+         for q in quads if (q.get("body") or "").strip()),
+        default=0,
+    )
+    if body_alloc > max(avail, 0):
+        raise ShapeError(
+            "matrix quadrant text wraps deeper than its cell holds — cut the "
+            "quadrant bodies or drop the axis labels"
+        )
     elements = []
     if ylab:
         elements.append({

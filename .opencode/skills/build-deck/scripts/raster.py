@@ -14,7 +14,11 @@ matplotlib for charts, an absent backend degrades to a clear message:
 
   1. LibreOffice (`soffice --headless --convert-to pdf`) — headless, portable,
      CI-friendly; the same path Anthropic's own pptx skill uses.
-  2. Keynote (macOS, AppleScript export to PDF) — no install if Keynote is
+  2. Microsoft PowerPoint — the app most users already have. On Windows it is
+     driven over COM via PowerShell with no visible window; on macOS it is
+     driven via AppleScript (opens the app, may prompt once for automation
+     permission).
+  3. Keynote (macOS, AppleScript export to PDF) — no install if Keynote is
      present, but GUI-driven and macOS-only. Experimental.
 
 Usage:
@@ -48,15 +52,33 @@ def _libreoffice_bin():
     return mac_app if os.path.isfile(mac_app) else None
 
 
+def _powerpoint_available():
+    """True if Microsoft PowerPoint is installed (macOS app bundle or Windows COM)."""
+    if sys.platform == "darwin":
+        return os.path.isdir("/Applications/Microsoft PowerPoint.app")
+    if sys.platform == "win32":
+        try:
+            proc = subprocess.run(
+                ["reg", "query", r"HKEY_CLASSES_ROOT\PowerPoint.Application"],
+                capture_output=True, timeout=15,
+            )
+            return proc.returncode == 0
+        except Exception:  # noqa: BLE001 — detection must never crash the check
+            return False
+    return False
+
+
 def _keynote_available():
     """True if this is macOS with Keynote installed."""
     return sys.platform == "darwin" and os.path.isdir("/Applications/Keynote.app")
 
 
 def available_backend():
-    """The backend that would be used: 'libreoffice', 'keynote', or None."""
+    """The backend that would be used: 'libreoffice', 'powerpoint', 'keynote', or None."""
     if _libreoffice_bin():
         return "libreoffice"
+    if _powerpoint_available():
+        return "powerpoint"
     if _keynote_available():
         return "keynote"
     return None
@@ -108,6 +130,66 @@ def _keynote_to_pdf(pptx_path, out_pdf):
     if proc.returncode != 0 or not os.path.isfile(out_pdf):
         raise RasterError(
             f"Keynote failed to export {pptx_path}: {proc.stderr.strip()[:300]}"
+        )
+    return out_pdf
+
+
+def _powerpoint_to_pdf(pptx_path, out_pdf):
+    """Convert a .pptx to PDF with the user's own Microsoft PowerPoint.
+
+    Windows: PowerPoint COM via PowerShell, opened read-only with no visible
+    window (effectively headless). macOS: AppleScript — this opens the
+    PowerPoint app and may prompt once for automation permission.
+    """
+    if sys.platform == "win32":
+        return _powerpoint_to_pdf_windows(pptx_path, out_pdf)
+    return _powerpoint_to_pdf_mac(pptx_path, out_pdf)
+
+
+def _powerpoint_to_pdf_mac(pptx_path, out_pdf):
+    script = (
+        'on run argv\n'
+        '  set inFile to POSIX file (item 1 of argv)\n'
+        '  set outPath to item 2 of argv\n'
+        '  tell application "Microsoft PowerPoint"\n'
+        '    open inFile\n'
+        '    set theDoc to active presentation\n'
+        '    save theDoc in (POSIX file outPath) as save as PDF\n'
+        '    close theDoc saving no\n'
+        '  end tell\n'
+        'end run\n'
+    )
+    proc = subprocess.run(
+        ["osascript", "-e", script, os.path.abspath(pptx_path),
+         os.path.abspath(out_pdf)],
+        capture_output=True, text=True, timeout=180,
+    )
+    if proc.returncode != 0 or not os.path.isfile(out_pdf):
+        raise RasterError(
+            f"PowerPoint failed to export {pptx_path}: {proc.stderr.strip()[:300]}"
+        )
+    return out_pdf
+
+
+def _powerpoint_to_pdf_windows(pptx_path, out_pdf):
+    # ppSaveAsPDF = 32. Open(ReadOnly, Untitled, WithWindow:=0) keeps the
+    # window hidden; paths are single-quoted for PowerShell (quotes doubled).
+    def q(path):
+        return "'" + os.path.abspath(path).replace("'", "''") + "'"
+    ps = (
+        "$pp = New-Object -ComObject PowerPoint.Application; "
+        f"$pres = $pp.Presentations.Open({q(pptx_path)}, $true, $true, $false); "
+        f"$pres.SaveAs({q(out_pdf)}, 32); "
+        "$pres.Close(); $pp.Quit()"
+    )
+    proc = subprocess.run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+        capture_output=True, text=True, timeout=180,
+    )
+    if proc.returncode != 0 or not os.path.isfile(out_pdf):
+        raise RasterError(
+            f"PowerPoint failed to export {pptx_path}: "
+            f"{(proc.stderr or proc.stdout).strip()[:300]}"
         )
     return out_pdf
 
@@ -168,11 +250,13 @@ def rasterise(pptx_path, out_dir, dpi=110):
         raise RasterError(
             "no rasteriser available for the render-back check. Install "
             "LibreOffice (brew install --cask libreoffice) for a headless "
-            "backend, or use Keynote on macOS."
+            "backend, or use Microsoft PowerPoint or Keynote if installed."
         )
     os.makedirs(out_dir, exist_ok=True)
     if backend == "libreoffice":
         pdf = _libreoffice_to_pdf(pptx_path, out_dir)
+    elif backend == "powerpoint":
+        pdf = _powerpoint_to_pdf(pptx_path, os.path.join(out_dir, "_deck.pdf"))
     else:
         pdf = _keynote_to_pdf(pptx_path, os.path.join(out_dir, "_deck.pdf"))
     return _pdf_to_pngs(pdf, out_dir, dpi)
