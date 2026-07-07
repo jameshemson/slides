@@ -5,8 +5,16 @@ Given a rendered deck, reconstructs a deck spec `render.parse_spec` accepts,
 plus a sidecar import report naming how each slide was read. Round-trip plan:
 `.build/plans/round-trip-revise-plan.md`, REQ-002/003, D-004..D-009.
 
-Two tiers, resolved per slide (not per deck — a mostly-pack deck with one
+Three tiers, resolved per slide (not per deck — a mostly-pack deck with one
 hand-added slide degrades only on that slide):
+
+  Tier 0 (stamps): a pack-rendered brand-fidelity slide is named
+  `slides-role:<role>` and each of its drawn field shapes
+  `slides-field:<Field>` by render.py. Reading those stamps back is exact —
+  no layout_map to invert, no inference. Only the six fixed roles resolve
+  this way; a stamped `composed` slide deliberately keeps the structural
+  flatten below (D-304 — `Block:` grammar is never reconstructed from drawn
+  shapes, stamped or not).
 
   Tier 1 (lineage, `--brand <brand.json>` given): a slide's rendered layout is
   identified against the template's `slide_layouts` and looked up in the
@@ -19,11 +27,12 @@ hand-added slide degrades only on that slide):
   Tier 2 (foreign, no `--brand` or an unmapped layout index): a slide's role is
   guessed from its placeholder types and counts.
 
-Structural detection runs BEFORE either tier and wins regardless of it: a
-slide whose real content sits in drawn, non-placeholder shapes or tables (a
-pack `composed` slide, or a foreign diagram) cannot be reconstructed into
-`Block:` grammar (D-005, out of scope — see the plan) and is flattened into a
-`title-content` slide instead, with a report line naming the slide. A picture
+Structural detection runs BEFORE Tiers 1 and 2 and wins for unstamped drawn
+content: a slide whose real content sits in drawn, non-placeholder shapes or
+tables (a pack `composed` slide, or a foreign diagram) cannot be
+reconstructed into `Block:` grammar (D-005, out of scope — see the plan) and
+is flattened into a `title-content` slide instead, with a report line naming
+the slide. A picture
 anywhere on a slide (a chart PNG, a photo) cannot be reversed to data either
 (D-008); it becomes a `Visual:` note asking for re-placement, without forcing
 a flatten by itself — text is what forces a flatten, not a picture alone.
@@ -77,6 +86,12 @@ PICTURE_NOTE = (
     "its Chart block"
 )
 
+# Tier 0 (stamps): render.py names each brand-fidelity slide
+# "slides-role:<role>" and each drawn field shape "slides-field:<Field>";
+# these prefixes are the exact inverse read of those stamps.
+ROLE_STAMP_PREFIX = "slides-role:"
+FIELD_STAMP_PREFIX = "slides-field:"
+
 STAMP_RE = re.compile(
     r"^slides-spec:\s*(?P<name>\S.*?)\s+sha256:(?P<sha>[0-9a-f]{64})\s*$"
 )
@@ -117,7 +132,10 @@ def main(argv=None):
         prs, stamp_note = _open_deck(args.deck)
         layout_map = None
         if args.brand:
-            layout_map = render.load_brand(args.brand)["layout_map"]
+            # .get, not [...]: a brand-fidelity profile carries no layout_map
+            # at all (identity is all it needs); its decks resolve by Tier-0
+            # stamps, and _extract_slides/_invert_layout_map tolerate None.
+            layout_map = render.load_brand(args.brand).get("layout_map")
         slides, slide_reports = _extract_slides(prs, layout_map)
         deck_title = _frontmatter_deck(args.deck, slides)
         spec_text = _format_spec(
@@ -285,6 +303,76 @@ def _harvest_drawn_content(slide):
     return texts, has_picture
 
 
+# --- Tier 0: stamp reading (brand-fidelity pack decks) -----------------------
+
+
+def _stamped_role(slide):
+    """The fixed role a pack-rendered slide's name stamp declares, or None.
+
+    Returns the suffix of a "slides-role:<role>" slide name only when it is
+    one of the six fixed roles in `render.ROLE_FIELDS`. A stamped `composed`
+    slide (or any unknown suffix) returns None and keeps today's structural
+    flatten path — deliberate (D-304): `Block:` grammar is never
+    reconstructed from drawn shapes, stamped or not.
+    """
+    name = getattr(slide, "name", None) or ""
+    if not name.startswith(ROLE_STAMP_PREFIX):
+        return None
+    role = name[len(ROLE_STAMP_PREFIX):]
+    return role if role in render.ROLE_FIELDS else None
+
+
+def _stamped_fields(slide, role):
+    """Read a stamped slide's fields back out of its shape-name stamps.
+
+    Walks the slide's top-level shapes (role slides never group), collecting
+    each "slides-field:<Field>" shape's text-frame text per field, in shape
+    order. A block field (`render.BLOCK_FIELDS`) lists one item per stamped
+    shape — render.py drew one shape per item, in stack order — and each
+    value is also split on newlines, since column items may share one shape.
+    An inline field takes its first non-empty value. `Attribution` drops the
+    leading "— " render.py drew. Empty values are dropped throughout.
+
+    Returns the fields dict, or None when the role's primary field
+    (`render.ROLE_FIELDS[role][0]`) is missing/empty — the caller then falls
+    through to the legacy tiers rather than emit a hollow slide.
+    """
+    collected = {}
+    for shape in slide.shapes:
+        name = shape.name or ""
+        if not name.startswith(FIELD_STAMP_PREFIX):
+            continue
+        if not getattr(shape, "has_text_frame", False):
+            continue
+        field = name[len(FIELD_STAMP_PREFIX):]
+        collected.setdefault(field, []).append(shape.text_frame.text)
+
+    fields = {}
+    for field, values in collected.items():
+        if field in render.BLOCK_FIELDS:
+            items = []
+            for value in values:
+                items.extend(
+                    t for t in (_flatten_text(v) for v in value.split("\n")) if t
+                )
+            if items:
+                fields[field] = items
+            continue
+        value = next((t for t in (_flatten_text(v) for v in values) if t), "")
+        if field == "Attribution":
+            for dash in ("— ", "- "):
+                if value.startswith(dash):
+                    value = value[len(dash):]
+                    break
+        if value:
+            fields[field] = value
+
+    primary = render.ROLE_FIELDS[role][0]
+    if not fields.get(primary):
+        return None
+    return fields
+
+
 # --- role resolution: mapped (Tier 1), heuristic (Tier 2), flattened --------
 
 
@@ -443,6 +531,34 @@ def _resolve_slide(prs, slide, number, layout_roles, has_brand):
     """Resolve one slide's role and fields. Returns (role, fields, meta, how,
     note) — `how`/`note` feed the per-slide report line."""
     notes_text, visual_from_notes = _read_notes(slide)
+
+    # Tier 0 (stamps): a pack-rendered brand-fidelity slide names itself and
+    # its field shapes, so its fields read back exactly — and its drawn
+    # shapes never trip the structural flatten below. A stamp harvest that
+    # fails role validation falls through to the legacy tiers, never crashes.
+    stamped_role = _stamped_role(slide)
+    if stamped_role:
+        fields = _stamped_fields(slide, stamped_role)
+        if fields is not None:
+            try:
+                render._validate_slide_fields(number, stamped_role, fields)
+            except render.SpecError:
+                pass  # bad harvest; the legacy tiers decide below
+            else:
+                # _harvest_drawn_content here feeds ONLY the D-008 picture
+                # flag (a chart PNG/photo still needs re-placing) — its
+                # texts never trigger a flatten on a stamped slide.
+                _, has_picture = _harvest_drawn_content(slide)
+                meta = _build_meta(notes_text, visual_from_notes, has_picture)
+                note = (
+                    "picture on this slide flagged for re-placement"
+                    if has_picture else None
+                )
+                return (
+                    stamped_role, fields, meta,
+                    "stamped (slides-role name)", note,
+                )
+
     drawn_texts, has_picture = _harvest_drawn_content(slide)
 
     if drawn_texts:

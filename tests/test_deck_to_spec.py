@@ -626,5 +626,246 @@ class ErrorTest(unittest.TestCase):
         self.assertIn("teach-slides", msg)
 
 
+# --- Tier 0: stamped brand-fidelity decks (identity-not-layout T-401) --------
+
+# Identity-only brand profile (REQ-002's acceptance shape): NO template and
+# NO layout_map. Rendering with it produces a brand-fidelity deck whose
+# slides carry "slides-role:"/"slides-field:" name stamps — Tier 0's input —
+# and whose --brand extraction has no layout_map to invert at all.
+BRAND_IDENTITY = {
+    "fidelity": "brand",
+    "fonts": {"heading": "Calibri", "body": "Calibri"},
+    "colours": {
+        "ink": "#1A1A1A",
+        "paper": "#FFFFFF",
+        "accent": "#0B5FFF",
+        "muted": "#6B7280",
+    },
+}
+
+
+def _render_identity(tmp, spec_text, name="deck"):
+    """_render's brand-fidelity sibling: render spec_text with the
+    identity-only BRAND_IDENTITY profile instead of the template-fidelity
+    BRAND. Same return shape and same RuntimeError-on-fixture-failure
+    contract as _render (a render.py failure is a fixture bug here, never a
+    deck_to_spec.py finding)."""
+    spec_path = os.path.join(tmp, f"{name}.deck.md")
+    brand_path = os.path.join(tmp, f"{name}.brand.json")
+    out_path = os.path.join(tmp, f"{name}.pptx")
+    _write(spec_path, spec_text)
+    _write_brand(brand_path, BRAND_IDENTITY)
+    proc = subprocess.run(
+        [sys.executable, RENDER_PY, "--spec", spec_path,
+         "--brand", brand_path, "--out", out_path],
+        capture_output=True, text=True,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            "fixture render failed (render.py itself, not deck_to_spec.py "
+            f"under test):\nstdout: {proc.stdout}\nstderr: {proc.stderr}"
+        )
+    return spec_path, brand_path, out_path
+
+
+class StampedRoundTripTest(unittest.TestCase):
+    """Tier 0 (stamps): the same fixture spec, rendered at brand fidelity,
+    round-trips exactly through the slide/shape name stamps — no layout_map
+    to invert (the profile has none), no heuristics, no structural flatten.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        _require_deck_to_spec()
+        cls._tmp = tempfile.mkdtemp(prefix="slides-deck-to-spec-stamped-")
+        cls.spec_path, cls.brand_path, cls.out_path = _render_identity(
+            cls._tmp, FIXTURE_SPEC_TEXT)
+        cls.extracted_path = os.path.join(cls._tmp, "extracted.deck.md")
+        cls.report_path = os.path.join(cls._tmp, "stamped.import-report.md")
+        cls.proc = _extract([
+            cls.out_path, "--brand", cls.brand_path,
+            "--out", cls.extracted_path, "--report", cls.report_path,
+        ])
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls._tmp, ignore_errors=True)
+
+    def test_extraction_exits_zero_with_a_brand_fidelity_brand(self):
+        # Also the KeyError regression proof: --brand pointing at a
+        # brand-fidelity profile (no 'layout_map' key at all) used to crash
+        # main() on load_brand(...)["layout_map"] before it became .get().
+        self.assertEqual(
+            self.proc.returncode, 0,
+            f"deck_to_spec.py exited {self.proc.returncode}.\n"
+            f"stdout: {self.proc.stdout}\nstderr: {self.proc.stderr}",
+        )
+
+    def test_emitted_spec_parses(self):
+        render.parse_spec(self.extracted_path)
+
+    def test_roles_match_in_order_exactly_no_flatten(self):
+        orig = render.parse_spec(self.spec_path)
+        extracted = render.parse_spec(self.extracted_path)
+        self.assertEqual(len(orig), len(extracted), "slide count drifted")
+        self.assertEqual(
+            [s["role"] for s in orig], [s["role"] for s in extracted],
+            "roles-in-order drifted",
+        )
+        # The flatten pin spelt out: no slide became title-content unless
+        # the source spec itself said title-content.
+        for o, e in zip(orig, extracted):
+            if e["role"] == "title-content":
+                self.assertEqual(
+                    o["role"], "title-content",
+                    f"slide {o['number']} ({o['role']!r}) was flattened to "
+                    "title-content despite its Tier-0 stamp",
+                )
+
+    def test_fields_match_normalised(self):
+        orig = render.parse_spec(self.spec_path)
+        extracted = render.parse_spec(self.extracted_path)
+        for o, e in zip(orig, extracted):
+            role = o["role"]
+            for field in render.ROLE_FIELDS[role]:
+                with self.subTest(slide=o["number"], field=field):
+                    o_val = o["fields"].get(field, "")
+                    e_val = e["fields"].get(field, "")
+                    self.assertEqual(
+                        _norm(o_val), _norm(e_val),
+                        f"slide {o['number']} ({role}) field {field!r} "
+                        f"drifted: orig={o_val!r} extracted={e_val!r}",
+                    )
+
+    def test_notes_preserved(self):
+        orig = render.parse_spec(self.spec_path)
+        extracted = render.parse_spec(self.extracted_path)
+        # Slide 2 (title-content) is the only slide carrying Notes.
+        o_notes = orig[1]["meta"].get("Notes", "")
+        e_notes = extracted[1]["meta"].get("Notes", "")
+        self.assertTrue(o_notes, "fixture sanity: slide 2 must declare Notes")
+        self.assertEqual(_norm(o_notes), _norm(e_notes))
+
+    def test_report_marks_every_fixed_role_slide_stamped(self):
+        with open(self.report_path, encoding="utf-8") as fh:
+            text = fh.read()
+        slide_lines = [
+            line for line in text.splitlines() if line.startswith("- Slide ")
+        ]
+        self.assertEqual(
+            len(slide_lines), 4,
+            f"expected one report line per fixture slide; got {slide_lines!r}",
+        )
+        for line in slide_lines:
+            self.assertIn(
+                "stamped (slides-role name)", line,
+                f"a fixed-role slide was not resolved by its stamp: {line!r}",
+            )
+
+
+class StampedAgainstTest(unittest.TestCase):
+    """--against on a stamped (brand-fidelity) deck — the Tier-0 sync path:
+    an untouched render reports no drift at all, and an edited spec copy is
+    named on stdout (slide number + field) with exit 2."""
+
+    @classmethod
+    def setUpClass(cls):
+        _require_deck_to_spec()
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp(
+            prefix="slides-deck-to-spec-stamped-against-")
+        self.addCleanup(shutil.rmtree, self._tmp, ignore_errors=True)
+        self.spec_path, self.brand_path, self.out_path = _render_identity(
+            self._tmp, FIXTURE_SPEC_TEXT)
+
+    def test_identical_content_exits_zero(self):
+        proc = _extract([
+            self.out_path, "--brand", self.brand_path,
+            "--against", self.spec_path,
+        ])
+        self.assertEqual(
+            proc.returncode, 0,
+            "expected no drift for an unedited brand-fidelity render.\n"
+            f"stdout: {proc.stdout}\nstderr: {proc.stderr}",
+        )
+
+    def test_edited_spec_title_is_named_and_exits_two(self):
+        original_title = "What We Learned"
+        edited_title = "What We Quietly Rewrote"
+        edited_text = FIXTURE_SPEC_TEXT.replace(
+            f"Title: {original_title}", f"Title: {edited_title}")
+        self.assertNotEqual(
+            edited_text, FIXTURE_SPEC_TEXT,
+            "fixture sanity: the hand-edit must change the spec copy",
+        )
+        edited_path = os.path.join(self._tmp, "edited.deck.md")
+        _write(edited_path, edited_text)
+
+        proc = _extract([
+            self.out_path, "--brand", self.brand_path,
+            "--against", edited_path,
+        ])
+        self.assertEqual(
+            proc.returncode, 2,
+            f"expected drift exit 2.\nstdout: {proc.stdout}\n"
+            f"stderr: {proc.stderr}",
+        )
+        stdout_low = proc.stdout.lower()
+        self.assertIn("slide 2", stdout_low)
+        self.assertIn("title", stdout_low)
+        self.assertIn(original_title.lower(), stdout_low)
+        self.assertIn(edited_title.lower(), stdout_low)
+
+
+class StampedComposedFlattenTest(unittest.TestCase):
+    """D-304 pin: a stamped composed slide ("slides-role:composed") keeps
+    today's structural flatten — Tier 0 reads only the six fixed roles, and
+    `Block:` grammar is never reconstructed from drawn shapes, stamped or
+    not. The report keeps the existing flatten language."""
+
+    @classmethod
+    def setUpClass(cls):
+        _require_deck_to_spec()
+        cls._tmp = tempfile.mkdtemp(
+            prefix="slides-deck-to-spec-stamped-composed-")
+        cls.spec_path, cls.brand_path, cls.out_path = _render_identity(
+            cls._tmp, COMPOSED_SPEC_TEXT, name="composed")
+        cls.extracted_path = os.path.join(
+            cls._tmp, "composed-extracted.deck.md")
+        cls.report_path = os.path.join(
+            cls._tmp, "composed.import-report.md")
+        cls.proc = _extract([
+            cls.out_path, "--brand", cls.brand_path,
+            "--out", cls.extracted_path, "--report", cls.report_path,
+        ])
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls._tmp, ignore_errors=True)
+
+    def test_extraction_exits_zero(self):
+        self.assertEqual(
+            self.proc.returncode, 0,
+            f"stdout: {self.proc.stdout}\nstderr: {self.proc.stderr}",
+        )
+
+    def test_composed_slide_still_flattens_to_title_content(self):
+        extracted = render.parse_spec(self.extracted_path)
+        self.assertEqual(len(extracted), 1)
+        self.assertEqual(extracted[0]["role"], "title-content")
+
+    def test_report_keeps_the_flatten_language_not_the_stamp_line(self):
+        with open(self.report_path, encoding="utf-8") as fh:
+            text = fh.read()
+        low = text.lower()
+        self.assertIn("slide 1", low)
+        self.assertIn("flat", low)  # flatten / flattened / flattening
+        self.assertNotIn(
+            "stamped (slides-role name)", text,
+            "a stamped composed slide must not resolve via Tier 0 (D-304)",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

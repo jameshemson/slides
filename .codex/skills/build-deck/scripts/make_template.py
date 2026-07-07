@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
-"""make_template.py — generate a themed starter .pptx for a user with no template.
+"""make_template.py — emit the pack's themed starter presentation as a .pptx file.
 
-Most users have a real PowerPoint template; `build-deck` fills it. A user with
-none needs a starting point. This script produces one: it begins from
-python-pptx's bundled default presentation (which ships a full set of named
-layouts), strips any slides, renames the layouts `build-deck` uses to the six
-semantic role names, and applies the user's brand fonts and colours to the
-theme. A reasonable themed starter is the bar — not a design showcase.
+The brand-fidelity renderer builds this same themed base in-process (a blank
+presentation carrying the user's fonts and colours) and never needs a template
+file. This script exists for the users who want that base AS a file: to open
+and refine a master in PowerPoint, or to run template fidelity, which fills
+real layout placeholders and so needs a .pptx to point brand.json's `template`
+key at. It begins from python-pptx's bundled default presentation (which ships
+a full set of named layouts), strips any slides, renames the layouts
+`build-deck` uses to the six semantic role names, and applies the user's brand
+fonts and colours to the theme. A reasonable themed starter is the bar — not a
+design showcase.
 
 The output is a normal .pptx the user can open, refine in PowerPoint, and then
 point brand.json's `template` key at.

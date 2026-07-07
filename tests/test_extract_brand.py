@@ -76,10 +76,15 @@ class ExtractBrandTest(unittest.TestCase):
         data = self._data()
         self.assertNotIn("grid", data["tokens"])
 
-    def test_tokens_type_scale_has_display(self):
+    def test_tokens_omits_type_scale(self):
+        # The pack owns type in brand fidelity; a template-fidelity brand
+        # derives its master scale at render time. Emitting one here would win
+        # as an explicit override, so extract_brand carries colour_roles only.
         data = self._data()
-        self.assertIn("type_scale", data["tokens"])
-        self.assertIn("display", data["tokens"]["type_scale"])
+        self.assertNotIn("type_scale", data["tokens"])
+        self.assertIn("colour_roles", data["tokens"])
+        self.assertTrue(data["tokens"]["colour_roles"],
+                        "colour_roles must be non-empty")
 
     def test_tokens_colour_roles_nonempty(self):
         # The fixture has a full Office palette (accent/ink/paper), so colour_roles
