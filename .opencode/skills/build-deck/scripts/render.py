@@ -1598,24 +1598,57 @@ def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None,
     the pack type scale in brand fidelity (tokens.resolve_tokens) and is
     ignored in template fidelity.
     """
-    template = brand["template"]
-    if not os.path.isfile(template):
-        raise SpecError(f"template named in brand profile not found: {template}")
+    import tokens as tokens_mod  # noqa: PLC0415 — fidelity + brand-mode tokens
     try:
-        prs = load_template(template)
-    except Exception as exc:  # noqa: BLE001
-        raise SpecError(f"could not open template {template}: {exc}")
+        fidelity = tokens_mod.fidelity_of(brand)
+    except ValueError as exc:
+        raise SpecError(str(exc))
 
-    # Strip any pre-existing slides so a user may reuse a real deck as a
-    # template; only its masters and layouts matter.
-    sld_id_lst = prs.slides._sldIdLst
-    for sld in list(sld_id_lst):
-        sld_id_lst.remove(sld)
+    hierarchy_note = None
+    if fidelity == "template":
+        template = brand.get("template")
+        if not template:
+            raise SpecError("brand profile missing required key: 'template'")
+        if not os.path.isfile(template):
+            raise SpecError(
+                f"template named in brand profile not found: {template}"
+            )
+        try:
+            prs = load_template(template)
+        except Exception as exc:  # noqa: BLE001
+            raise SpecError(f"could not open template {template}: {exc}")
+
+        # Strip any pre-existing slides so a user may reuse a real deck as a
+        # template; only its masters and layouts matter.
+        sld_id_lst = prs.slides._sldIdLst
+        for sld in list(sld_id_lst):
+            sld_id_lst.remove(sld)
+
+        layout_map = brand.get("layout_map")
+        if not layout_map:
+            raise SpecError("brand profile missing required key: 'layout_map'")
+
+        # REQ-008 tripwire: a master whose body text is as big as its title
+        # cannot express hierarchy — the fault that placeholder fill copies
+        # verbatim. Non-blocking: the deck still renders, the summary says so.
+        from pptxlib import read_type_scale  # noqa: PLC0415
+        _sizes = read_type_scale(prs)
+        _t, _b = _sizes.get("title"), _sizes.get("body")
+        if _t and _b and _b >= _t:
+            hierarchy_note = (
+                f"template master body size ({_b:g}pt) >= title size "
+                f"({_t:g}pt) — hierarchy will not read; consider "
+                f'"fidelity": "brand"'
+            )
+    else:
+        # Brand fidelity (D-305): the base deck is built in-process from the
+        # brand's identity. The template file, even when brand.json names
+        # one, is never opened here.
+        prs = _brand_base_presentation(brand)
+        layout_map = None
 
     if charts_dir is None:
         charts_dir = os.path.splitext(out_path)[0] + ".charts"
-
-    layout_map = brand["layout_map"]
     visual_slides = []
     chart_slides = []        # drawn natively
     fallback_slides = []     # matplotlib absent -> VISUAL TO ADD note
@@ -1631,15 +1664,55 @@ def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None,
     # D-005 — unsupportable type, or the backend is unavailable), or a table
     # stepped down to caption size to fit its band.
     render_notes = []
+    if hierarchy_note:
+        render_notes.append(hierarchy_note)
+    section_counter = 0  # brand fidelity: ordinal for the section ghost numeral
 
     for spec in slides:
         number = spec["number"]
         role = spec["role"]
 
+        if fidelity == "brand":
+            if composed_tokens is None:
+                composed_tokens = tokens_mod.resolve_tokens(
+                    brand, prs, register
+                )
+            if role == "composed":
+                (advisories, dropped_icons, slide_render_notes, font_family,
+                 font_warning) = _render_composed_slide(
+                    prs, brand, spec, composed_tokens, charts_dir,
+                    font_family, font_warning, brand_path, brand_canvas=True
+                )
+                if advisories:
+                    composed_advisories.append((number, advisories))
+                if dropped_icons:
+                    icon_fallback_slides.append((number, dropped_icons))
+                render_notes.extend(slide_render_notes)
+            else:
+                if role == "section":
+                    section_counter += 1
+                (advisories, slide_render_notes, chart_kind, font_family,
+                 font_warning) = _render_role_slide_brand(
+                    prs, brand, spec, composed_tokens, charts_dir,
+                    font_family, font_warning, brand_path,
+                    ordinal=section_counter if role == "section" else None,
+                )
+                if advisories:
+                    composed_advisories.append((number, advisories))
+                render_notes.extend(slide_render_notes)
+                if chart_kind in ("native", "image"):
+                    chart_slides.append(number)
+                elif chart_kind == "fallback":
+                    fallback_slides.append(number)
+                if "Visual" in spec["meta"]:
+                    visual_slides.append(number)
+            continue
+
         if role == "composed":
             if composed_tokens is None:
-                import tokens  # noqa: PLC0415 — light; composed decks only
-                composed_tokens = tokens.resolve_tokens(brand, prs, register)
+                composed_tokens = tokens_mod.resolve_tokens(
+                    brand, prs, register
+                )
             (advisories, dropped_icons, slide_render_notes, font_family,
              font_warning) = _render_composed_slide(
                 prs, brand, spec, composed_tokens, charts_dir,
@@ -1781,14 +1854,25 @@ def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None,
                     fallback_slides, font_warning,
                     composed_advisories=composed_advisories,
                     icon_fallback_slides=icon_fallback_slides,
-                    render_notes=render_notes)
+                    render_notes=render_notes, fidelity=fidelity)
 
 
 def _summary(out_path, n_slides, visual_slides, chart_slides, fallback_slides,
              font_warning, composed_advisories=None, icon_fallback_slides=None,
-             render_notes=None):
+             render_notes=None, fidelity=None):
     """Compose the one-line run summary, naming charts, notes, and warnings."""
     parts = [f"rendered {n_slides} slide(s) to {out_path}"]
+    if fidelity == "brand":
+        parts.append(
+            '; fidelity: brand — pack design '
+            '(set "fidelity": "template" in brand.json for template '
+            'placeholder-fill)'
+        )
+    elif fidelity == "template":
+        parts.append(
+            '; fidelity: template — the template carries the look '
+            '(set "fidelity": "brand" for pack design)'
+        )
     if chart_slides:
         parts.append(
             f"; {len(chart_slides)} native chart(s) "
@@ -2024,8 +2108,218 @@ def _overload_hint(blocks):
     return ""
 
 
+def _brand_base_presentation(brand):
+    """The brand-fidelity base deck, built in-process (D-305).
+
+    python-pptx's bundled default package, stripped of slides, with the
+    brand's fonts and colours written into the theme (pptxlib.apply_theme) —
+    identity from brand.json, geometry from nobody. The template file, even
+    when brand.json names one, is never opened: its identity was extracted
+    into fonts/colours at init time.
+    """
+    from pptx import Presentation as _Presentation  # noqa: PLC0415
+    from pptxlib import apply_theme  # noqa: PLC0415
+
+    prs = _Presentation()
+    # The bundled default package is 4:3 (10in x 7.5in). The pack canvas is
+    # 16:9 — matching tokens.pack_grid's default dims — so brand decks land
+    # in the modern frame regardless of what python-pptx ships.
+    prs.slide_width = 12192000
+    prs.slide_height = 6858000
+    sld_id_lst = prs.slides._sldIdLst
+    for sld in list(sld_id_lst):
+        sld_id_lst.remove(sld)
+    apply_theme(prs, brand)
+    return prs
+
+
+def _blank_layout(prs):
+    """The layout brand-fidelity slides draw on.
+
+    The first layout with no CONTENT placeholders — T-200 finding: every
+    bundled layout carries date/footer/slide-number furniture, so a literal
+    zero-placeholder layout does not exist; "Blank" (index 6 in the bundled
+    default) is the canonical hit. Falls back to index 6, then the last.
+    """
+    from pptxlib import CONTENT_PLACEHOLDER_TYPES  # noqa: PLC0415
+
+    layouts = list(prs.slide_layouts)
+    for layout in layouts:
+        if not any(
+            ph.placeholder_format.type in CONTENT_PLACEHOLDER_TYPES
+            for ph in layout.placeholders
+        ):
+            return layout
+    return layouts[6] if len(layouts) > 6 else layouts[-1]
+
+
+def _strip_placeholders(slide):
+    """Remove EVERY inherited placeholder from a brand-fidelity slide —
+    furniture included. Brand mode draws everything it wants shown."""
+    _drop_unused(list(slide.placeholders))
+
+
+def _paint_background(slide, paper_hex):
+    """Paint the slide's own background with the paper colour role (REQ-005).
+
+    A slide-level solid fill, not a shape: it costs no lint element and
+    covers whatever the layout would otherwise show through (A-004 probe:
+    python-pptx persists the <p:bg> across save/reopen).
+    """
+    from pptx.dml.color import RGBColor  # noqa: PLC0415
+
+    fill = slide.background.fill
+    fill.solid()
+    fill.fore_color.rgb = RGBColor.from_string(paper_hex.lstrip("#"))
+
+
+def _brand_chart_region(elements, tokens, slide_w, slide_h):
+    """The band left under a brand-mode title-content slide's planned text:
+    full content width, from two baselines below the deepest element to the
+    bottom margin. None when nothing usable remains (< four baselines)."""
+    grid = tokens["grid"]
+    bottom = slide_h - grid["margin_bottom"]
+    content_bottom = max(
+        (el["top"] + el["height"] for el in elements),
+        default=grid["margin_top"],
+    )
+    top = content_bottom + 2 * grid["baseline"]
+    if bottom - top < 4 * grid["baseline"]:
+        return None
+    return (grid["margin_x"], top, slide_w - 2 * grid["margin_x"], bottom - top)
+
+
+def _render_role_slide_brand(prs, brand, spec, tokens, charts_dir,
+                             font_family, font_warning, brand_path,
+                             ordinal=None):
+    """Render a fixed-role slide in brand fidelity (REQ-004/005/007).
+
+    The role's drawn anatomy comes from roles.py, gates through the same
+    mechanical lint as composed slides (plus check_hierarchy's rank
+    invariant), draws on a clean paper canvas, and stamps the slide and its
+    field shapes for the revise round trip. A title-content Chart occupies
+    the band below the planned text — its bbox joins the lint and is
+    fulfilled after draw, the composed `Block: chart` pattern exactly.
+
+    Returns (advisories, render_notes, chart_kind, font_family,
+    font_warning); chart_kind is "native", "image", "fallback", or None.
+    """
+    import lint  # noqa: PLC0415
+    import primitives  # noqa: PLC0415
+    import roles as roles_mod  # noqa: PLC0415
+
+    number = spec["number"]
+    role = spec["role"]
+    slide = prs.slides.add_slide(_blank_layout(prs))
+    _strip_placeholders(slide)
+    _paint_background(
+        slide, (tokens.get("colour_roles") or {}).get("paper", "#FFFFFF")
+    )
+
+    slide_w, slide_h = prs.slide_width, prs.slide_height
+    planner = roles_mod.ROLE_PLANNERS[role]
+    try:
+        if role == "section":
+            elements = planner(
+                spec["fields"], tokens, slide_w, slide_h, ordinal=ordinal
+            )
+        else:
+            elements = planner(spec["fields"], tokens, slide_w, slide_h)
+    except primitives.ShapeError as exc:
+        raise SpecError(f"slide {number}: {exc}")
+
+    chart = spec["fields"].get("Chart")
+    chart_el = None
+    if chart:
+        region = _brand_chart_region(elements, tokens, slide_w, slide_h)
+        if region is None:
+            raise SpecError(
+                f"slide {number}: no room for the chart below the body — "
+                f"trim the body or drop it"
+            )
+        chart_el = {
+            "kind": "chart",
+            "role": "chart-figure",
+            "text": f"chart: {chart['type']}",
+            "left": region[0],
+            "top": region[1],
+            "width": region[2],
+            "height": region[3],
+        }
+        elements.append(chart_el)
+
+    try:
+        lint.check(elements, tokens, slide_w, slide_h)
+    except lint.LintError as exc:
+        raise SpecError(f"slide {number}: {role} slide failed lint:\n{exc}")
+
+    try:
+        advisories = lint.review(elements, tokens, slide_w, slide_h)
+    except Exception:  # noqa: BLE001 — advisory must never block a render
+        advisories = []
+
+    if chart_el is not None:
+        elements = [el for el in elements if el is not chart_el]
+
+    primitives.draw(slide, elements)
+    slide.name = f"slides-role:{role}"
+
+    # D-310: lead text that stepped down the ladder is owned up to, the
+    # table body->caption precedent exactly.
+    render_notes = [
+        f"slide {number}: {role} text stepped down to fit the band"
+        for el in elements if el.get("font_stepped")
+    ]
+    chart_kind = None
+    extra_visual = None
+    if chart:
+        region = (chart_el["left"], chart_el["top"],
+                  chart_el["width"], chart_el["height"])
+        if chart["native"]:
+            try:
+                import native_charts  # noqa: PLC0415
+            except ImportError:
+                ok, reason = False, "native chart backend unavailable"
+            else:
+                ok, reason = native_charts.supported(chart)
+            if ok:
+                native_charts.insert(slide, chart, brand["colours"], region)
+                chart_kind = "native"
+            else:
+                render_notes.append(
+                    f"slide {number}: {reason}; drawn as an image"
+                )
+        if chart and chart_kind is None:
+            try:
+                import charts as charts_mod  # noqa: PLC0415
+            except ImportError:
+                charts_mod = None
+            if charts_mod is None:
+                extra_visual = chart_to_note(chart)
+                chart_kind = "fallback"
+            else:
+                if font_family == "unset":
+                    font_family, font_warning = register_brand_font(
+                        brand, brand_path
+                    )
+                os.makedirs(charts_dir, exist_ok=True)
+                png = os.path.join(charts_dir, f"slide{number}.png")
+                try:
+                    charts_mod.render_png(
+                        chart, brand["colours"], font_family, png
+                    )
+                except charts_mod.ChartError as exc:
+                    raise SpecError(f"slide {number}: {exc}")
+                _place_picture(slide, png, region)
+                chart_kind = "image"
+
+    _apply_meta(slide, spec["meta"], extra_visual=extra_visual)
+    return advisories, render_notes, chart_kind, font_family, font_warning
+
+
 def _render_composed_slide(prs, brand, spec, tokens, charts_dir,
-                            font_family, font_warning, brand_path):
+                            font_family, font_warning, brand_path,
+                            brand_canvas=False):
     """Render a composed slide: fill an optional title, then draw token-bound
     primitives that must pass the mechanical lint before any shape is added.
 
@@ -2050,33 +2344,51 @@ def _render_composed_slide(prs, brand, spec, tokens, charts_dir,
     import lint  # noqa: PLC0415
 
     number = spec["number"]
-    layout = _resolve_composed_layout(prs, brand)
+    layout = _blank_layout(prs) if brand_canvas \
+        else _resolve_composed_layout(prs, brand)
     slide = prs.slides.add_slide(layout)
 
     grid = tokens.get("grid", {}) or {}
     slide_w, slide_h = prs.slide_width, prs.slide_height
 
     title = spec.get("fields", {}).get("Title")
-    title_ph = slide.shapes.title
     base_band = _full_band(grid, slide_w, slide_h)
-    if title and title_ph is not None:
-        title_ph.text = title
-        _, tt, _, th = _geom(slide, title_ph)
-        if None not in (tt, th):
-            title_bottom = tt + th
-        else:
-            # Title placeholder inherits geometry we cannot read; reserve a
-            # generic top band so the row never overlaps the title.
-            title_bottom = grid.get("margin_top", 0) + round(slide_h * 0.12)
-        if "margin_x" in grid and "margin_bottom" in grid:
-            bottom = slide_h - grid["margin_bottom"]
-            if bottom - title_bottom > 0:
-                base_band = (grid["margin_x"], title_bottom,
-                             slide_w - 2 * grid["margin_x"],
-                             bottom - title_bottom)
-        _drop_composed_placeholders(slide, keep_title=True)
+    title_elements = []
+    if brand_canvas:
+        # Brand fidelity: clean paper canvas, and the title is a DRAWN
+        # element (D-308) — a blank layout has no title placeholder to fill.
+        _strip_placeholders(slide)
+        _paint_background(
+            slide, (tokens.get("colour_roles") or {}).get("paper", "#FFFFFF")
+        )
+        if title:
+            import roles as roles_mod  # noqa: PLC0415
+            try:
+                title_elements, base_band = roles_mod.plan_composed_title(
+                    title, tokens, slide_w, slide_h
+                )
+            except primitives.ShapeError as exc:
+                raise SpecError(f"slide {number}: {exc}")
     else:
-        _drop_composed_placeholders(slide, keep_title=False)
+        title_ph = slide.shapes.title
+        if title and title_ph is not None:
+            title_ph.text = title
+            _, tt, _, th = _geom(slide, title_ph)
+            if None not in (tt, th):
+                title_bottom = tt + th
+            else:
+                # Title placeholder inherits geometry we cannot read; reserve
+                # a generic top band so the row never overlaps the title.
+                title_bottom = grid.get("margin_top", 0) + round(slide_h * 0.12)
+            if "margin_x" in grid and "margin_bottom" in grid:
+                bottom = slide_h - grid["margin_bottom"]
+                if bottom - title_bottom > 0:
+                    base_band = (grid["margin_x"], title_bottom,
+                                 slide_w - 2 * grid["margin_x"],
+                                 bottom - title_bottom)
+            _drop_composed_placeholders(slide, keep_title=True)
+        else:
+            _drop_composed_placeholders(slide, keep_title=False)
 
     # Plan every block, then lint the slide's FULL element list once before any
     # shape is drawn — the gate is slide-level, so overlap and the element cap
@@ -2096,7 +2408,7 @@ def _render_composed_slide(prs, brand, spec, tokens, charts_dir,
     }
     blocks = spec.get("blocks", [])
     regions = _composed_regions(base_band, blocks, tokens)
-    all_elements = []
+    all_elements = list(title_elements)
     # A `Block: chart` plans ONE inline element (D-006, mirrors the icons
     # pattern below) purely so the lint sees its bbox — no primitives planner
     # is involved. Fulfilment (native insert, matplotlib PNG, or a note)
@@ -2126,11 +2438,16 @@ def _render_composed_slide(prs, brand, spec, tokens, charts_dir,
             )
         planner, key = entry
         try:
-            all_elements.extend(
-                planner(block[key], tokens, slide_w, slide_h, region)
-            )
+            planned = planner(block[key], tokens, slide_w, slide_h, region)
         except primitives.ShapeError as exc:
             raise SpecError(f"slide {number}: {exc}")
+        if brand_canvas:
+            # D-303: block elements carry a stamp the revise round trip can
+            # read back (forward-compat; composed import still flattens,
+            # D-304). Template fidelity stays byte-identical — no stamps.
+            for el in planned:
+                el.setdefault("name", f"slides-block:{btype}:{i}")
+        all_elements.extend(planned)
 
     try:
         lint.check(all_elements, tokens, slide_w, slide_h)
@@ -2225,6 +2542,9 @@ def _render_composed_slide(prs, brand, spec, tokens, charts_dir,
         except charts_mod.ChartError as exc:
             raise SpecError(f"slide {number}: {exc}")
         _place_picture(slide, png, region)
+
+    if brand_canvas:
+        slide.name = "slides-role:composed"
 
     _apply_meta(slide, spec.get("meta", {}), extra_visual=chart_notes or None)
     return (advisories, dropped_icons, render_notes, font_family,
