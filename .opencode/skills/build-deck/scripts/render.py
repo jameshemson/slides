@@ -80,7 +80,11 @@ CHART_ALLOWED_ROLES = {"title-content"}
 CHART_TYPES = ("bar", "column", "line", "pie", "scatter", "waterfall")
 CATEGORY_CHART_TYPES = ("bar", "column", "pie", "waterfall")
 POINT_CHART_TYPES = ("line", "scatter")
+# Required brand.json keys per fidelity mode (identity-not-layout-plan
+# REQ-002). Template fidelity needs the template and the role->layout join;
+# brand fidelity draws everything from tokens, so only identity is required.
 REQUIRED_BRAND_KEYS = ("template", "fonts", "colours", "layout_map")
+REQUIRED_BRAND_KEYS_BRAND = ("fonts", "colours")
 
 
 class SpecError(Exception):
@@ -105,9 +109,11 @@ def main(argv=None):
     try:
         brand = load_brand(args.brand)
         slides = parse_spec(args.spec)
+        register = parse_frontmatter(args.spec).get("register")
         summary = build_deck(
             brand, slides, args.out,
             charts_dir=charts_dir, brand_path=args.brand, spec_path=args.spec,
+            register=register,
         )
     except SpecError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -124,7 +130,14 @@ def main(argv=None):
 
 
 def load_brand(path):
-    """Load and validate brand.json. Raises SpecError naming the bad key."""
+    """Load and validate brand.json per its fidelity mode.
+
+    Raises SpecError naming the bad key. Template fidelity requires the
+    four classic keys; brand fidelity requires identity only (fonts,
+    colours) — `template` and `layout_map` are optional there, but when
+    present are validated and normalised the same way, so one profile can
+    carry both modes' data (identity-not-layout-plan REQ-002).
+    """
     if not os.path.isfile(path):
         raise SpecError(f"brand profile not found: {path}")
     try:
@@ -135,30 +148,45 @@ def load_brand(path):
     if not isinstance(brand, dict):
         raise SpecError("brand profile must be a JSON object")
 
-    for key in REQUIRED_BRAND_KEYS:
+    import tokens  # noqa: PLC0415 — light, stdlib-only module
+    try:
+        mode = tokens.fidelity_of(brand)
+    except ValueError as exc:
+        raise SpecError(str(exc))
+
+    required = (
+        REQUIRED_BRAND_KEYS_BRAND if mode == "brand" else REQUIRED_BRAND_KEYS
+    )
+    for key in required:
         if key not in brand:
             raise SpecError(f"brand profile missing required key: {key!r}")
 
-    template = brand["template"]
-    if not isinstance(template, str) or not template.strip():
-        raise SpecError("brand profile key 'template' must be a non-empty path")
-    # Resolve a relative template path against the brand profile's own
-    # directory, so a .slides/ directory is self-contained and portable: it
-    # works regardless of the working directory render.py runs from.
-    if not os.path.isabs(template):
-        brand_dir = os.path.dirname(os.path.abspath(path))
-        template = os.path.normpath(os.path.join(brand_dir, template))
-    brand["template"] = template
-
-    layout_map = brand["layout_map"]
-    if not isinstance(layout_map, dict) or not layout_map:
-        raise SpecError("brand profile key 'layout_map' must be a non-empty object")
-    for role, idx in layout_map.items():
-        if not isinstance(idx, int) or isinstance(idx, bool):
+    if "template" in brand:
+        template = brand["template"]
+        if not isinstance(template, str) or not template.strip():
             raise SpecError(
-                f"brand profile key 'layout_map' maps role {role!r} to a "
-                f"non-integer layout index"
+                "brand profile key 'template' must be a non-empty path"
             )
+        # Resolve a relative template path against the brand profile's own
+        # directory, so a .slides/ directory is self-contained and portable:
+        # it works regardless of the working directory render.py runs from.
+        if not os.path.isabs(template):
+            brand_dir = os.path.dirname(os.path.abspath(path))
+            template = os.path.normpath(os.path.join(brand_dir, template))
+        brand["template"] = template
+
+    if "layout_map" in brand:
+        layout_map = brand["layout_map"]
+        if not isinstance(layout_map, dict) or not layout_map:
+            raise SpecError(
+                "brand profile key 'layout_map' must be a non-empty object"
+            )
+        for role, idx in layout_map.items():
+            if not isinstance(idx, int) or isinstance(idx, bool):
+                raise SpecError(
+                    f"brand profile key 'layout_map' maps role {role!r} to a "
+                    f"non-integer layout index"
+                )
 
     if not isinstance(brand["fonts"], dict):
         raise SpecError("brand profile key 'fonts' must be an object")
@@ -205,8 +233,8 @@ def parse_spec(path):
     return slides
 
 
-def _strip_frontmatter(text):
-    """Drop the leading `---` YAML frontmatter block, returning the slide body."""
+def _frontmatter_split(text):
+    """Split spec text into (frontmatter_lines, body). Frontmatter may be []."""
     lines = text.splitlines()
     i = 0
     while i < len(lines) and not lines[i].strip():
@@ -214,9 +242,37 @@ def _strip_frontmatter(text):
     if i < len(lines) and lines[i].strip() == "---":
         for j in range(i + 1, len(lines)):
             if lines[j].strip() == "---":
-                return "\n".join(lines[j + 1:])
+                return lines[i + 1:j], "\n".join(lines[j + 1:])
         raise SpecError("frontmatter block opened with '---' but never closed")
-    return "\n".join(lines[i:])
+    return [], "\n".join(lines[i:])
+
+
+def _strip_frontmatter(text):
+    """Drop the leading `---` YAML frontmatter block, returning the slide body."""
+    return _frontmatter_split(text)[1]
+
+
+def parse_frontmatter(path):
+    """Read a spec's frontmatter as a {key: value} dict (keys lowercased).
+
+    The deck-spec frontmatter is flat `key: value` lines (deck, audience,
+    register) — parsed minimally, no YAML library. Lines without a colon are
+    ignored. A spec with no frontmatter yields {}. Raises SpecError for a
+    missing file or an unclosed block, matching parse_spec.
+    """
+    if not os.path.isfile(path):
+        raise SpecError(f"deck spec not found: {path}")
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    meta = {}
+    for line in _frontmatter_split(text)[0]:
+        if ":" not in line:
+            continue
+        key, _, value = line.partition(":")
+        key = key.strip().lower()
+        if key:
+            meta[key] = value.strip()
+    return meta
 
 
 def _split_slides(body):
@@ -1526,7 +1582,7 @@ def _validate_slide_fields(number, role, fields):
 
 
 def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None,
-                spec_path=None):
+                spec_path=None, register=None):
     """Render parsed slides into a .pptx at out_path. Returns a summary string.
 
     A slide carrying a `Chart` is drawn natively: charts.py renders a PNG and
@@ -1537,6 +1593,10 @@ def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None,
     core_properties.comments with `slides-spec: <basename> sha256:<sha>` so
     a deck names the spec it came from; direct in-process callers that omit
     it get no stamp.
+
+    register, when given, is the spec frontmatter's register line; it keys
+    the pack type scale in brand fidelity (tokens.resolve_tokens) and is
+    ignored in template fidelity.
     """
     template = brand["template"]
     if not os.path.isfile(template):
@@ -1579,7 +1639,7 @@ def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None,
         if role == "composed":
             if composed_tokens is None:
                 import tokens  # noqa: PLC0415 — light; composed decks only
-                composed_tokens = tokens.resolve_tokens(brand, prs)
+                composed_tokens = tokens.resolve_tokens(brand, prs, register)
             (advisories, dropped_icons, slide_render_notes, font_family,
              font_warning) = _render_composed_slide(
                 prs, brand, spec, composed_tokens, charts_dir,

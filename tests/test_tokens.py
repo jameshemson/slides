@@ -315,5 +315,165 @@ class TestResolveTokens(unittest.TestCase):
         self.assertIn("margin_x", t["grid"])
 
 
+class TestFidelity(unittest.TestCase):
+    """fidelity_of: mode selection and validation (identity-not-layout REQ-001)."""
+
+    def test_absent_key_uses_default(self):
+        # DEFAULT_FIDELITY is "template" until wave 3 flips it with the drawn
+        # renderer; this test pins the constant so the flip is a visible edit.
+        self.assertEqual(tokens.fidelity_of({}), tokens.DEFAULT_FIDELITY)
+        self.assertEqual(tokens.DEFAULT_FIDELITY, "template")
+
+    def test_explicit_modes(self):
+        self.assertEqual(tokens.fidelity_of({"fidelity": "brand"}), "brand")
+        self.assertEqual(tokens.fidelity_of({"fidelity": "template"}), "template")
+
+    def test_bad_value_raises_naming_it(self):
+        with self.assertRaises(ValueError) as ctx:
+            tokens.fidelity_of({"fidelity": "faithful"})
+        self.assertIn("faithful", str(ctx.exception))
+        self.assertIn("fidelity", str(ctx.exception))
+
+    def test_none_brand_uses_default(self):
+        self.assertEqual(tokens.fidelity_of(None), tokens.DEFAULT_FIDELITY)
+
+
+class TestPackTypeScale(unittest.TestCase):
+    """pack_type_scale: the register-keyed pack ladder (REQ-003)."""
+
+    FIVE_STEPS = ("display", "title", "h1", "body", "caption")
+
+    def test_presented_ladder(self):
+        ts = tokens.pack_type_scale("presented live")
+        self.assertEqual(
+            ts, {"display": 96.0, "title": 60.0, "h1": 40.0,
+                 "body": 24.0, "caption": 16.0})
+
+    def test_read_ladder(self):
+        ts = tokens.pack_type_scale("read without a narrator")
+        self.assertEqual(
+            ts, {"display": 72.0, "title": 48.0, "h1": 32.0,
+                 "body": 18.0, "caption": 12.0})
+
+    def test_ladders_are_monotonic_five_steps(self):
+        for register in ("presented", "read"):
+            ts = tokens.pack_type_scale(register)
+            values = [ts[k] for k in self.FIVE_STEPS]
+            self.assertEqual(values, sorted(values, reverse=True), register)
+
+    def test_default_and_ambiguous_registers_design_for_the_room(self):
+        presented = tokens.pack_type_scale("presented")
+        for register in (None, "", "both", "presented live and read after",
+                         "a live read-through"):
+            self.assertEqual(tokens.pack_type_scale(register), presented,
+                             repr(register))
+
+    def test_register_is_case_insensitive(self):
+        self.assertEqual(tokens.pack_type_scale("Read"),
+                         tokens.pack_type_scale("read"))
+
+    def test_returns_a_copy(self):
+        ts = tokens.pack_type_scale("presented")
+        ts["body"] = 1.0
+        self.assertEqual(tokens.pack_type_scale("presented")["body"], 24.0)
+
+
+class TestPackGrid(unittest.TestCase):
+    """pack_grid: the pack's template-independent grid (REQ-003)."""
+
+    def test_matches_generic_fractions(self):
+        g = tokens.pack_grid(9144000, 6858000)
+        self.assertEqual(g, tokens.grid_from_rects([], 9144000, 6858000))
+
+    def test_default_dims_are_16_9(self):
+        g = tokens.pack_grid()
+        self.assertEqual(g, tokens.grid_from_rects([], 12192000, 6858000))
+
+
+class TestResolveTokensBrandFidelity(unittest.TestCase):
+    """resolve_tokens in brand fidelity: pack defaults, template = identity only."""
+
+    BRAND = {
+        "fidelity": "brand",
+        "colours": {"ink": "#111111", "paper": "#FFFFFF",
+                    "accent": "#0055FF", "muted": "#888888"},
+    }
+
+    def test_type_scale_is_pack_not_master(self):
+        # The fixture master would derive display 62.0 in template fidelity;
+        # brand fidelity must ignore it and use the pack ladder.
+        prs = Presentation(TEMPLATE)
+        t = tokens.resolve_tokens(dict(self.BRAND), prs)
+        self.assertEqual(t["type_scale"]["display"], 96.0)
+        self.assertEqual(t["type_scale"]["title"], 60.0)
+
+    def test_grid_is_pack_not_template(self):
+        prs = Presentation(TEMPLATE)
+        t = tokens.resolve_tokens(dict(self.BRAND), prs)
+        self.assertEqual(t["grid"],
+                         tokens.pack_grid(prs.slide_width, prs.slide_height))
+        # Not the template-measured margin_top (274638 on this fixture; the
+        # pack's is 8% of slide height). margin_x coincides by construction —
+        # Office's default 0.5" equals the pack's 5% on a 10" slide.
+        self.assertNotEqual(t["grid"]["margin_top"], 274638)
+
+    def test_no_template_needed(self):
+        t = tokens.resolve_tokens(dict(self.BRAND), None)
+        self.assertEqual(t["grid"], tokens.pack_grid())
+        self.assertEqual(t["type_scale"]["body"], 24.0)
+        self.assertEqual(t["colour_roles"]["accent"], "#0055FF")
+
+    def test_register_keys_the_scale(self):
+        t = tokens.resolve_tokens(dict(self.BRAND), None,
+                                  register="read without a narrator")
+        self.assertEqual(t["type_scale"]["body"], 18.0)
+
+    def test_explicit_override_wins(self):
+        brand = {**self.BRAND,
+                 "tokens": {"type_scale": {"display": 80.0}}}
+        t = tokens.resolve_tokens(brand, None)
+        self.assertEqual(t["type_scale"]["display"], 80.0)
+        self.assertEqual(t["type_scale"]["body"], 24.0)  # rest still pack
+
+    def test_four_step_override_keeps_ladder_coherent(self):
+        # A pre-v0.17 profile's full four-step override lacks 'title'. Merge
+        # semantics are per-key, so the pack's title survives when it still
+        # sits strictly inside the override's ladder (62/60/44 — crammed but
+        # ordered, and the user's override is respected)...
+        brand = {**self.BRAND,
+                 "tokens": {"type_scale": {
+                     "display": 62.0, "h1": 44.0, "body": 20.0,
+                     "caption": 15.0}}}
+        ts = tokens.resolve_tokens(brand, None)["type_scale"]
+        self.assertTrue(ts["h1"] < ts["title"] < ts["display"])
+
+    def test_inverting_override_rederives_title(self):
+        # ...but an override that strands the pack title outside its ladder
+        # (display 50 < pack title 60) triggers re-derivation: the geometric
+        # mean of display and h1, strictly between them by construction.
+        brand = {**self.BRAND,
+                 "tokens": {"type_scale": {
+                     "display": 50.0, "h1": 30.0, "body": 18.0,
+                     "caption": 12.0}}}
+        ts = tokens.resolve_tokens(brand, None)["type_scale"]
+        self.assertEqual(ts["title"], float(round((50.0 * 30.0) ** 0.5)))
+        self.assertTrue(ts["h1"] < ts["title"] < ts["display"])
+
+    def test_full_five_step_override_untouched(self):
+        brand = {**self.BRAND,
+                 "tokens": {"type_scale": {
+                     "display": 90.0, "title": 55.0, "h1": 38.0,
+                     "body": 22.0, "caption": 14.0}}}
+        t = tokens.resolve_tokens(brand, None)
+        self.assertEqual(t["type_scale"]["title"], 55.0)
+
+    def test_template_fidelity_ignores_register(self):
+        prs = Presentation(TEMPLATE)
+        base = tokens.resolve_tokens({"colours": {}}, prs)
+        with_register = tokens.resolve_tokens({"colours": {}}, prs,
+                                              register="read")
+        self.assertEqual(base, with_register)
+
+
 if __name__ == "__main__":
     unittest.main()

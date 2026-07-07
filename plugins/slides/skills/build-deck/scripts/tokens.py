@@ -25,9 +25,22 @@ default_type_scale() -> dict
 resolve_colour_roles(colours) -> dict
     Map a name->hex dict to the four canonical colour roles.
 
-resolve_tokens(brand, prs) -> dict
-    Build a full tokens dict by merging template-derived defaults with any
-    explicit overrides in brand["tokens"].
+resolve_tokens(brand, prs, register=None) -> dict
+    Build a full tokens dict by merging per-fidelity defaults with any
+    explicit overrides in brand["tokens"]. In "template" fidelity the
+    defaults are template-derived (grid from the mapped layouts, type scale
+    from the master); in "brand" fidelity they are the pack's own —
+    pack_grid and the register-keyed pack_type_scale — and the template
+    contributes identity only (colours, fonts).
+
+fidelity_of(brand) -> str
+    The brand profile's fidelity mode: "brand" or "template".
+
+pack_type_scale(register=None) -> dict
+    The pack's register-keyed type scale (identity-not-layout-plan REQ-003).
+
+pack_grid(slide_w, slide_h) -> dict
+    The pack's own grid for a slide size — independent of any template.
 """
 
 import os
@@ -35,6 +48,35 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pptxlib import CONTENT_PLACEHOLDER_TYPES  # noqa: E402
+
+# Fidelity: which defaults resolve_tokens derives. "template" preserves the
+# pre-v0.17 model (template-derived grid and type scale); "brand" uses the
+# pack's own design system and treats the template as an identity source only.
+# NOTE: the code default flips to "brand" in wave 3 of identity-not-layout-plan,
+# together with the drawn-role renderer — until then absent-key behaviour is
+# unchanged so the tree stays green between waves.
+FIDELITY_MODES = ("brand", "template")
+DEFAULT_FIDELITY = "template"
+
+# Default 16:9 slide size in EMU, used by pack_grid when no presentation is
+# available (brand fidelity needs no template file).
+_DEFAULT_SLIDE_W = 12192000
+_DEFAULT_SLIDE_H = 6858000
+
+
+def fidelity_of(brand):
+    """The brand profile's fidelity mode. Raises ValueError on a bad value.
+
+    load_brand validates first and raises SpecError with the same wording, so
+    render-path users see a named spec error; this guard covers direct callers.
+    """
+    mode = (brand or {}).get("fidelity") or DEFAULT_FIDELITY
+    if mode not in FIDELITY_MODES:
+        raise ValueError(
+            f"brand profile key 'fidelity' must be one of {FIDELITY_MODES}, "
+            f"got {mode!r}"
+        )
+    return mode
 
 
 # ---------------------------------------------------------------------------
@@ -198,6 +240,63 @@ def default_shape():
     return {"corner": "rounded", "hairline_pt": 1.0}
 
 
+# The pack's own type scale, keyed by register (identity-not-layout-plan
+# REQ-003 / D-201). Evidence base: design-research.md — hierarchy is size,
+# ~4:1 display:body, floors sized to the furthest viewer (projected body
+# rarely below ~24pt; read-on-screen decks may go to ~18pt). Five steps: the
+# freehand study (freehand-study.md, finding 3) showed the model's own
+# failure mode is micro-type, so the floors are the load-bearing values.
+# D-201: these are advisory bands tuned at verify time; keep them as the one
+# constant table so tuning is a one-line change.
+PACK_TYPE_SCALES = {
+    "presented": {
+        "display": 96.0,
+        "title": 60.0,
+        "h1": 40.0,
+        "body": 24.0,
+        "caption": 16.0,
+    },
+    "read": {
+        "display": 72.0,
+        "title": 48.0,
+        "h1": 32.0,
+        "body": 18.0,
+        "caption": 12.0,
+    },
+}
+
+
+def pack_type_scale(register=None):
+    """The pack's register-keyed type scale (a copy — safe to mutate).
+
+    `register` is the deck spec's frontmatter value, free prose ("presented
+    live", "read without a narrator", "both"). Only a register that is
+    clearly read-only selects the smaller "read" ladder; "both" and anything
+    ambiguous design for the room ("presented"), the safer floor.
+    """
+    text = (register or "").strip().lower()
+    read_only = (
+        "read" in text
+        and "presented" not in text
+        and "live" not in text
+        and "both" not in text
+    )
+    key = "read" if read_only else "presented"
+    return dict(PACK_TYPE_SCALES[key])
+
+
+def pack_grid(slide_w=None, slide_h=None):
+    """The pack's own grid for a slide size — independent of any template.
+
+    The same proportional constants grid_from_rects uses when a template
+    yields no geometry, promoted to the brand-fidelity default (REQ-003:
+    the pack owns the grid; the template is an identity source only).
+    """
+    return grid_from_rects(
+        [], slide_w or _DEFAULT_SLIDE_W, slide_h or _DEFAULT_SLIDE_H
+    )
+
+
 def _derive_scale(title, body):
     """Derive a 4-step scale from a master's title/body sizes, or None.
 
@@ -346,38 +445,85 @@ def resolve_colour_roles(colours):
 # ---------------------------------------------------------------------------
 
 
-def resolve_tokens(brand, prs):
+def resolve_tokens(brand, prs, register=None):
     """Build a full tokens dict by deriving defaults and merging explicit values.
 
-    Derived values come from the template (grid) and generic constants
-    (type_scale, colour_roles). Explicit values in brand['tokens'] win per
-    sub-dict and per key.
+    The defaults depend on the brand's fidelity mode (fidelity_of):
+
+    - "template": grid measured from the template's mapped layouts and type
+      scale read from its master — the pre-v0.17 model, preserved
+      byte-identically (identity-not-layout-plan D-204).
+    - "brand": the pack's own design system — pack_grid for the slide size
+      and the register-keyed pack_type_scale. The template contributes
+      identity only (colours resolve to roles the same way in both modes).
+
+    Explicit values in brand['tokens'] win per sub-dict and per key in both
+    modes. In brand fidelity a type_scale override that predates the 'title'
+    step (a four-step scale) gets one derived as round(display * 0.62), so
+    existing profiles keep working (REQ-003).
 
     Parameters
     ----------
     brand : dict
-        As read from brand.json. May contain 'colours' and 'tokens' keys.
-    prs : pptx.Presentation
-        The loaded template.
+        As read from brand.json. May contain 'colours', 'tokens', and
+        'fidelity' keys.
+    prs : pptx.Presentation or None
+        The loaded template. May be None in brand fidelity, which needs no
+        template; template fidelity requires it.
+    register : str, optional
+        The deck spec's frontmatter register. Only consulted in brand
+        fidelity (a template-fidelity deck's sizes come from the template).
 
     Returns
     -------
-    dict with sub-dicts: grid, type_scale, colour_roles.
+    dict with sub-dicts: grid, type_scale, colour_roles, shape.
     """
-    layout_map = brand.get("layout_map", {}) or {}
-    layout_indices = [v for v in layout_map.values() if isinstance(v, int)]
+    mode = fidelity_of(brand)
 
-    derived = {
-        "grid": derive_grid(prs, layout_indices),
-        "type_scale": type_scale_from_master(prs) or default_type_scale(),
-        "colour_roles": resolve_colour_roles(brand.get("colours", {}) or {}),
-        "shape": default_shape(),
-    }
+    if mode == "template":
+        layout_map = brand.get("layout_map", {}) or {}
+        layout_indices = [v for v in layout_map.values() if isinstance(v, int)]
+        derived = {
+            "grid": derive_grid(prs, layout_indices),
+            "type_scale": type_scale_from_master(prs) or default_type_scale(),
+            "colour_roles": resolve_colour_roles(brand.get("colours", {}) or {}),
+            "shape": default_shape(),
+        }
+    else:
+        slide_w = prs.slide_width if prs is not None else None
+        slide_h = prs.slide_height if prs is not None else None
+        derived = {
+            "grid": pack_grid(slide_w, slide_h),
+            "type_scale": pack_type_scale(register),
+            "colour_roles": resolve_colour_roles(brand.get("colours", {}) or {}),
+            "shape": default_shape(),
+        }
 
     explicit = brand.get("tokens", {}) or {}
 
     result = {}
     for sub in set(derived) | set(explicit):
         result[sub] = {**derived.get(sub, {}), **explicit.get(sub, {})}
+
+    if mode == "brand":
+        scale = result.get("type_scale", {})
+        display = scale.get("display")
+        h1 = scale.get("h1")
+        title = scale.get("title")
+        # roles.py needs a coherent 'title' step strictly between display and
+        # h1. A pre-v0.17 four-step override lacks one, and a per-key merge
+        # can leave the pack's own title out of position against an
+        # override's ladder — re-derive either way. The geometric mean is
+        # guaranteed to sit strictly between display and h1; the 0.62 factor
+        # covers a scale with no usable h1.
+        if display:
+            out_of_position = title is None or not (
+                isinstance(h1, (int, float)) and h1 < title < display
+            )
+            if out_of_position:
+                if isinstance(h1, (int, float)) and 0 < h1 < display:
+                    scale["title"] = float(round((display * h1) ** 0.5))
+                else:
+                    scale["title"] = float(round(display * 0.62))
 
     return result
