@@ -32,8 +32,11 @@ RENDER_PY = os.path.join(SCRIPTS, "render.py")
 MARGIN_X = 457200
 
 # A brand.json with tokens left implicit (derived) and composed mapped to the
-# statement layout (single title, index 5).
+# statement layout (single title, index 5). Pinned to template fidelity: the
+# margin assertions below depend on template-derived grid tokens, so they must
+# not drift when tokens.DEFAULT_FIDELITY flips to "brand" (D-307).
 BRAND = {
+    "fidelity": "template",
     "template": TEMPLATE,
     "fonts": {"heading": "Calibri", "body": "Calibri"},
     "colours": {"accent": "#4F81BD", "accent2": "#C0504D",
@@ -981,3 +984,56 @@ class ComposedChartFontTest(unittest.TestCase):
             "composed image chart must receive the registered brand font, "
             "not None")
         self.assertEqual(font_family, "DejaVu Sans")
+
+
+class BrandComposedCanvasTest(unittest.TestCase):
+    """Brand-fidelity composed canvas (identity-not-layout D-303/D-308,
+    T-302): a composed slide draws on the clean paper canvas — zero
+    placeholders, a slide-level paper background — and carries the stamps
+    the revise round trip reads back: the role stamp on the slide, a block
+    stamp per drawn block element, and a field stamp for the drawn Title."""
+
+    BRAND_IDENTITY = {
+        "fidelity": "brand",
+        "fonts": {"heading": "Calibri", "body": "Calibri"},
+        "colours": {"ink": "#1A1A1A", "paper": "#FFFFFF",
+                    "accent": "#0B5FFF", "muted": "#6B7280"},
+    }
+
+    @classmethod
+    def setUpClass(cls):
+        spec = (
+            "---\ndeck: d\naudience: a\n---\n\n## Slide 1\nlayout: composed\n"
+            "Title: What moved this quarter\n"
+            "Block: stat-row\n56 | Days to close\n4% | Win rate\n"
+        )
+        cls.proc, cls.out = _run(
+            spec, "brand-canvas.pptx", brand=cls.BRAND_IDENTITY)
+
+    def _slide(self):
+        self.assertEqual(
+            self.proc.returncode, 0,
+            f"render failed: {self.proc.stderr}\n{self.proc.stdout}")
+        return Presentation(self.out).slides[0]
+
+    def test_zero_placeholders(self):
+        self.assertEqual(len(self._slide().placeholders), 0)
+
+    def test_paper_background_painted(self):
+        self.assertIn("<p:bg", self._slide()._element.xml)
+
+    def test_composed_role_stamp(self):
+        self.assertEqual(self._slide().name, "slides-role:composed")
+
+    def test_block_elements_carry_block_stamp(self):
+        stamped = [s for s in self._slide().shapes
+                   if (s.name or "").startswith("slides-block:stat-row")]
+        self.assertTrue(
+            stamped, "no shape named 'slides-block:stat-row*' drawn")
+
+    def test_title_is_a_drawn_field_stamped_shape(self):
+        titles = [s for s in self._slide().shapes
+                  if s.name == "slides-field:Title"]
+        self.assertEqual(len(titles), 1)
+        self.assertEqual(
+            titles[0].text_frame.text, "What moved this quarter")

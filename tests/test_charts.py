@@ -21,7 +21,10 @@ import charts  # noqa: E402
 import render  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402 (backend set to Agg by charts import above)
 
+# Pinned to template fidelity so the render-path cases keep exercising the
+# placeholder-fill world when tokens.DEFAULT_FIDELITY flips to "brand" (D-307).
 BRAND = {
+    "fidelity": "template",
     "template": TEMPLATE,
     "fonts": {"heading": "Calibri", "body": "Calibri"},
     "colours": {"accent": "#4F81BD", "accent2": "#C0504D",

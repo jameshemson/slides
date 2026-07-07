@@ -65,7 +65,11 @@ LAYOUT_MAP = {
     "quote": 2,
     "composed": 5,
 }
+# Pinned to template fidelity: the round-trip fixtures are placeholder-filled
+# decks, so they must not drift when tokens.DEFAULT_FIDELITY flips to "brand"
+# (D-307).
 BRAND = {
+    "fidelity": "template",
     "template": TEMPLATE,
     "fonts": {"heading": "Calibri", "body": "Calibri"},
     "colours": {

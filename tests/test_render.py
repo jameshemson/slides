@@ -82,6 +82,7 @@ class RenderTest(unittest.TestCase):
         with open(brand_path, "w", encoding="utf-8") as fh:
             json.dump(
                 {
+                    "fidelity": "template",
                     "template": TEMPLATE,
                     "fonts": {"heading": "Calibri", "body": "Calibri"},
                     "colours": {
@@ -208,6 +209,7 @@ class RenderErrorTest(unittest.TestCase):
         """Write a spec (+ brand) and run render.py. Returns CompletedProcess."""
         if brand is None:
             brand = {
+                "fidelity": "template",
                 "template": TEMPLATE,
                 "fonts": {"heading": "Calibri", "body": "Calibri"},
                 "colours": {"ink": "#1A1A1A"},
@@ -262,6 +264,7 @@ class RenderErrorTest(unittest.TestCase):
         # two-column carries 3 fields; point it at the 1-placeholder
         # statement layout so the fill overflows.
         brand = {
+            "fidelity": "template",
             "template": TEMPLATE,
             "fonts": {"heading": "Calibri", "body": "Calibri"},
             "colours": {"ink": "#1A1A1A"},
@@ -274,6 +277,7 @@ class RenderErrorTest(unittest.TestCase):
 
     def test_missing_brand_key_is_named(self):
         brand = {
+            "fidelity": "template",
             "template": TEMPLATE,
             "fonts": {"heading": "Calibri", "body": "Calibri"},
             "colours": {"ink": "#1A1A1A"},
@@ -287,6 +291,7 @@ class RenderErrorTest(unittest.TestCase):
 
     def _chart_brand(self, colours=None):
         return {
+            "fidelity": "template",
             "template": TEMPLATE,
             "fonts": {"heading": "Helvetica Neue", "body": "Helvetica Neue"},
             "colours": CHART_COLOURS if colours is None else colours,
@@ -434,6 +439,7 @@ class ChartRenderTest(unittest.TestCase):
                 font_files=None):
         if brand is None:
             brand = {
+                "fidelity": "template",
                 "template": TEMPLATE,
                 "fonts": {"heading": "Helvetica Neue", "body": "Helvetica Neue"},
                 "colours": CHART_COLOURS,
@@ -1171,6 +1177,7 @@ class LineageStampTest(unittest.TestCase):
         with open(cls.brand_path, "w", encoding="utf-8") as fh:
             json.dump(
                 {
+                    "fidelity": "template",
                     "template": TEMPLATE,
                     "fonts": {"heading": "Calibri", "body": "Calibri"},
                     "colours": {
@@ -1311,6 +1318,355 @@ class LoadBrandFidelityTest(unittest.TestCase):
             render.load_brand(self._write(
                 {"fidelity": "faithful", **self.IDENTITY}))
         self.assertIn("faithful", str(ctx.exception))
+
+
+# --- brand fidelity (identity-not-layout, T-302) -----------------------------
+#
+# The identity-only brand profile the brand-fidelity suites below share:
+# deliberately NO `template` and NO `layout_map` — REQ-002/REQ-006's
+# acceptance shape (identity is all brand fidelity needs). The hostile
+# fixture is generate-hostile-template.py's output: body == title (28pt) in
+# the master, a decorative accent bar on layouts 0-3, cramped placeholders —
+# the template-quality faults brand fidelity must be immune to (REQ-012).
+BRAND_IDENTITY = {
+    "fidelity": "brand",
+    "fonts": {"heading": "Calibri", "body": "Calibri"},
+    "colours": {
+        "ink": "#1A1A1A",
+        "paper": "#FFFFFF",
+        "accent": "#0B5FFF",
+        "muted": "#6B7280",
+    },
+}
+HOSTILE_TEMPLATE = os.path.join(FIXTURES, "hostile-template.pptx")
+# The pack "presented" ladder steps the assertions below pin (tokens.py
+# PACK_TYPE_SCALES; sample-deck.md's register is "presented").
+PACK_H1_PT = 40.0
+PACK_BODY_PT = 24.0
+
+
+class BrandModeRenderTest(unittest.TestCase):
+    """The brand-fidelity render path (identity-not-layout REQ-004/005/007):
+    the sample deck drawn on a clean 16:9 paper canvas from identity alone —
+    no template opened, every role drawn, stamped, and hierarchy-safe."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.mkdtemp(prefix="slides-brand-render-test-")
+        cls.out_path = os.path.join(cls._tmp, "out.pptx")
+        brand_path = os.path.join(cls._tmp, "brand.json")
+        with open(brand_path, "w", encoding="utf-8") as fh:
+            json.dump(BRAND_IDENTITY, fh)
+        cls.result = subprocess.run(
+            [
+                sys.executable,
+                RENDER_PY,
+                "--spec", DECK_SPEC,
+                "--brand", brand_path,
+                "--out", cls.out_path,
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls._tmp, ignore_errors=True)
+
+    def _presentation(self):
+        self.assertTrue(
+            os.path.exists(self.out_path),
+            f"render.py produced no .pptx.\nstdout: {self.result.stdout}\n"
+            f"stderr: {self.result.stderr}",
+        )
+        return Presentation(self.out_path)
+
+    def test_render_exits_zero_and_writes_file(self):
+        self.assertEqual(
+            self.result.returncode,
+            0,
+            f"render.py exited {self.result.returncode}.\n"
+            f"stdout: {self.result.stdout}\nstderr: {self.result.stderr}",
+        )
+        self.assertTrue(os.path.exists(self.out_path))
+
+    def test_every_slide_has_zero_placeholders(self):
+        # Brand fidelity strips EVERY inherited placeholder — furniture
+        # included; everything shown is drawn.
+        prs = self._presentation()
+        for i, slide in enumerate(prs.slides):
+            with self.subTest(slide=i + 1):
+                self.assertEqual(len(slide.placeholders), 0)
+
+    def test_every_slide_paints_paper_background(self):
+        # REQ-005: a slide-level <p:bg> solid fill in the paper colour.
+        prs = self._presentation()
+        for i, slide in enumerate(prs.slides):
+            xml = slide._element.xml
+            with self.subTest(slide=i + 1):
+                self.assertIn("<p:bg", xml)
+                self.assertIn("FFFFFF", xml)
+
+    def test_slides_carry_role_stamps(self):
+        # The revise round trip reads roles back from slide.name.
+        prs = self._presentation()
+        for i, (role, _) in enumerate(EXPECTED_SLIDES):
+            with self.subTest(slide=i + 1, role=role):
+                self.assertEqual(prs.slides[i].name, f"slides-role:{role}")
+
+    def test_every_slide_carries_field_stamps(self):
+        prs = self._presentation()
+        for i, slide in enumerate(prs.slides):
+            stamped = [
+                s for s in slide.shapes
+                if (s.name or "").startswith("slides-field:")
+            ]
+            with self.subTest(slide=i + 1):
+                self.assertTrue(
+                    stamped,
+                    f"slide {i + 1} has no shape named 'slides-field:*'",
+                )
+
+    def test_title_content_hierarchy_reads(self):
+        # Slide 4 is the title-content slide: every Body run must sit
+        # strictly under the Title run on the pack ladder (h1 40 / body 24).
+        prs = self._presentation()
+        slide = prs.slides[3]
+        titles = [s for s in slide.shapes if s.name == "slides-field:Title"]
+        bodies = [s for s in slide.shapes if s.name == "slides-field:Body"]
+        self.assertEqual(len(titles), 1)
+        self.assertTrue(bodies, "no slides-field:Body shapes drawn")
+        title_sizes = {
+            run.font.size.pt
+            for para in titles[0].text_frame.paragraphs
+            for run in para.runs
+        }
+        self.assertEqual(title_sizes, {PACK_H1_PT})
+        for shape in bodies:
+            for para in shape.text_frame.paragraphs:
+                for run in para.runs:
+                    self.assertEqual(run.font.size.pt, PACK_BODY_PT)
+                    self.assertLess(run.font.size.pt, PACK_H1_PT)
+
+    def test_summary_names_brand_fidelity(self):
+        self.assertIn("fidelity: brand", self.result.stdout)
+
+    def test_canvas_is_16_9(self):
+        # The in-process base deck is widescreen regardless of what
+        # python-pptx's bundled default package ships (D-305).
+        prs = self._presentation()
+        self.assertEqual(prs.slide_width, 12192000)
+
+    def test_theme_fonts_carry_brand_identity(self):
+        # Identity from brand.json reaches the theme: the deck's major and
+        # minor Latin typefaces are the brand fonts, read back through the
+        # same theme-XML path pptxlib.apply_theme writes.
+        import pptxlib  # noqa: PLC0415 — scripts dir is on sys.path above
+
+        prs = self._presentation()
+        fonts = pptxlib.read_theme(prs).get("fonts", {})
+        self.assertEqual(fonts.get("heading"), "Calibri")
+        self.assertEqual(fonts.get("body"), "Calibri")
+
+    def test_visual_field_is_recorded_in_speaker_notes(self):
+        # Slide 5 carries a Visual: field; the brand path records it in the
+        # notes exactly as template fill does.
+        prs = self._presentation()
+        notes = prs.slides[4].notes_slide.notes_text_frame.text
+        self.assertIn("VISUAL TO ADD:", notes)
+        self.assertIn("two-panel diagram", notes)
+
+
+class TemplatelessBrandTest(unittest.TestCase):
+    """REQ-006 acceptance (review-2 finding 3): an identity-only profile —
+    no template, no layout_map — renders end to end in brand fidelity, while
+    the SAME profile in template fidelity exits 1 naming the missing
+    'template' key. The two modes genuinely differ."""
+
+    MINIMAL_SPEC = ("---\ndeck: d\naudience: a\n---\n\n"
+                    "## Slide 1\nlayout: section\nTitle: One\n")
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp(prefix="slides-templateless-test-")
+        self.addCleanup(shutil.rmtree, self._tmp, ignore_errors=True)
+
+    def _render(self, brand, name):
+        spec_path = os.path.join(self._tmp, f"{name}.deck.md")
+        brand_path = os.path.join(self._tmp, f"{name}.brand.json")
+        out_path = os.path.join(self._tmp, f"{name}.pptx")
+        with open(spec_path, "w", encoding="utf-8") as fh:
+            fh.write(self.MINIMAL_SPEC)
+        with open(brand_path, "w", encoding="utf-8") as fh:
+            json.dump(brand, fh)
+        result = subprocess.run(
+            [sys.executable, RENDER_PY, "--spec", spec_path,
+             "--brand", brand_path, "--out", out_path],
+            capture_output=True, text=True,
+        )
+        return result, out_path
+
+    def test_identity_only_profile_renders_end_to_end(self):
+        result, out_path = self._render(dict(BRAND_IDENTITY), "brandok")
+        self.assertEqual(
+            result.returncode, 0,
+            f"identity-only brand-fidelity render failed.\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}",
+        )
+        self.assertTrue(os.path.exists(out_path))
+        # Reopens as a valid one-slide deck.
+        self.assertEqual(len(Presentation(out_path).slides), 1)
+
+    def test_same_profile_in_template_fidelity_fails_naming_template(self):
+        brand = dict(BRAND_IDENTITY)
+        brand["fidelity"] = "template"
+        result, out_path = self._render(brand, "templatemode")
+        self.assertEqual(
+            result.returncode, 1,
+            f"expected exit 1; got {result.returncode}\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}",
+        )
+        self.assertIn("template", (result.stderr + result.stdout).lower())
+        self.assertFalse(
+            os.path.exists(out_path),
+            "render.py must not emit a .pptx when the template is missing",
+        )
+
+
+class TwoMassiveBulletsTest(unittest.TestCase):
+    """THE identity-not-layout regression: an assertion title over two long
+    body bullets. Brand fidelity draws the pack ladder — every body run
+    strictly smaller than the title run. Template fidelity against the
+    hostile fixture reproduces its body == title flatness verbatim and only
+    warns (the REQ-008 tripwire); against the sample fixture the tripwire
+    stays silent."""
+
+    BULLETS = [
+        "The meeting spends one full hour of six people's attention every "
+        "single week whether the agenda is heavy or nearly empty, and the "
+        "slowest item always sets the pace for everyone in the room",
+        "A written update takes each person about ten minutes at a moment "
+        "they choose, leaves a searchable record for the whole team, and "
+        "surfaces blockers in a thread that anyone can answer",
+    ]
+    SPEC = (
+        "---\ndeck: d\naudience: a\n---\n\n"
+        "## Slide 1\nlayout: title-content\n"
+        "Title: Quarterly business review\n"
+        "Body:\n"
+        + "".join(f"- {b}\n" for b in BULLETS)
+    )
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp(prefix="slides-massive-bullets-test-")
+        self.addCleanup(shutil.rmtree, self._tmp, ignore_errors=True)
+
+    def _render(self, brand, name):
+        spec_path = os.path.join(self._tmp, f"{name}.deck.md")
+        brand_path = os.path.join(self._tmp, f"{name}.brand.json")
+        out_path = os.path.join(self._tmp, f"{name}.pptx")
+        with open(spec_path, "w", encoding="utf-8") as fh:
+            fh.write(self.SPEC)
+        with open(brand_path, "w", encoding="utf-8") as fh:
+            json.dump(brand, fh)
+        result = subprocess.run(
+            [sys.executable, RENDER_PY, "--spec", spec_path,
+             "--brand", brand_path, "--out", out_path],
+            capture_output=True, text=True,
+        )
+        return result, out_path
+
+    def _template_brand(self, template):
+        return {
+            "fidelity": "template",
+            "template": template,
+            "fonts": {"heading": "Calibri", "body": "Calibri"},
+            "colours": dict(BRAND_IDENTITY["colours"]),
+            "layout_map": dict(LAYOUT_MAP),
+        }
+
+    def test_brand_mode_body_sits_strictly_under_the_title(self):
+        result, out_path = self._render(dict(BRAND_IDENTITY), "brand")
+        self.assertEqual(
+            result.returncode, 0,
+            f"brand-fidelity render failed.\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}",
+        )
+        slide = Presentation(out_path).slides[0]
+        titles = [s for s in slide.shapes if s.name == "slides-field:Title"]
+        bodies = [s for s in slide.shapes if s.name == "slides-field:Body"]
+        self.assertEqual(len(titles), 1, "expected one slides-field:Title")
+        self.assertEqual(len(bodies), 2, "expected one shape per bullet")
+        title_sizes = {
+            run.font.size.pt
+            for para in titles[0].text_frame.paragraphs
+            for run in para.runs
+        }
+        self.assertEqual(title_sizes, {PACK_H1_PT})
+        for shape in bodies:
+            for para in shape.text_frame.paragraphs:
+                for run in para.runs:
+                    self.assertEqual(run.font.size.pt, PACK_BODY_PT)
+                    self.assertLess(
+                        run.font.size.pt, PACK_H1_PT,
+                        "a body run is not strictly smaller than the title",
+                    )
+
+    def test_hostile_template_mode_renders_flat_and_trips_the_wire(self):
+        # The old world: placeholder fill copies the hostile master's
+        # body == title (28pt each) flatness verbatim; the render still
+        # exits 0, and the only defence is the non-blocking summary note.
+        result, out_path = self._render(
+            self._template_brand(HOSTILE_TEMPLATE), "hostile")
+        self.assertEqual(
+            result.returncode, 0,
+            f"hostile template-fidelity render failed.\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}",
+        )
+        self.assertTrue(os.path.exists(out_path))
+        self.assertIn("hierarchy will not read", result.stdout)
+
+    def test_sample_template_mode_stays_tripwire_silent(self):
+        # A healthy master (title 44 / body 32) must not trip the wire.
+        result, _ = self._render(self._template_brand(TEMPLATE), "sample")
+        self.assertEqual(
+            result.returncode, 0,
+            f"sample template-fidelity render failed.\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}",
+        )
+        self.assertNotIn("hierarchy will not read", result.stdout)
+
+
+class BrandStepDownNoteTest(unittest.TestCase):
+    """D-310: brand-fidelity lead text that cannot land at its first ladder
+    step draws one step down AND the run summary owns up to it."""
+
+    def test_long_statement_notes_the_step_down(self):
+        tmp = tempfile.mkdtemp(prefix="slides-stepdown-test-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        statement = (
+            "The weekly status meeting quietly costs this team six full hours."
+        )
+        spec = ("---\ndeck: d\naudience: a\n---\n\n"
+                f"## Slide 1\nlayout: statement\nStatement: {statement}\n")
+        spec_path = os.path.join(tmp, "deck.md")
+        brand_path = os.path.join(tmp, "brand.json")
+        out_path = os.path.join(tmp, "out.pptx")
+        with open(spec_path, "w", encoding="utf-8") as fh:
+            fh.write(spec)
+        with open(brand_path, "w", encoding="utf-8") as fh:
+            json.dump(BRAND_IDENTITY, fh)
+        result = subprocess.run(
+            [sys.executable, RENDER_PY, "--spec", spec_path,
+             "--brand", brand_path, "--out", out_path],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(
+            result.returncode, 0,
+            f"render failed.\nstdout: {result.stdout}\n"
+            f"stderr: {result.stderr}",
+        )
+        self.assertIn(
+            "statement text stepped down to fit the band", result.stdout)
 
 
 class ParseFrontmatterTest(unittest.TestCase):
