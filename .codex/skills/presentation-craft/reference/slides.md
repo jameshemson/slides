@@ -2,7 +2,7 @@
 
 How the slides themselves are made, once the story and the outline are agreed. The
 skill is brand-agnostic and never imposes a look. The craft below holds for every
-brand; the user's own template supplies the skin.
+brand; the user's own identity — their colours and type — supplies the skin.
 
 ## A slide is not a document
 
@@ -74,10 +74,15 @@ The look is built from deliberate choices, held with discipline:
 
 ## The user's brand carries the look
 
-Fonts, colours, and layouts come from the user's own template, captured up front by
-the teach-slides skill and recorded in the brand profile. The craft above is
-constant across every brand. The skin is the user's. The skill never invents a look
-or overrides the template.
+The brand's *identity* — its colours, its type, its design tokens — comes from the
+user's own brand, captured up front by the teach-slides skill and recorded in the
+brand profile. In brand fidelity, the default, the layouts and geometry are the
+pack's own design system, drawn entirely from those tokens, so a slide reads as
+the brand without inheriting a template's design debt. The craft above is constant
+across every brand. The skin is the user's, and the skill never invents an
+off-brand value: every colour, size, and position resolves to a token. Template
+fidelity remains for a user whose template genuinely is good — there the
+template's own layouts carry the look and the renderer fills their placeholders.
 
 ## Build scenes, not isolated slides
 

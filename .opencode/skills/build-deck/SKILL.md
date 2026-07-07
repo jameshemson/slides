@@ -1,11 +1,11 @@
 ---
 name: build-deck
-description: Render a deck spec into an on-brand .pptx by filling the user's own template, after a slop check on the spec.
+description: Render a deck spec into an on-brand .pptx drawn from the brand's design tokens (template fidelity on request), after a slop check on the spec.
 ---
 
 ## MANDATORY PREPARATION
 
-Load the `presentation-craft` skill. Read its [SKILL.md](../presentation-craft/SKILL.md) and run its Context Gathering Protocol. If `.slides/` is absent or incomplete, set up the brand first, then resume here: offer the fast path (`scripts/init_brand.py` reads the fonts, colours, and a layout map straight from a template or an existing deck) or the fuller `teach-slides` (via the skill tool) interview.
+Load the `presentation-craft` skill. Read its [SKILL.md](../presentation-craft/SKILL.md) and run its Context Gathering Protocol. If `.slides/` is absent or incomplete, set up the brand first, then resume here: offer the fast path (`scripts/init_brand.py` reads the fonts and colours straight from a template or an existing deck and writes a brand-fidelity profile) or the fuller `teach-slides` (via the skill tool) interview.
 
 Read [deck-spec.md](../presentation-craft/reference/deck-spec.md) for the spec format and [slop.md](../presentation-craft/reference/slop.md) for the detector you run before rendering.
 
@@ -13,7 +13,7 @@ Read [deck-spec.md](../presentation-craft/reference/deck-spec.md) for the spec f
 
 *(Treat the user's message that invoked this skill as the task input.)*
 
-You render a deck spec into a real `.pptx`. The spec carries the content; the user's template in `.slides/` carries the look. For the six fixed roles the renderer fills the template's existing placeholders and adds no shape, so the output stays on-brand. The `composed` role is the one carve-out: it draws brand-locked primitives — a `stat-row`, `card-grid`, `comparison`, `process`, `timeline`, or a `freeform` arrangement, stacked or placed on the grid — from the brand's design `tokens`, and every element must pass a mechanical lint — token colour, type-scale size, within the grid margins, no overlap, under the element cap — or the render fails with a named error. Free composition, still bounded.
+You render a deck spec into a real `.pptx`. The spec carries the content; the brand profile in `.slides/` carries the look. By default (`fidelity` absent or `"brand"`) every slide — the six fixed roles included — is drawn from the brand's design `tokens` on a clean 16:9 paper canvas built in-process; the template file is never opened at render time, it is an identity source read at init. The `composed` role draws the same way — a `stat-row`, `card-grid`, `comparison`, `process`, `timeline`, or a `freeform` arrangement, stacked or placed on the grid. Every drawn element must pass a mechanical lint — token colour, type-scale size, within the grid margins, no overlap, under the element cap, rank-2 text strictly below rank-1 — or the render fails with a named error. Free composition, still bounded. `"fidelity": "template"` in `brand.json` is the opt-in carve-out: it restores the placeholder-fill mode, where the template's own layouts carry the look and the fixed roles fill their placeholders and add no shape.
 
 If the user did not name a spec, ask which `.deck.md` file to render. If no spec exists yet, point them at `narrative` (via the skill tool) to write one.
 
@@ -48,11 +48,11 @@ python3 scripts/render.py --spec <deck>.deck.md \
     --brand .slides/brand.json --out <deck>.pptx
 ```
 
-`render.py` reads the template path from `brand.json`'s `template` key. There is no `--template` argument. A relative `template` path resolves against the `brand.json` file's own directory, so the working directory does not matter.
+In template fidelity, `render.py` reads the template path from `brand.json`'s `template` key — there is no `--template` argument — and a relative path resolves against the `brand.json` file's own directory, so the working directory does not matter. In brand fidelity the template file is not opened at all; the canvas is built in-process.
 
 On success it exits 0 and prints a run summary (one line, plus a line per composition advisory). On a malformed spec or brand profile it exits 1, prints `error: ...` naming the offending slide, role, or key, and writes nothing.
 
-If the render fails, read the error. It names the fault: a slide numbered out of sequence, a role with more fields than its layout has placeholders, a missing `brand.json` key. Fix the spec or, for a layout-map fault, send the user back to `teach-slides` (via the skill tool). Then run again.
+If the render fails, read the error. It names the fault: a slide numbered out of sequence, a missing `brand.json` key, text that cannot fit its band. Fix the spec and run again. A layout-map fault (a role with more fields than its layout has placeholders) can only happen in template fidelity — for that, send the user back to `teach-slides` (via the skill tool).
 
 ## Step 4: Render-back visual check
 
@@ -88,7 +88,7 @@ Check for a backend: `python3 -c "import sys; sys.path.insert(0,'scripts'); impo
 
 ## Step 5: Report
 
-Print the render summary. It states how many slides were written, which carry a native chart, which carry a `VISUAL TO ADD` note, any matplotlib or brand-font fallback warning, and any non-blocking composition advisory notes on `composed` slides (evidence-cited "what good looks like" — see [composition.md](../presentation-craft/reference/composition.md)). Surface advisories to the user as suggestions, not errors; the deck still rendered.
+Print the render summary. It states how many slides were written, which carry a native chart, which carry a `VISUAL TO ADD` note, any matplotlib or brand-font fallback warning, and any non-blocking composition advisory notes on `composed` and drawn role slides (evidence-cited "what good looks like" — see [composition.md](../presentation-craft/reference/composition.md)), plus a note when a role's lead text stepped down the type ladder to fit. Surface advisories to the user as suggestions, not errors; the deck still rendered.
 
 A `Chart:` block is drawn natively and placed on the slide (PNGs are written to a `.charts/` folder beside the `.pptx` and embedded in it). A `Visual:` field is recorded in the slide's speaker notes, prefixed `VISUAL TO ADD:`, and is not drawn — tell the user which slides carry one and that placing it in PowerPoint is their step. If the summary reports a matplotlib fallback, tell the user that those chart slides became notes and that `pip install matplotlib` will draw them on the next run.
 

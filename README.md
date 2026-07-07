@@ -9,7 +9,7 @@ A skill pack that takes you from a vague idea to a finished, on-brand, slop-free
 | `presentation-craft` | Shared knowledge base on presentation craft. Not invoked directly — every other skill in the pack draws on it |
 | `/slides:teach-slides` | Onboards you to presentation craft: narrative, structure, design, and how to avoid slop |
 | `/slides:narrative` | Shapes a vague idea into a tight, audience-aware deck story |
-| `/slides:build-deck` | Renders an on-brand `.pptx` deck from a narrative and a template, drawing native charts from chart data in the spec |
+| `/slides:build-deck` | Renders an on-brand `.pptx` deck from a narrative and your brand profile (a template is optional), drawing native charts from chart data in the spec |
 | `/slides:slop-check` | Audits a deck for generic, AI-flavoured slop and reports fixes |
 | `/slides:revise` | Changes a rendered deck by conversation — syncs or extracts its spec, reconciles hand-edits, and re-renders through the same gates |
 
@@ -66,7 +66,7 @@ The pack moves an idea through five stages:
 
 1. **Learn** — `/slides:teach-slides` grounds you in presentation craft: how to find the through-line, structure a deck, design slides that read, and recognise slop before it ships. It also captures your brand into a `.slides/` profile the other skills read; point it at a template or an existing deck and it reads your fonts and colours straight from that file rather than asking you to type them. And if `.slides/` is missing when you run `/slides:build-deck` or `/slides:narrative`, they offer to set up your brand from a template or deck in one step, so you are never left with an off-brand deck.
 2. **Shape** — `/slides:narrative` turns a vague brief into a concrete story: the audience, the one thing they should remember, the spine of the argument, and a slide-by-slide outline.
-3. **Build** — `/slides:build-deck` renders an on-brand `.pptx` from the narrative and a template, mapping content to layouts. A slide can carry a `Chart:` block (bar, column, pie, scatter, or line); the renderer draws it on-brand with matplotlib and places it on the slide. Without matplotlib installed, a chart slide degrades to a "VISUAL TO ADD" note, so the deck still builds.
+3. **Build** — `/slides:build-deck` renders an on-brand `.pptx` from the narrative and your brand profile, drawing every slide from your brand's design tokens (or, on request, filling your own template's layouts). A slide can carry a `Chart:` block (bar, column, pie, scatter, or line); the renderer draws it on-brand with matplotlib and places it on the slide. Without matplotlib installed, a chart slide degrades to a "VISUAL TO ADD" note, so the deck still builds.
 4. **Check** — `/slides:slop-check` audits a finished deck for generic, AI-flavoured slop — hollow phrasing, filler bullets, decorative-but-empty visuals — and reports concrete fixes.
 5. **Revise** — `/slides:revise` closes the loop: point it at the rendered `.pptx`, hand-edit a title in PowerPoint or LibreOffice first if you want to see it work, and it names the edit before anything is overwritten — nothing gets clobbered without a yes. To try this yourself: render a deck, change one slide's title in PowerPoint, save, then run `/slides:revise deck.pptx` and confirm it reports the title as changed and asks whether to fold it into the spec before it re-renders.
 
