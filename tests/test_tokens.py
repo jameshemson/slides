@@ -249,6 +249,7 @@ class TestResolveTokens(unittest.TestCase):
         """Explicit tokens override derived values; unoverridden keys survive."""
         prs = Presentation(TEMPLATE)
         brand = {
+            "fidelity": "template",  # template-derived values are the point
             "colours": {"accent": "#4F81BD", "ink": "#000000", "paper": "#FFFFFF"},
             "layout_map": {"title": 0, "title-content": 1, "section": 2,
                            "two-column": 3, "statement": 5, "quote": 2},
@@ -273,7 +274,8 @@ class TestResolveTokens(unittest.TestCase):
         """With no explicit tokens, the scale is derived from the master's real
         sizes (title 44 / body 32 -> 44 / 38 / 32 / 24), monotonic."""
         prs = Presentation(TEMPLATE)
-        brand = {"colours": {"ink": "#111111", "paper": "#EEEEEE"}}
+        brand = {"fidelity": "template",  # master-derived scale is the point
+                 "colours": {"ink": "#111111", "paper": "#EEEEEE"}}
         t = tokens.resolve_tokens(brand, prs)
 
         ts = t["type_scale"]
@@ -319,10 +321,12 @@ class TestFidelity(unittest.TestCase):
     """fidelity_of: mode selection and validation (identity-not-layout REQ-001)."""
 
     def test_absent_key_uses_default(self):
-        # DEFAULT_FIDELITY is "template" until wave 3 flips it with the drawn
-        # renderer; this test pins the constant so the flip is a visible edit.
+        # THE FLIP (identity-not-layout T-404/D-301): pack design is the
+        # default; template placeholder-fill is the explicit opt-in. This
+        # pin makes any future change of the default a visible, deliberate
+        # edit.
         self.assertEqual(tokens.fidelity_of({}), tokens.DEFAULT_FIDELITY)
-        self.assertEqual(tokens.DEFAULT_FIDELITY, "template")
+        self.assertEqual(tokens.DEFAULT_FIDELITY, "brand")
 
     def test_explicit_modes(self):
         self.assertEqual(tokens.fidelity_of({"fidelity": "brand"}), "brand")
@@ -469,9 +473,10 @@ class TestResolveTokensBrandFidelity(unittest.TestCase):
 
     def test_template_fidelity_ignores_register(self):
         prs = Presentation(TEMPLATE)
-        base = tokens.resolve_tokens({"colours": {}}, prs)
-        with_register = tokens.resolve_tokens({"colours": {}}, prs,
-                                              register="read")
+        base = tokens.resolve_tokens(
+            {"fidelity": "template", "colours": {}}, prs)
+        with_register = tokens.resolve_tokens(
+            {"fidelity": "template", "colours": {}}, prs, register="read")
         self.assertEqual(base, with_register)
 
 

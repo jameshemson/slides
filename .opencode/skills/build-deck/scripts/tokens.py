@@ -49,14 +49,13 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pptxlib import CONTENT_PLACEHOLDER_TYPES  # noqa: E402
 
-# Fidelity: which defaults resolve_tokens derives. "template" preserves the
-# pre-v0.17 model (template-derived grid and type scale); "brand" uses the
-# pack's own design system and treats the template as an identity source only.
-# NOTE: the code default flips to "brand" in wave 3 of identity-not-layout-plan,
-# together with the drawn-role renderer — until then absent-key behaviour is
-# unchanged so the tree stays green between waves.
+# Fidelity: which defaults resolve_tokens derives. "brand" (the default,
+# v0.17) uses the pack's own design system — the template is an identity
+# source only; "template" preserves the pre-v0.17 model byte-identically
+# (template-derived grid and type scale, placeholder-fill rendering). One
+# key in brand.json rolls a project back: "fidelity": "template".
 FIDELITY_MODES = ("brand", "template")
-DEFAULT_FIDELITY = "template"
+DEFAULT_FIDELITY = "brand"
 
 # Default 16:9 slide size in EMU, used by pack_grid when no presentation is
 # available (brand fidelity needs no template file).
