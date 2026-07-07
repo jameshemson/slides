@@ -4,6 +4,65 @@ All notable changes to the slides skill pack are recorded here. The format
 follows [Keep a Changelog](https://keepachangelog.com/), and the pack uses
 [semantic versioning](https://semver.org/).
 
+## [0.17.0] - 2026-07-08
+
+The brand carries the look — the template never did. Real use against a
+corporate template produced decks worse than freehand: placeholder fill
+reproduced the template's design debt verbatim (body text at title size,
+no hierarchy, nothing catching it), and even composed slides inherited the
+template's type sizes, margins, and backgrounds. This release completes the
+pack's own philosophy: the template becomes an identity source, and the
+pack owns its opinion of what good looks like.
+
+### Changed — BREAKING DEFAULT
+
+- **Brand fidelity is the new default.** A `brand.json` without a
+  `fidelity` key now renders every slide — the six fixed roles included —
+  drawn from design tokens on a clean 16:9 paper canvas built in-process.
+  The template file is never opened at render time. **Rollback for any
+  project is one key: `"fidelity": "template"`**, which restores the
+  pre-0.17 placeholder-fill byte-identically. The render summary's first
+  line names the active mode either way.
+
+### Added
+
+- **Six drawn fixed roles** (`roles.py`): title (eyebrow accent tick +
+  assertion title), section (oversized muted ghost numeral), statement and
+  quote (hero text with attribution), title-content and two-column (tick +
+  h1 title, hairline-ruled body) — all through the same mechanical lint as
+  composed slides. Anatomy grounded in a three-run study of what Claude
+  draws unprompted.
+- **Pack-owned, register-keyed type scale**: presented decks get
+  display 96 / title 60 / h1 40 / body 24 / caption 16; unambiguous
+  read-only decks step down to 72/48/32/18/12. The spec's `register:`
+  frontmatter finally does design work. Lead text draws as big as fits and
+  steps down the ladder with a summary note rather than refusing.
+- **Hierarchy is now a hard lint invariant**: supporting text must sit
+  strictly below the slide's lead text or the render fails — the
+  body-at-title-size slide is structurally impossible in brand fidelity.
+- **Lossless revise round trip for pack decks**: every rendered slide and
+  field shape carries a name stamp (`slides-role:` / `slides-field:`);
+  `deck_to_spec.py` gains a Tier 0 that reads them back exactly, ahead of
+  the drawn-shape flatten. Foreign decks keep the honest best-effort tiers.
+- **Identity-first onboarding**: `init_brand.py` now writes a brand-fidelity
+  profile by default (fonts, colours, pack tokens — no layout map);
+  `--fidelity template` emits the legacy shape. `extract_brand.py` reads
+  identity only. A brand.json needs just `fonts` and `colours`.
+- **Template-mode tripwire**: template fidelity warns (non-blocking) when
+  the master's body size >= its title size — the exact silent fault that
+  motivated this release.
+- Two advisory rules for role slides (`role-body-length`,
+  `statement-terseness`); slop-check's extraction now reads drawn text.
+- A hostile-template test fixture (body == title, decorated, cramped) and a
+  two-massive-bullets regression suite pin all of the above.
+
+### Unchanged
+
+- Template fidelity is frozen, not deprecated: under `"fidelity":
+  "template"` every pre-0.17 behaviour, test, and output is preserved.
+- The spec grammar: no new fields, no migration; existing specs render in
+  either mode.
+
 ## [0.16.0] - 2026-07-03
 
 The text fits the box. Real use surfaced the one overlap the lint could not
