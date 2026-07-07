@@ -1,9 +1,12 @@
-"""Tests for init_brand.py — one-step brand.json (heuristic layout_map) from a deck.
+"""Tests for init_brand.py — one-step brand.json from a template or deck.
 
 Stdlib unittest. Runs init_brand.py as a subprocess (like test_render.py /
 test_extract_brand.py) and also unit-tests the suggest_layout_map heuristic
-directly. The end-to-end test feeds the generated brand.json to render.py and
-renders the committed sample deck. Until init_brand.py exists these FAIL.
+directly. The legacy classes pin the template-fidelity emission (explicit
+--fidelity template: heuristic layout_map, template-derived tokens);
+InitBrandDefaultTest pins the flagless default — the brand-fidelity shape
+(identity-not-layout REQ-009). Each end-to-end test feeds its generated
+brand.json to render.py and renders the committed sample deck.
 
     python3 -m unittest tests.test_init_brand
     python3 -m unittest discover tests
@@ -32,13 +35,14 @@ CANONICAL_MAP = {
 
 
 class InitBrandTest(unittest.TestCase):
-    """Happy path against the fixture, plus the end-to-end render."""
+    """Template-fidelity happy path against the fixture, plus the end-to-end
+    render. Pins the legacy shape under an explicit --fidelity template."""
 
     @classmethod
     def setUpClass(cls):
         cls._tmp = tempfile.mkdtemp(prefix="slides-initbrand-")
         cls.result = subprocess.run(
-            [sys.executable, INIT_BRAND_PY, TEMPLATE],
+            [sys.executable, INIT_BRAND_PY, TEMPLATE, "--fidelity", "template"],
             capture_output=True, text=True,
         )
 
@@ -55,9 +59,14 @@ class InitBrandTest(unittest.TestCase):
         return json.loads(self.result.stdout)
 
     def test_complete_brand_json(self):
+        # The exact legacy shape plus one new key first: "fidelity".
         data = self._data()
-        for key in ("template", "fonts", "colours", "layout_map", "tokens"):
-            self.assertIn(key, data)
+        self.assertEqual(
+            list(data),
+            ["fidelity", "template", "fonts", "colours", "layout_map",
+             "tokens"],
+        )
+        self.assertEqual(data["fidelity"], "template")
 
     def test_layout_map_is_canonical(self):
         self.assertEqual(self._data()["layout_map"], CANONICAL_MAP)
@@ -147,7 +156,7 @@ class InitBrandTest(unittest.TestCase):
     def test_template_ref_override(self):
         result = subprocess.run(
             [sys.executable, INIT_BRAND_PY, TEMPLATE,
-             "--template-ref", "template.pptx"],
+             "--fidelity", "template", "--template-ref", "template.pptx"],
             capture_output=True, text=True,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -197,7 +206,7 @@ class InitBrandErrorTest(unittest.TestCase):
     def test_missing_file(self):
         missing = os.path.join(self._tmp, "nope.pptx")
         result = subprocess.run(
-            [sys.executable, INIT_BRAND_PY, missing],
+            [sys.executable, INIT_BRAND_PY, missing, "--fidelity", "template"],
             capture_output=True, text=True)
         self._assert_named_error(result, "not found", "nope.pptx")
 
@@ -206,9 +215,79 @@ class InitBrandErrorTest(unittest.TestCase):
         with open(bad, "w", encoding="utf-8") as fh:
             fh.write("not a presentation")
         result = subprocess.run(
-            [sys.executable, INIT_BRAND_PY, bad],
+            [sys.executable, INIT_BRAND_PY, bad, "--fidelity", "template"],
             capture_output=True, text=True)
         self._assert_named_error(result, "could not open")
+
+
+class InitBrandDefaultTest(unittest.TestCase):
+    """No --fidelity flag: brand-fidelity emission is the default onboarding
+    (identity-not-layout REQ-009). The template is an identity source only —
+    no layout_map, pack type scale and grid, colour roles from the theme."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.mkdtemp(prefix="slides-initbrand-default-")
+        cls.result = subprocess.run(
+            [sys.executable, INIT_BRAND_PY, TEMPLATE],
+            capture_output=True, text=True,
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls._tmp, ignore_errors=True)
+
+    def _data(self):
+        self.assertEqual(
+            self.result.returncode, 0,
+            f"init_brand exited {self.result.returncode}.\n"
+            f"stdout: {self.result.stdout}\nstderr: {self.result.stderr}",
+        )
+        return json.loads(self.result.stdout)
+
+    def test_brand_shape_keys_exact(self):
+        data = self._data()
+        self.assertEqual(
+            list(data),
+            ["fidelity", "template", "fonts", "colours", "tokens"],
+        )
+        self.assertEqual(data["fidelity"], "brand")
+
+    def test_no_layout_map(self):
+        self.assertNotIn("layout_map", self._data())
+
+    def test_tokens_pack_scale_and_grid(self):
+        # Brand fidelity: the pack owns type and grid — the presented ladder's
+        # display step, not the master-derived 62.0 the template path pins.
+        tok = self._data()["tokens"]
+        self.assertAlmostEqual(tok["type_scale"]["display"], 96.0)
+        self.assertIn("margin_x", tok["grid"])
+        self.assertIn("columns", tok["grid"])
+
+    def test_colour_roles(self):
+        colour_roles = self._data()["tokens"]["colour_roles"]
+        for role in ("accent", "ink", "paper"):
+            self.assertIn(role, colour_roles,
+                          f"colour_roles must contain '{role}'")
+
+    def test_end_to_end_renders_sample_deck(self):
+        # The flagless emission is fidelity-explicit, so it renders the same
+        # before and after the code default flips.
+        data = self._data()
+        data["template"] = TEMPLATE  # absolute, so render resolves it anywhere
+        brand_path = os.path.join(self._tmp, "brand.json")
+        out_path = os.path.join(self._tmp, "out.pptx")
+        with open(brand_path, "w", encoding="utf-8") as fh:
+            json.dump(data, fh)
+        result = subprocess.run(
+            [sys.executable, RENDER_PY, "--spec", SAMPLE_DECK,
+             "--brand", brand_path, "--out", out_path],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(
+            result.returncode, 0,
+            f"render failed.\nstdout: {result.stdout}\nstderr: {result.stderr}")
+        self.assertTrue(os.path.isfile(out_path))
 
 
 if __name__ == "__main__":

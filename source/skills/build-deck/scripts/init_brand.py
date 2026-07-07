@@ -1,25 +1,40 @@
 #!/usr/bin/env python3
 """init_brand.py — build a complete brand.json from a template or deck.
 
-One-step brand setup: given a .pptx/.potx, print a ready-to-use brand.json
-(template, fonts, colours, layout_map, tokens) so a deck comes out on-brand
-without the full teach-slides interview. Fonts and colours come from
-pptxlib.read_theme; the layout_map is a heuristic that maps each semantic role
-to one of the template's real layouts and includes a "composed" entry for
-single-title canvas slides (aliased to statement, then title, then index 0);
-the tokens block carries the derived grid, type-scale, and colour-role
-assignments. teach-slides remains the authoritative, richer brand capture.
+One-step brand setup: given a .pptx/.potx, print a ready-to-use brand.json so a
+deck comes out on-brand without the full teach-slides interview. Fonts and
+colours always come from pptxlib.read_theme. Two emission shapes, selected by
+--fidelity; both are fidelity-explicit, so a profile behaves the same before
+and after the code default (tokens.DEFAULT_FIDELITY) flips:
+
+- "brand" (the default onboarding — identity-not-layout REQ-009): the template
+  is an identity source only, read once here and kept in the "template" key as
+  the pointer to it. Emits {fidelity, template, fonts, colours, tokens}, where
+  tokens carries the pack's own type scale and grid plus the colour-role
+  assignments (tokens.resolve_tokens in brand fidelity). No layout_map is
+  emitted and the layout heuristic never runs, so a weird or hostile template
+  cannot fail brand init: if it opens and has a theme, it onboards.
+- "template" (legacy placeholder-fill): the pre-v0.17 shape plus an explicit
+  "fidelity": "template" key in front. Adds the heuristic layout_map that maps
+  each semantic role to one of the template's real layouts, with a "composed"
+  entry for single-title canvas slides (aliased to statement, then title, then
+  index 0), and tokens derived from the template (master type scale,
+  mapped-layout grid).
+
+teach-slides remains the authoritative, richer brand capture.
 
 Usage:
 
     python3 init_brand.py <template.pptx> [--template-ref NAME]
+        [--fidelity {brand,template}]
 
 The `template` field defaults to the input's absolute path; --template-ref sets
 it instead (skills pass "template.pptx" after copying the file into .slides/).
 
-Exit status: 0 on success (JSON to stdout); non-zero with a message on stderr if
-the file is missing, is not a readable presentation, or has no layout that can
-host one of the six roles. Nothing is printed to stdout on error.
+Exit status: 0 on success (JSON to stdout); non-zero with a message on stderr
+if the file is missing or is not a readable presentation — or, in template
+fidelity only, if no layout can host one of the six roles. Nothing is printed
+to stdout on error.
 """
 import argparse
 import json
@@ -98,6 +113,13 @@ def main(argv=None):
         help="value for the brand.json 'template' field "
              "(default: the input's absolute path)",
     )
+    parser.add_argument(
+        "--fidelity", choices=tokens.FIDELITY_MODES, default="brand",
+        help="brand.json shape: 'brand' (pack-designed rendering; the "
+             "template is an identity source only — the default) or "
+             "'template' (legacy placeholder-fill with a heuristic "
+             "layout_map)",
+    )
     args = parser.parse_args(argv)
 
     if not os.path.isfile(args.template):
@@ -109,6 +131,24 @@ def main(argv=None):
         print(f"error: could not open template: {exc}", file=sys.stderr)
         return 1
 
+    theme = read_theme(prs)
+    template_ref = args.template_ref or os.path.abspath(args.template)
+
+    if args.fidelity == "brand":
+        # REQ-009: brand fidelity never runs the layout heuristic — a template
+        # that opens and has a theme always onboards. resolve_tokens sees the
+        # explicit fidelity and returns the pack scale/grid + colour roles.
+        report = {
+            "fidelity": "brand",
+            "template": template_ref,
+            "fonts": theme["fonts"],
+            "colours": theme["colours"],
+        }
+        report["tokens"] = tokens.resolve_tokens(report, prs)
+        json.dump(report, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        return 0
+
     content_names = {t.name for t in CONTENT_PLACEHOLDER_TYPES}
     try:
         layout_map = suggest_layout_map(
@@ -118,9 +158,9 @@ def main(argv=None):
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
-    theme = read_theme(prs)
     report = {
-        "template": args.template_ref or os.path.abspath(args.template),
+        "fidelity": "template",
+        "template": template_ref,
         "fonts": theme["fonts"],
         "colours": theme["colours"],
         "layout_map": layout_map,

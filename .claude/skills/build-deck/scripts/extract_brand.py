@@ -7,12 +7,15 @@ plus a derived tokens block. teach-slides uses this to pre-fill brand.json from 
 deck the user already has, so the interview becomes confirm-and-adjust instead of
 blank entry. It is a superset of inspect_template.py, which prints layouts only.
 
-The tokens block here carries only `type_scale` and `colour_roles`. The `grid`
-is deliberately omitted: a meaningful grid must be measured from the layouts the
-brand actually uses (its layout_map), which extract_brand does not build —
-init_brand.py, which does build a layout_map, emits the grid. build-deck also
-derives the grid at render time. Emitting an all-layouts grid here would risk a
-polluted gutter winning as an explicit override.
+The tokens block here carries only `colour_roles`. The `grid` is deliberately
+omitted: a meaningful grid must be measured from the layouts the brand actually
+uses (its layout_map), which extract_brand does not build — init_brand.py,
+which does build a layout_map, emits the grid. build-deck also derives the grid
+at render time. Emitting an all-layouts grid here would risk a polluted gutter
+winning as an explicit override. `type_scale` is omitted for the same reason:
+in brand fidelity the pack owns the type scale, and a template-fidelity brand
+derives its master scale at render time — a master-derived scale emitted here
+would win as an explicit override in both modes.
 
 Usage:
 
@@ -20,7 +23,7 @@ Usage:
 
 Output JSON: {"template": <abspath>, "fonts": {"heading","body"},
 "colours": {name: "#RRGGBB", ...}, "layouts": [...],
-"tokens": {"type_scale": {...}, "colour_roles": {...}}}.
+"tokens": {"colour_roles": {...}}}.
 fonts/colours come from pptxlib.read_theme (the inverse of apply_theme);
 layouts from list_layouts; tokens from the tokens module.
 
@@ -62,8 +65,6 @@ def main(argv=None):
         "colours": theme["colours"],
         "layouts": list_layouts(prs),
         "tokens": {
-            "type_scale": (tokens.type_scale_from_master(prs)
-                           or tokens.default_type_scale()),
             "colour_roles": tokens.resolve_colour_roles(theme["colours"]),
         },
     }

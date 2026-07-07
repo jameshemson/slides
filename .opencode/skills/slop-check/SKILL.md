@@ -23,16 +23,18 @@ The skill takes either form.
 
 **A deck spec (`.deck.md`).** Read the Markdown directly. You see the slide structure, the field text, the speaker notes, and the `Visual:` descriptions.
 
-**A finished `.pptx`.** Read it with `python-pptx`. Run `python3 -c "import pptx"` first; if it fails, tell the user to `pip install python-pptx` (on a managed macOS Python, `pip install --break-system-packages python-pptx` or a virtualenv). Then pull each slide's placeholder text, the layout name, and the speaker notes:
+**A finished `.pptx`.** Read it with `python-pptx`. Run `python3 -c "import pptx"` first; if it fails, tell the user to `pip install python-pptx` (on a managed macOS Python, `pip install --break-system-packages python-pptx` or a virtualenv). Then pull each slide's text (drawn or placeholder), its role, and the speaker notes:
 
 ```
 python3 -c "
 from pptx import Presentation
 p = Presentation('deck.pptx')
 for i, s in enumerate(p.slides, 1):
-    print(f'--- slide {i}: {s.slide_layout.name} ---')
-    for ph in s.placeholders:
-        print(repr(ph.text))
+    role = s.name if (s.name or '').startswith('slides-role:') else s.slide_layout.name
+    print(f'--- slide {i}: {role} ---')
+    for sh in s.shapes:
+        if sh.has_text_frame and sh.text_frame.text.strip():
+            print(repr(sh.text_frame.text))
     if s.has_notes_slide:
         print('notes:', repr(s.notes_slide.notes_text_frame.text))
 "
