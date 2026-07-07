@@ -351,6 +351,21 @@ def _check_table_one_accent(elements, tokens, slide_w, slide_h):
     return all(len(t.get("emphasis_rows") or []) <= 1 for t in _tables(elements))
 
 
+# --- bodyslide / statement (drawn fixed-role slides) --------------------------
+# These roles are drawn (not composed) fixed-role slides — a title-content
+# ("bodyslide-") slide and a hero-claim ("statement-") slide. The checks
+# filter by the EXACT role (never the family) so a rule never judges a
+# sibling role sharing the same family prefix.
+
+def _check_role_body_length(elements, tokens, slide_w, slide_h):
+    bodies = _by_role(elements, "bodyslide-body")
+    return len(bodies) <= 5 and _all_terse((e["text"] for e in bodies), 40)
+
+
+def _check_statement_terseness(elements, tokens, slide_w, slide_h):
+    return _all_terse((e["text"] for e in _by_role(elements, "statement-text")), 16)
+
+
 # ---------------------------------------------------------------------------
 # RULES registry
 # ---------------------------------------------------------------------------
@@ -719,5 +734,27 @@ RULES = [
             "not a rainbow."
         ),
         "check": _check_table_one_accent,
+    },
+    # --- bodyslide / statement (drawn fixed-role slides) ---------------------
+    {
+        "id": "role-body-length",
+        "tier": "quality",
+        "severity": "advisory",
+        "applies_to": "bodyslide-body",
+        "source": "report#3; deck-spec (one point per slide)",
+        "message": (
+            "a title-content slide carries one point and the few lines that "
+            "earn it — a shaped list belongs in composed"
+        ),
+        "check": _check_role_body_length,
+    },
+    {
+        "id": "statement-terseness",
+        "tier": "quality",
+        "severity": "advisory",
+        "applies_to": "statement-text",
+        "source": "report#3",
+        "message": "a statement is a single hero claim — cut it to the line that lands",
+        "check": _check_statement_terseness,
     },
 ]

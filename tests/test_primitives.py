@@ -684,5 +684,41 @@ class TestWrapAwareHeights(unittest.TestCase):
         lint.check(els, TOKENS, SLIDE_W, SLIDE_H)
 
 
+class DrawNameStampTest(unittest.TestCase):
+    """draw() must stamp an element's optional `name` onto the shape it
+    creates — the revise round trip reads this back to match a rendered
+    shape to its spec element."""
+
+    def test_text_and_box_name_stamp_round_trips(self):
+        prs = Presentation(TEMPLATE)
+        slide = prs.slides.add_slide(prs.slide_layouts[5])
+        text = {
+            "role": "bodyslide-title", "text": "Hi",
+            "left": 600000, "top": 1700000, "width": 2000000, "height": 400000,
+            "font_pt": 18.0, "colour": "#FFFFFF",
+            "name": "slides-field:Title",
+        }
+        box = {
+            "role": "card-panel", "kind": "box", "container": True,
+            "fill": "#4F81BD",
+            "left": 457200, "top": 1600200, "width": 3000000, "height": 2000000,
+            "name": "slides-field:Title",
+        }
+        text_shape, box_shape = primitives.draw(slide, [text, box])
+        self.assertEqual(text_shape.name, "slides-field:Title")
+        self.assertEqual(box_shape.name, "slides-field:Title")
+
+    def test_element_without_name_keeps_library_default(self):
+        prs = Presentation(TEMPLATE)
+        slide = prs.slides.add_slide(prs.slide_layouts[5])
+        text = {
+            "role": "card-title", "text": "Hi",
+            "left": 600000, "top": 1700000, "width": 2000000, "height": 400000,
+            "font_pt": 18.0, "colour": "#FFFFFF",
+        }
+        shapes = primitives.draw(slide, [text])
+        self.assertFalse(shapes[0].name.startswith("slides-field:"))
+
+
 if __name__ == "__main__":
     unittest.main()
