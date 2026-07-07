@@ -5,7 +5,7 @@ description: Change a rendered deck by conversation — sync or extract its spec
 
 ## MANDATORY PREPARATION
 
-Load the `presentation-craft` skill. Read its [SKILL.md](../presentation-craft/SKILL.md) and run its Context Gathering Protocol — Step 6 needs a brand to re-render into. If `.slides/` is absent, don't make the user wait on the full interview: the Context Gathering Protocol's fast path works on the deck being revised too — a rendered `.pptx` carries masters and layouts the same way a template does — so copy it to `.slides/template.pptx` and run `../build-deck/scripts/init_brand.py .slides/template.pptx --template-ref template.pptx > .slides/brand.json`. Fall back to the fuller `teach-slides` (via `$skill teach-slides` or `/skills`) interview if the user wants it.
+Load the `presentation-craft` skill. Read its [SKILL.md](../presentation-craft/SKILL.md) and run its Context Gathering Protocol — Step 6 needs a brand to re-render into. If `.slides/` is absent, don't make the user wait on the full interview: the Context Gathering Protocol's fast path works on the deck being revised too — a rendered `.pptx` carries masters and layouts the same way a template does — so copy it to `.slides/template.pptx` and run `../build-deck/scripts/init_brand.py .slides/template.pptx --template-ref template.pptx > .slides/brand.json` (it writes a brand-fidelity profile by default — identity read from the file's theme, no layout map). Fall back to the fuller `teach-slides` (via `$skill teach-slides` or `/skills`) interview if the user wants it.
 
 Read [deck-spec.md](../presentation-craft/reference/deck-spec.md) for the spec contract and [slop.md](../presentation-craft/reference/slop.md) for the detector you run on changed content. Read [narrative.md](../presentation-craft/reference/narrative.md) only if the revision turns out to be structural (Step 4).
 
@@ -44,11 +44,11 @@ print((Presentation('<deck>.pptx').core_properties.comments or '').strip())
 
 - **Stamp found** (`slides-spec: <name> sha256:<hash>`) **and `<name>` exists** nearby (same directory as the deck, or the project root): **Tier 1, sync.** Say so plainly — "found the lineage stamp, found the spec, checking for drift" — and go to Step 3a.
 - **Stamp found but `<name>` can't be located** (moved, renamed): ask the user for its path before giving up. If they don't have it, fall to Tier 2 and say why — the spec the stamp names couldn't be found.
-- **No stamp at all**, or `comments` is empty: **Tier 2, import.** Say plainly this deck is foreign to the pack (or pre-dates the lineage stamp) and go to Step 3b.
+- **No stamp at all**, or `comments` is empty: **Tier 2, import.** Say plainly this deck is foreign to the pack (or pre-dates the lineage stamp) and go to Step 3b. A pack-rendered deck's slides also carry per-slide name stamps the extractor reads first (**Tier 0**), so even its import comes back exact.
 
 ## Step 3a: Tier 1 — sync the spec
 
-Run the drift check — pass `--brand` so roles resolve exactly off the layout map rather than by heuristic guess:
+Run the drift check — pass `--brand` so any unstamped slide resolves exactly off the brand profile rather than by heuristic guess (stamped slides, Tier 0, read exactly either way):
 
 ```
 python3 ../build-deck/scripts/deck_to_spec.py <deck>.pptx --brand .slides/brand.json \
@@ -78,9 +78,9 @@ python3 ../build-deck/scripts/deck_to_spec.py <deck>.pptx --brand .slides/brand.
     --out <deck>.deck.md --report <deck>.import-report.md
 ```
 
-Drop `--brand .slides/brand.json` if `.slides/` doesn't exist yet — extraction still runs, just guessing every slide's role from its shapes instead of reading it off a known layout map.
+Drop `--brand .slides/brand.json` if `.slides/` doesn't exist yet — extraction still runs: stamped slides still read exactly (Tier 0); the rest fall to guessing each slide's role from its shapes.
 
-Walk the `.import-report.md` with the user honestly. This is a best-effort import, not a sync: some slides may have been flattened to `title-content` because their content was drawn shapes rather than placeholders, pictures and charts need re-declaring since a PNG can't be reversed to data, and roles may have been guessed rather than known. Say what the report says — don't round it up to "your deck is now in the pipeline" until the user has seen the losses.
+Walk the `.import-report.md` with the user honestly. The extractor reads the pack's own per-slide stamps first (Tier 0): a pack-rendered deck round-trips exactly — roles and fields read straight off the stamps, nothing guessed. Composed slides are the deliberate exception: `Block:` grammar is never reconstructed from drawn shapes, so they still flatten to `title-content`. A FOREIGN deck is a best-effort import, not a sync: slides whose content was drawn shapes rather than placeholders get flattened to `title-content`, pictures and charts need re-declaring since a PNG can't be reversed to data, and roles may have been guessed rather than known. Say what the report says — don't round it up to "your deck is now in the pipeline" until the user has seen the losses.
 
 The extracted frontmatter carries a placeholder `audience` and a default `register` — the spec contract requires a real audience before anything renders again (see deck-spec.md), so ask the user for both now.
 

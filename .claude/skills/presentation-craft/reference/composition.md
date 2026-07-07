@@ -50,10 +50,12 @@ strays outside the band. Thresholds are advisory bands, not law.
 
 ## The advisory rules for the other primitives
 
-The same tiers apply to `card-grid`, `comparison`, `process`, and `timeline`. Each
-rule judges only its own block's elements (a stat-row rule never sees the process
-boxes stacked below it), so a multi-block slide is reviewed primitive by primitive.
-The defaults are good by construction; these warn when a spec strays.
+The same tiers apply to `card-grid`, `comparison`, `process`, and `timeline` —
+and, in brand fidelity, to the drawn fixed roles (a `title-content` body, a
+`statement`). Each rule judges only its own block's elements (a stat-row rule
+never sees the process boxes stacked below it), so a multi-block slide is
+reviewed primitive by primitive. The defaults are good by construction; these
+warn when a spec strays.
 
 | Rule | Tier | What good looks like | Source |
 |------|------|----------------------|--------|
@@ -80,6 +82,8 @@ The defaults are good by construction; these warn when a spec strays.
 | `table-one-accent` | slop | At most one row leads (accent fill); the rest are the grey field. | report#7 |
 | `freeform-one-accent` | slop | The one freeform rule: grey-push the field, keep the accent to one or two marks. | report#7 |
 | `block-count` | quality | ≤ 4 blocks on a composed slide; more is a wall — split the slide. | report#4 (Cowan) |
+| `role-body-length` | quality | A title-content slide carries one point and the few lines that earn it (≤ 5 body items, each ≤ 40 words) — a shaped list belongs in composed. | report#3; deck-spec |
+| `statement-terseness` | quality | A statement is a single hero claim (≤ 16 words) — cut it to the line that lands. | report#3 |
 
 The `freeform` block is otherwise deliberately advisory-free: it trades
 good-by-construction for freedom, so its composition is the author's judgement.

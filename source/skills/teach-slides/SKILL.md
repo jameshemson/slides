@@ -17,7 +17,7 @@ $ARGUMENTS
 
 You capture the user's brand once. Every other slides skill reads what you write, so a deck comes out on-brand instead of generic. The brand lives in a `.slides/` directory at the project root: `context.md`, `brand.json`, `template.pptx`.
 
-For a one-step start, `../build-deck/scripts/init_brand.py <template> --template-ref template.pptx` writes a complete `brand.json` (fonts, colours, and a proposed layout map) straight from a template or deck — this is the fast path build-deck and narrative offer. This skill is the fuller capture: it also gathers voice, audience, logo, and lets the user hand-check the layout map. Run it when the user wants that depth, or to refine what `init_brand.py` proposed.
+For a one-step start, `../build-deck/scripts/init_brand.py <template> --template-ref template.pptx` writes a complete brand-fidelity `brand.json` (fidelity, template ref, fonts, colours, tokens — no layout map) straight from a template or deck — this is the fast path build-deck and narrative offer. This skill is the fuller capture: it also gathers voice, audience, and logo, and for `"fidelity": "template"` lets the user hand-check the layout map. Run it when the user wants that depth, or to refine what `init_brand.py` proposed.
 
 If `.slides/` already exists, tell the user what it holds and ask whether to refresh it or keep it. Do not overwrite without a yes.
 
@@ -55,13 +55,13 @@ Push back on vague answers. "Professional" is not a voice. Ask for a real exampl
 
 ## Step 3: Settle the template
 
-A template carries the masters and layouts a deck is built from. Offer three paths and let the user choose.
+A template (or an existing deck) is where the brand's identity is read from: its theme carries the real fonts and colours. Owning one is optional — in brand fidelity, the default, the pack draws every slide from tokens and the file is only an identity source; only `"fidelity": "template"` builds slides from its layouts. Offer three paths and let the user choose.
 
 **(a) Ingest an existing template.** The user has a `.pptx` or `.potx` brand template. Take its path. This is the best case.
 
-**(b) Reuse an existing deck.** The user has a finished deck whose look they like. A deck carries masters and layouts the same way a template does, so a real `.pptx` deck works as a template. `render.py` strips the deck's own slides and keeps only its layouts.
+**(b) Reuse an existing deck.** The user has a finished deck whose look they like. A deck carries a theme (and masters and layouts) the same way a template does, so a real `.pptx` deck works as an identity source. For template fidelity, `render.py` strips the deck's own slides and keeps only its layouts.
 
-**(c) Generate a starter.** The user has neither. Fall back to `make_template.py`. Run it with the brand fonts and colours from Step 2:
+**(c) Generate a starter.** The user has neither. In brand fidelity no template file is needed at all — the Step 2 fonts and colours go straight into `brand.json` and the pack draws the rest. If the user wants a real file anyway (to open and refine in PowerPoint, or for template fidelity), run `make_template.py` with the brand fonts and colours from Step 2:
 
 ```
 python3 ../build-deck/scripts/make_template.py --out .slides/template.pptx \
@@ -78,11 +78,11 @@ For paths (a) and (b), read the brand straight out of the file instead of making
 python3 ../build-deck/scripts/extract_brand.py .slides/template.pptx
 ```
 
-It prints JSON `{template, fonts:{heading,body}, colours:{name:#hex}, layouts:[...], tokens:{type_scale, colour_roles}}` — the theme's real heading/body fonts and its palette (accent1 as `accent`, then `accent2`..`accent6`, plus `ink` and `paper`), the layouts for Step 4, and a starting design-token block (the composed role reads it; the type scale is derived from the master's own sizes). Show the user what you read and let them **confirm or adjust** it: rename a colour, drop one they do not use, add a `muted` or `spend` the theme lacks. Use the confirmed values as the `fonts` and `colours` you write in Step 5. Because `extract_brand.py` already returns the layouts, paths (a)/(b) can skip the separate `inspect_template.py` call in Step 4 and map roles from this output. Path (c)'s starter was themed from the Step 2 answers, so it needs no extraction.
+It prints JSON `{template, fonts:{heading,body}, colours:{name:#hex}, layouts:[...], tokens:{colour_roles}}` — the theme's real heading/body fonts and its palette (accent1 as `accent`, then `accent2`..`accent6`, plus `ink` and `paper`), the layouts (only needed for template fidelity, Step 4), and the colour-role assignments (grid and type scale are the pack's own defaults, so they are not emitted). Show the user what you read and let them **confirm or adjust** it: rename a colour, drop one they do not use, add a `muted` or `spend` the theme lacks. Use the confirmed values as the `fonts` and `colours` you write in Step 5. Because `extract_brand.py` already returns the layouts, paths (a)/(b) can skip the separate `inspect_template.py` call in Step 4 and map roles from this output. Path (c)'s starter was themed from the Step 2 answers, so it needs no extraction.
 
-## Step 4: Map the layouts
+## Step 4: Map the layouts (template fidelity only)
 
-For paths (a)/(b) you already have the layouts from the Step 3 `extract_brand.py` output — use those. Only for path (c) run `inspect_template.py` on the chosen template:
+This step exists only for `"fidelity": "template"` — in brand fidelity, the default, the renderer draws every role from tokens and reads no layout map, so skip straight to Step 5. For paths (a)/(b) you already have the layouts from the Step 3 `extract_brand.py` output — use those. Only for path (c) run `inspect_template.py` on the chosen template:
 
 ```
 python3 ../build-deck/scripts/inspect_template.py .slides/template.pptx
@@ -109,10 +109,22 @@ Confirm the mapping with the user before writing it.
 
 Write three files into `.slides/` at the project root.
 
-**`brand.json`** is what the renderer reads. Write `template` as `template.pptx`, the path relative to `brand.json` itself, so `.slides/` stays self-contained: `render.py` resolves a relative template path against the brand profile's own directory and finds the sibling file whatever directory it runs from.
+**`brand.json`** is what the renderer reads. The primary shape is brand fidelity — identity only (`fidelity` may be omitted; `"brand"` is the default). `template` is an optional pointer back to the identity source; write it as `template.pptx`, relative to `brand.json` itself, so `.slides/` stays self-contained. An optional `tokens` block overrides the pack defaults per key.
 
 ```json
 {
+  "fidelity": "brand",
+  "template": "template.pptx",
+  "fonts": { "heading": "Georgia", "body": "Verdana" },
+  "colours": { "ink": "#1A1A2E", "accent": "#E94560" }
+}
+```
+
+The alternative is template fidelity — the pre-v0.17 placeholder-fill, for a user whose template genuinely is good. It requires `template` and the Step 4 `layout_map`:
+
+```json
+{
+  "fidelity": "template",
   "template": "template.pptx",
   "fonts": { "heading": "Georgia", "body": "Verdana" },
   "colours": { "ink": "#1A1A2E", "accent": "#E94560" },
@@ -123,7 +135,7 @@ Write three files into `.slides/` at the project root.
 }
 ```
 
-**`context.md`** is for a person and for the other skills to read. Write the voice, the audience norms, the presenting context, the template described in plain words, and the layout map with a line on why each role points where it does.
+**`context.md`** is for a person and for the other skills to read. Write the voice, the audience norms, the presenting context, the identity source described in plain words, and — for template fidelity — the layout map with a line on why each role points where it does.
 
 **`template.pptx`** is the chosen template, already copied in from Step 3.
 

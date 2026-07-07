@@ -44,25 +44,31 @@ in Plan and Create, the thinking, before a single slide exists.
 A deck built without the user's brand context comes out generic and off-brand. You
 MUST have confirmed brand context before doing any deck work.
 
-**Required context.** The user's brand profile: their template, fonts, colours,
-voice, and audience norms. This lives in a `.slides/` directory at the project root,
-written by the teach-slides skill, with `brand.json` as its core file.
+**Required context.** The user's brand profile: their fonts, colours, voice, and
+audience norms — plus, for template fidelity, their template and layout map. This
+lives in a `.slides/` directory at the project root, written by the teach-slides
+skill, with `brand.json` as its core file.
 
 **Gathering order:**
 
 1. **Check for `.slides/` (fast).** Read `.slides/brand.json` from the project root.
-   If it exists and carries the required keys, proceed.
+   If it exists and carries the required keys, proceed. The required keys are
+   `fonts` and `colours` (brand fidelity, the default); `template` and `layout_map`
+   are required only when the profile says `"fidelity": "template"`.
 2. **Capture the brand (REQUIRED).** If `.slides/` is absent or incomplete, set it
    up NOW, before anything else. Do NOT infer a brand from guesswork and do NOT
    impose a default look. Two ways:
    - **Fast path.** If the user has a template or an existing deck they like, copy
      it to `.slides/template.pptx` and run
      `build-deck/scripts/init_brand.py .slides/template.pptx --template-ref template.pptx > .slides/brand.json`.
-     It reads the fonts and colours from the file's theme and proposes a
-     layout_map. Show the user what it captured, let them confirm or adjust, then
+     It reads the fonts and colours from the file's theme and writes a
+     brand-fidelity profile (`--fidelity template` emits the legacy
+     placeholder-fill shape with a proposed layout_map instead). Show the user
+     what it captured, let them confirm or adjust, then
      resume. This is the one-step path build-deck and narrative offer.
-   - **Full path.** Otherwise, or for voice, audience, logo, and a hand-checked
-     layout map, run the teach-slides skill — the authoritative brand capture.
+   - **Full path.** Otherwise, or for voice, audience, logo, and (in template
+     fidelity) a hand-checked layout map, run the teach-slides skill — the
+     authoritative brand capture.
    Once `.slides/brand.json` exists, resume the original task.
 
 Every command skill in the pack performs this check before it builds. The brand

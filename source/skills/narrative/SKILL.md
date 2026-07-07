@@ -7,7 +7,7 @@ argument-hint: "[the idea, audience, or topic for the deck]"
 
 ## MANDATORY PREPARATION
 
-Load the `presentation-craft` skill. Read its [SKILL.md](../presentation-craft/SKILL.md) and run its Context Gathering Protocol. If `.slides/` is absent or incomplete, set up the brand first, then resume here: offer the fast path (`../build-deck/scripts/init_brand.py` reads fonts, colours, and a layout map from a template or an existing deck) or the fuller /slides:teach-slides interview.
+Load the `presentation-craft` skill. Read its [SKILL.md](../presentation-craft/SKILL.md) and run its Context Gathering Protocol. If `.slides/` is absent or incomplete, set up the brand first, then resume here: offer the fast path (`../build-deck/scripts/init_brand.py` reads fonts and colours from a template or an existing deck and writes a brand-fidelity profile) or the fuller /slides:teach-slides interview.
 
 Read [narrative.md](../presentation-craft/reference/narrative.md) for the Plan and Create craft, [slop.md](../presentation-craft/reference/slop.md) for the full detector, and [deck-spec.md](../presentation-craft/reference/deck-spec.md) for the file you will write.
 
@@ -76,7 +76,7 @@ Write `<deck>.deck.md`, conforming to [deck-spec.md](../presentation-craft/refer
 - A `Chart:` block carries structured data (bar, column, line, pie, scatter, or waterfall) that `build-deck` draws as an on-brand chart — reach for `native: true` when the deck travels to be edited, a board pack the recipient will tweak in PowerPoint. Use it when the data fits one of those; use `Visual:` for everything else (histograms, maps, diagrams, photos). The format is in [deck-spec.md](../presentation-craft/reference/deck-spec.md).
 - `Notes:` carries what the presenter says. Notes are prose and held to the prose-slop standard.
 
-The spec carries content and structure only, never fonts, colours, or coordinates. Those live in the template and `brand.json`.
+The spec carries content and structure only, never fonts, colours, or coordinates. Those live in `brand.json` (and, for template fidelity, the template).
 
 A half-finished spec is a valid file. If the conversation has to pause, write what you have. The user, or a later run, can resume from it.
 
