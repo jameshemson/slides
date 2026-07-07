@@ -1252,5 +1252,107 @@ class LineageStampTest(unittest.TestCase):
         )
 
 
+class LoadBrandFidelityTest(unittest.TestCase):
+    """load_brand per fidelity mode (identity-not-layout REQ-002): brand
+    fidelity requires identity only; template fidelity keeps the four keys."""
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp(prefix="slides-brand-fidelity-test-")
+        self.addCleanup(shutil.rmtree, self._tmp, ignore_errors=True)
+
+    def _write(self, brand):
+        path = os.path.join(self._tmp, "brand.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(brand, fh)
+        return path
+
+    IDENTITY = {
+        "fonts": {"heading": "Calibri", "body": "Calibri"},
+        "colours": {"ink": "#1A1A1A"},
+    }
+
+    def test_brand_fidelity_needs_identity_only(self):
+        brand = render.load_brand(
+            self._write({"fidelity": "brand", **self.IDENTITY}))
+        self.assertNotIn("template", brand)
+        self.assertNotIn("layout_map", brand)
+
+    def test_brand_fidelity_missing_fonts_is_named(self):
+        with self.assertRaises(render.SpecError) as ctx:
+            render.load_brand(self._write(
+                {"fidelity": "brand", "colours": {"ink": "#1A1A1A"}}))
+        self.assertIn("fonts", str(ctx.exception))
+
+    def test_brand_fidelity_still_resolves_relative_template(self):
+        # A brand-fidelity profile may carry a template (the identity
+        # source); when present its path is normalised exactly as before.
+        rel = os.path.relpath(TEMPLATE, self._tmp)
+        brand = render.load_brand(self._write(
+            {"fidelity": "brand", "template": rel, **self.IDENTITY}))
+        self.assertTrue(os.path.isabs(brand["template"]))
+        self.assertTrue(os.path.isfile(brand["template"]))
+
+    def test_brand_fidelity_still_validates_layout_map_shape(self):
+        with self.assertRaises(render.SpecError) as ctx:
+            render.load_brand(self._write(
+                {"fidelity": "brand", "layout_map": {"title": "zero"},
+                 **self.IDENTITY}))
+        self.assertIn("layout_map", str(ctx.exception))
+
+    def test_template_fidelity_missing_layout_map_is_named(self):
+        with self.assertRaises(render.SpecError) as ctx:
+            render.load_brand(self._write(
+                {"fidelity": "template", "template": TEMPLATE,
+                 **self.IDENTITY}))
+        self.assertIn("layout_map", str(ctx.exception))
+
+    def test_bad_fidelity_value_is_named(self):
+        with self.assertRaises(render.SpecError) as ctx:
+            render.load_brand(self._write(
+                {"fidelity": "faithful", **self.IDENTITY}))
+        self.assertIn("faithful", str(ctx.exception))
+
+
+class ParseFrontmatterTest(unittest.TestCase):
+    """parse_frontmatter: the spec's register reaches the renderer (REQ-003)."""
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp(prefix="slides-frontmatter-test-")
+        self.addCleanup(shutil.rmtree, self._tmp, ignore_errors=True)
+
+    def _write(self, text):
+        path = os.path.join(self._tmp, "spec.deck.md")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        return path
+
+    def test_reads_register(self):
+        meta = render.parse_frontmatter(self._write(
+            "---\ndeck: d\naudience: a\nregister: presented live\n---\n\n"
+            "## Slide 1\nlayout: section\nTitle: One\n"))
+        self.assertEqual(meta["register"], "presented live")
+        self.assertEqual(meta["deck"], "d")
+
+    def test_keys_lowercased_and_colonless_lines_ignored(self):
+        meta = render.parse_frontmatter(self._write(
+            "---\nRegister: read\njust a stray line\n---\n\n## Slide 1\n"
+            "layout: section\nTitle: One\n"))
+        self.assertEqual(meta, {"register": "read"})
+
+    def test_no_frontmatter_yields_empty(self):
+        meta = render.parse_frontmatter(self._write(
+            "## Slide 1\nlayout: section\nTitle: One\n"))
+        self.assertEqual(meta, {})
+
+    def test_missing_file_is_named(self):
+        with self.assertRaises(render.SpecError):
+            render.parse_frontmatter(os.path.join(self._tmp, "absent.md"))
+
+    def test_unclosed_block_is_named(self):
+        with self.assertRaises(render.SpecError) as ctx:
+            render.parse_frontmatter(self._write("---\ndeck: d\n"))
+        self.assertIn("frontmatter", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()
