@@ -83,6 +83,24 @@ def _hairline_emu(tokens) -> int:
     return round((tokens.get("shape") or {}).get("hairline_pt", 1.0) * EMU_PER_PT)
 
 
+def _fit_pt(text, width, avail_h, tokens, steps, err):
+    """The first ladder step whose wrapped text fits avail_h (D-310).
+
+    Lead text is drawn as big as fits: try each named type-scale step in
+    order (e.g. display -> title -> h1) and return (font_pt, stepped) where
+    `stepped` is True when the first choice didn't fit — the caller marks
+    the element "font_stepped" so the render summary owns up to it (the
+    v0.15 table body->caption step-down precedent). Past the last step the
+    text genuinely doesn't fit the band: raise the role's ShapeError.
+    """
+    ts = tokens["type_scale"]
+    for i, step in enumerate(steps):
+        pt = ts[step]
+        if _text_h(text, width, pt) <= avail_h:
+            return pt, i > 0
+    raise ShapeError(err)
+
+
 # --- title -------------------------------------------------------------------
 
 
@@ -92,7 +110,7 @@ def plan_title(fields, tokens, slide_w, slide_h) -> list:
 
     fields: {"Title": str (required), "Subtitle": str?}.
     """
-    grid, ts, roles = _require(tokens, ("display", "body"))
+    grid, ts, roles = _require(tokens, ("display", "title", "body"))
     title = _field(fields, "Title")
     if not title:
         raise ShapeError("title slide needs a Title")
@@ -103,28 +121,32 @@ def plan_title(fields, tokens, slide_w, slide_h) -> list:
     band_top, band_bottom = _band(tokens, slide_h, None)
     band_h = band_bottom - band_top
 
-    title_h = _text_h(title, content_w, ts["display"])
-    block_h = TICK_H_EMU + 2 * baseline + title_h
-    subtitle_h = 0
-    if subtitle:
-        subtitle_h = _text_h(subtitle, content_w, ts["body"])
-        block_h += baseline + subtitle_h
-    if block_h > band_h:
-        raise ShapeError(
-            "title slide content wraps deeper than the slide band — "
-            "shorten the title or subtitle"
-        )
+    subtitle_h = _text_h(subtitle, content_w, ts["body"]) if subtitle else 0
+    fixed_h = TICK_H_EMU + 2 * baseline + (
+        baseline + subtitle_h if subtitle else 0
+    )
+    # Lead text draws as big as fits (D-310): display first, title step next.
+    title_pt, stepped = _fit_pt(
+        title, content_w, band_h - fixed_h, tokens, ("display", "title"),
+        "title slide content wraps deeper than the slide band — "
+        "shorten the title or subtitle",
+    )
+    title_h = _text_h(title, content_w, title_pt)
+    block_h = fixed_h + title_h
 
     top = band_top + round((band_h - block_h) * OPTICAL_CENTRE)
     elements = [_tick("titleslide-tick", tokens, slide_w, top, roles)]
     title_top = top + TICK_H_EMU + 2 * baseline
-    elements.append({
+    title_el = {
         "role": "titleslide-title", "text": title,
         "left": content_left, "top": title_top,
         "width": content_w, "height": title_h,
-        "font_pt": ts["display"], "colour": roles["ink"], "align": "left",
+        "font_pt": title_pt, "colour": roles["ink"], "align": "left",
         "rank": 1, "name": "slides-field:Title",
-    })
+    }
+    if stepped:
+        title_el["font_stepped"] = True
+    elements.append(title_el)
     if subtitle:
         elements.append({
             "role": "titleslide-subtitle", "text": subtitle,
@@ -150,7 +172,7 @@ def plan_section(fields, tokens, slide_w, slide_h, region=None, ordinal=None) ->
     the title (the lint's overlap rule skips ghost pairs) and takes exactly
     display × GHOST_MULTIPLE, the one off-scale size the size rule sanctions.
     """
-    grid, ts, roles = _require(tokens, ("display", "title"))
+    grid, ts, roles = _require(tokens, ("display", "title", "h1"))
     title = _field(fields, "Title")
     if not title:
         raise ShapeError("section slide needs a Title")
@@ -173,19 +195,23 @@ def plan_section(fields, tokens, slide_w, slide_h, region=None, ordinal=None) ->
         })
 
     title_w = content_w * 7 // 12
-    title_h = _text_h(title, title_w, ts["title"])
-    if title_h > band_h:
-        raise ShapeError(
-            "section title wraps deeper than the slide band — shorten it"
-        )
-    elements.append({
+    # Lead text draws as big as fits (D-310): title step first, h1 next.
+    title_pt, stepped = _fit_pt(
+        title, title_w, band_h, tokens, ("title", "h1"),
+        "section title wraps deeper than the slide band — shorten it",
+    )
+    title_h = _text_h(title, title_w, title_pt)
+    title_el = {
         "role": "sectionslide-title", "text": title,
         "left": content_left,
         "top": band_top + round((band_h - title_h) * OPTICAL_CENTRE),
         "width": title_w, "height": title_h,
-        "font_pt": ts["title"], "colour": roles["ink"], "align": "left",
+        "font_pt": title_pt, "colour": roles["ink"], "align": "left",
         "rank": 1, "name": "slides-field:Title",
-    })
+    }
+    if stepped:
+        title_el["font_stepped"] = True
+    elements.append(title_el)
     return elements
 
 
@@ -198,7 +224,7 @@ def plan_statement(fields, tokens, slide_w, slide_h) -> list:
 
     fields: {"Statement": str (required)}.
     """
-    _grid, ts, roles = _require(tokens, ("display",))
+    _grid, ts, roles = _require(tokens, ("display", "title", "h1"))
     statement = _field(fields, "Statement")
     if not statement:
         raise ShapeError("statement slide needs a Statement")
@@ -208,21 +234,26 @@ def plan_statement(fields, tokens, slide_w, slide_h) -> list:
     band_h = band_bottom - band_top
 
     width = round(content_w * 10 / 12)
-    height = _text_h(statement, width, ts["display"])
-    if height > band_h:
-        raise ShapeError(
-            "statement wraps deeper than the slide band — "
-            "cut it to the line that lands"
-        )
-    return [{
+    # Lead text draws as big as fits (D-310): a two-word hero lands at
+    # display; a full sentence steps to title/h1 rather than refusing.
+    pt, stepped = _fit_pt(
+        statement, width, band_h, tokens, ("display", "title", "h1"),
+        "statement wraps deeper than the slide band — "
+        "cut it to the line that lands",
+    )
+    height = _text_h(statement, width, pt)
+    el = {
         "role": "statement-text", "text": statement,
         "left": content_left + (content_w - width) // 2,
         "top": band_top + round((band_h - height) * OPTICAL_CENTRE),
         "width": width, "height": height,
-        "font_pt": ts["display"], "colour": roles["ink"],
+        "font_pt": pt, "colour": roles["ink"],
         "align": "center", "anchor": "middle",
         "rank": 1, "name": "slides-field:Statement",
-    }]
+    }
+    if stepped:
+        el["font_stepped"] = True
+    return [el]
 
 
 # --- quote -------------------------------------------------------------------
@@ -235,7 +266,7 @@ def plan_quote(fields, tokens, slide_w, slide_h) -> list:
     decorative glyph — display-size text with no rank or name, so it never
     constrains the hierarchy; the quotation itself is the rank-1 lead.
     """
-    grid, ts, roles = _require(tokens, ("display", "title", "body"))
+    grid, ts, roles = _require(tokens, ("display", "title", "h1", "body"))
     quote = _field(fields, "Quote")
     if not quote:
         raise ShapeError("quote slide needs a Quote")
@@ -247,10 +278,28 @@ def plan_quote(fields, tokens, slide_w, slide_h) -> list:
 
     mark_side = _line_h(ts["display"])
     quote_w = content_w * 9 // 12
-    quote_h = _text_h(quote, quote_w, ts["title"])
     quote_top = band_top + mark_side + baseline
+    attr_text = "— " + attribution if attribution else ""
+    attr_h = _text_h(attr_text, quote_w, ts["body"]) if attribution else 0
+    tail_h = (baseline + attr_h) if attribution else 0
+    # Lead text draws as big as fits (D-310): title step first, h1 next.
+    avail = (band_bottom - quote_top) - tail_h
+    quote_pt, stepped = _fit_pt(
+        quote, quote_w, avail, tokens, ("title", "h1"),
+        "quote wraps deeper than the slide band — trim the quotation",
+    )
+    quote_h = _text_h(quote, quote_w, quote_pt)
     bottom = quote_top + quote_h
 
+    quote_el = {
+        "role": "quote-text", "text": quote,
+        "left": content_left, "top": quote_top,
+        "width": quote_w, "height": quote_h,
+        "font_pt": quote_pt, "colour": roles["ink"],
+        "rank": 1, "name": "slides-field:Quote",
+    }
+    if stepped:
+        quote_el["font_stepped"] = True
     elements = [
         {
             "role": "quote-mark", "text": "“",
@@ -258,17 +307,9 @@ def plan_quote(fields, tokens, slide_w, slide_h) -> list:
             "width": mark_side, "height": mark_side,
             "font_pt": ts["display"], "colour": roles["accent"],
         },
-        {
-            "role": "quote-text", "text": quote,
-            "left": content_left, "top": quote_top,
-            "width": quote_w, "height": quote_h,
-            "font_pt": ts["title"], "colour": roles["ink"],
-            "rank": 1, "name": "slides-field:Quote",
-        },
+        quote_el,
     ]
     if attribution:
-        attr_text = "— " + attribution
-        attr_h = _text_h(attr_text, quote_w, ts["body"])
         elements.append({
             "role": "quote-attribution", "text": attr_text,
             "left": content_left, "top": bottom + baseline,
@@ -276,11 +317,6 @@ def plan_quote(fields, tokens, slide_w, slide_h) -> list:
             "font_pt": ts["body"], "colour": roles["muted"],
             "rank": 2, "name": "slides-field:Attribution",
         })
-        bottom = bottom + baseline + attr_h
-    if bottom > band_bottom:
-        raise ShapeError(
-            "quote wraps deeper than the slide band — trim the quotation"
-        )
     return elements
 
 
