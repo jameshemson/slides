@@ -18,6 +18,11 @@ cleared; otherwise a LintError is raised with a human-readable summary.
 # elements); the advisory count rules (3-5 items) are the real quality guard.
 ELEMENT_CAP = 24
 
+# Ghost display type on section slides draws at display × GHOST_MULTIPLE,
+# deliberately underlapping: check_sizes admits exactly that one size for an
+# element marked `ghost`, and check_no_overlap skips any pair containing one.
+GHOST_MULTIPLE = 3.0
+
 
 class LintError(Exception):
     """A composed slide that fails the mechanical lint. render.py turns this into a SpecError."""
@@ -77,19 +82,29 @@ def check_sizes(elements: list, tokens: dict) -> list:
     Box and connector elements carry no `font_pt` (they hold no text) and are
     skipped — only text is held to the type scale. A `kind == "table"` element
     carries its per-cell sizes in the `font_pts` vector instead of a scalar
-    `font_pt`; every entry is held to the type scale the same way.
+    `font_pt`; every entry is held to the type scale the same way. An element
+    marked `ghost` (the section slide's numeral) is allowed exactly
+    display × GHOST_MULTIPLE instead of the scale set — one sanctioned size,
+    not a free pass.
 
     Tag: [size]
     """
     allowed = set(tokens["type_scale"].values())
+    display_pt = tokens["type_scale"].get("display")
+    ghost_pt = None if display_pt is None else display_pt * GHOST_MULTIPLE
     messages = []
     for el in elements:
         font_pt = el.get("font_pt")
-        if font_pt is not None and font_pt not in allowed:
-            messages.append(
-                f"[size] element role={el['role']!r} text={el.get('text')!r} "
-                f"has font_pt={font_pt} which is not in type_scale"
-            )
+        if font_pt is not None:
+            if el.get("ghost"):
+                ok = ghost_pt is not None and font_pt == ghost_pt
+            else:
+                ok = font_pt in allowed
+            if not ok:
+                messages.append(
+                    f"[size] element role={el['role']!r} text={el.get('text')!r} "
+                    f"has font_pt={font_pt} which is not in type_scale"
+                )
         if el.get("kind") == "table":
             for i, size in enumerate(el.get("font_pts") or []):
                 if size not in allowed:
@@ -188,6 +203,10 @@ def check_no_overlap(elements: list) -> list:
             b = elements[j]
             if not _intersects(a, b):
                 continue
+            # Ghost type deliberately underlaps (a section slide's numeral sits
+            # behind its title), so a pair containing a ghost is never a fault.
+            if a.get("ghost") or b.get("ghost"):
+                continue
             # Lines never count as overlapping anything.
             if a.get("kind") in _LINE_KINDS or b.get("kind") in _LINE_KINDS:
                 continue
@@ -200,6 +219,32 @@ def check_no_overlap(elements: list) -> list:
                 f"[overlap] elements overlap: {_label(a)} and {_label(b)}"
             )
     return messages
+
+
+def check_hierarchy(elements: list) -> list:
+    """
+    Return a violation message when supporting text reaches the lead's size.
+
+    Elements may carry a `rank`: 1 marks the slide's lead text, 2 its
+    supporting text. Hierarchy on these slides is carried by SIZE, so every
+    rank-2 size must sit strictly below every rank-1 size. Elements without a
+    rank (ticks, rules, decorative glyphs, ghosts — and tables, which carry no
+    rank) are ignored: they never constrain the hierarchy.
+
+    Tag: [hierarchy]
+    """
+    rank1 = [el["font_pt"] for el in elements
+             if el.get("rank") == 1 and el.get("font_pt") is not None]
+    rank2 = [el["font_pt"] for el in elements
+             if el.get("rank") == 2 and el.get("font_pt") is not None]
+    if rank1 and rank2:
+        min1, max2 = min(rank1), max(rank2)
+        if max2 >= min1:
+            return [
+                f"[hierarchy] rank-2 text at {max2}pt reaches rank-1 text at "
+                f"{min1}pt — supporting text must sit below the lead"
+            ]
+    return []
 
 
 def check_count(elements: list) -> list:
@@ -217,7 +262,7 @@ def check_count(elements: list) -> list:
 
 def check(elements: list, tokens: dict, slide_w: int, slide_h: int) -> None:
     """
-    Run all five lint rules and raise LintError if any violations are found.
+    Run all six lint rules and raise LintError if any violations are found.
 
     Returns None if the slide is clean.
     """
@@ -226,6 +271,7 @@ def check(elements: list, tokens: dict, slide_w: int, slide_h: int) -> None:
         + check_sizes(elements, tokens)
         + check_within_margins(elements, tokens, slide_w, slide_h)
         + check_no_overlap(elements)
+        + check_hierarchy(elements)
         + check_count(elements)
     )
     if messages:

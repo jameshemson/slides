@@ -153,6 +153,9 @@ EXPECTED_IDS = [
     "table-column-count",
     "table-cell-terseness",
     "table-one-accent",
+    # bodyslide / statement
+    "role-body-length",
+    "statement-terseness",
 ]
 
 REQUIRED_KEYS = {"id", "tier", "severity", "applies_to", "message", "source", "check"}
@@ -707,3 +710,61 @@ class TestTableOneAccent(unittest.TestCase):
         rule = rule_by_id("table-one-accent")
         els = [table_element(_terse_rows(4), emphasis_rows=[0, 2])]
         self.assertFalse(rule["check"](els, TOKENS, SLIDE_W, SLIDE_H))
+
+
+# ---------------------------------------------------------------------------
+# bodyslide / statement (drawn fixed-role slides)
+# ---------------------------------------------------------------------------
+
+def _body_element(text, role="bodyslide-body"):
+    return {"role": role, "text": text}
+
+
+class TestRoleBodyLength(unittest.TestCase):
+    """role-body-length (quality): <=5 bodyslide-body items, each <=40 words."""
+
+    def test_pass_at_five_short_items(self):
+        rule = rule_by_id("role-body-length")
+        els = [_body_element("a short line of body text") for _ in range(5)]
+        self.assertTrue(rule["check"](els, TOKENS, SLIDE_W, SLIDE_H))
+
+    def test_warns_at_six_items(self):
+        rule = rule_by_id("role-body-length")
+        els = [_body_element("a short line of body text") for _ in range(6)]
+        self.assertFalse(rule["check"](els, TOKENS, SLIDE_W, SLIDE_H))
+
+    def test_warns_at_one_41_word_item(self):
+        rule = rule_by_id("role-body-length")
+        wordy = " ".join(["word"] * 41)
+        els = [_body_element(wordy)]
+        self.assertFalse(rule["check"](els, TOKENS, SLIDE_W, SLIDE_H))
+
+    def test_never_fires_on_other_family_elements(self):
+        # stat-number elements (another family) must never be counted or
+        # inspected, however many there are or however wordy their text.
+        rule = rule_by_id("role-body-length")
+        els = [_body_element("a short line of body text") for _ in range(5)]
+        els += [{"role": "stat-number", "text": " ".join(["word"] * 100)}
+                for _ in range(10)]
+        self.assertTrue(rule["check"](els, TOKENS, SLIDE_W, SLIDE_H))
+
+
+class TestStatementTerseness(unittest.TestCase):
+    """statement-terseness (quality): every statement-text is <=16 words."""
+
+    def test_pass_at_16_words(self):
+        rule = rule_by_id("statement-terseness")
+        els = [_body_element(" ".join(["word"] * 16), role="statement-text")]
+        self.assertTrue(rule["check"](els, TOKENS, SLIDE_W, SLIDE_H))
+
+    def test_warns_at_17_words(self):
+        rule = rule_by_id("statement-terseness")
+        els = [_body_element(" ".join(["word"] * 17), role="statement-text")]
+        self.assertFalse(rule["check"](els, TOKENS, SLIDE_W, SLIDE_H))
+
+    def test_never_fires_on_other_family_elements(self):
+        rule = rule_by_id("statement-terseness")
+        els = [_body_element(" ".join(["word"] * 16), role="statement-text")]
+        els += [{"role": "stat-number", "text": " ".join(["word"] * 100)}
+                for _ in range(10)]
+        self.assertTrue(rule["check"](els, TOKENS, SLIDE_W, SLIDE_H))

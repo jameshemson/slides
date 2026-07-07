@@ -501,5 +501,123 @@ class TestChartElementKind(unittest.TestCase):
         self.assertEqual(lint.check_sizes([chart], TOKENS), [])
 
 
+# --- Ghost type + hierarchy lint (T-201, the fixed-role planners) ----------
+#
+# A section slide's ghost numeral is display type at display × GHOST_MULTIPLE,
+# deliberately underlapping the title. check_sizes must admit exactly that one
+# size for an element marked `ghost` (and nothing else off-scale), and
+# check_no_overlap must skip any pair containing a ghost. check_hierarchy is
+# the new advisory-turned-hard rule for the roles: rank-2 supporting text must
+# sit strictly below rank-1 lead text on the type scale.
+
+
+def ghost_element(font_pt):
+    """A ghost numeral inside margins, muted, with the given size."""
+    return {
+        "role": "sectionslide-ghost",
+        "text": "03",
+        "ghost": True,
+        "left": 4000000,
+        "top": 1600200,
+        "width": 2000000,
+        "height": 2000000,
+        "font_pt": font_pt,
+        "colour": "#C0504D",
+    }
+
+
+class TestGhostSizeRule(unittest.TestCase):
+    """A `ghost` element is allowed exactly display × GHOST_MULTIPLE."""
+
+    def test_ghost_accepted_at_exact_multiple(self):
+        el = ghost_element(TOKENS["type_scale"]["display"] * 3.0)  # 120.0
+        self.assertEqual(lint.check_sizes([el], TOKENS), [])
+        self.assertIsNone(lint.check([el], TOKENS, SLIDE_W, SLIDE_H))
+
+    def test_ghost_rejected_off_multiple(self):
+        el = ghost_element(TOKENS["type_scale"]["display"] * 2.5)  # 100.0
+        violations = lint.check_sizes([el], TOKENS)
+        self.assertTrue(violations)
+        self.assertIn("[size]", violations[0])
+        with self.assertRaises(lint.LintError) as ctx:
+            lint.check([el], TOKENS, SLIDE_W, SLIDE_H)
+        self.assertIn("[size]", str(ctx.exception))
+
+
+class TestGhostOverlapRule(unittest.TestCase):
+    """check_no_overlap skips any pair containing a ghost element."""
+
+    def _pair(self, ghost):
+        a = {
+            "role": "sectionslide-title", "text": "Momentum",
+            "left": 457200, "top": 1600200, "width": 3000000, "height": 900000,
+            "font_pt": 28.0, "colour": "#000000",
+        }
+        b = {
+            "role": "sectionslide-ghost" if ghost else "stat-number",
+            "text": "03",
+            "left": 457200, "top": 1600200, "width": 3000000, "height": 900000,
+            "font_pt": 40.0, "colour": "#C0504D",
+        }
+        if ghost:
+            b["ghost"] = True
+        return [a, b]
+
+    def test_overlap_skipped_when_one_is_ghost(self):
+        self.assertEqual(lint.check_no_overlap(self._pair(ghost=True)), [])
+
+    def test_overlap_flagged_when_neither_is_ghost(self):
+        violations = lint.check_no_overlap(self._pair(ghost=False))
+        self.assertTrue(violations)
+        self.assertIn("[overlap]", violations[0])
+
+
+class TestHierarchyRule(unittest.TestCase):
+    """[hierarchy]: rank-2 text must sit strictly below rank-1 text in size."""
+
+    def _ranked(self, rank, font_pt, top=1600200):
+        return {
+            "role": f"bodyslide-rank{rank}", "text": "t",
+            "left": 457200, "top": top, "width": 2000000, "height": 200000,
+            "font_pt": font_pt, "colour": "#000000", "rank": rank,
+        }
+
+    def test_supporting_below_lead_passes(self):
+        els = [self._ranked(1, 40.0), self._ranked(2, 24.0, top=2000000)]
+        self.assertEqual(lint.check_hierarchy(els), [])
+
+    def test_supporting_reaching_lead_fails_naming_both_sizes(self):
+        els = [self._ranked(1, 40.0), self._ranked(2, 40.0, top=2000000)]
+        violations = lint.check_hierarchy(els)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(
+            violations[0],
+            "[hierarchy] rank-2 text at 40.0pt reaches rank-1 text at 40.0pt "
+            "— supporting text must sit below the lead",
+        )
+
+    def test_unranked_elements_never_trigger(self):
+        els = good_elements()  # no element carries a rank
+        self.assertEqual(lint.check_hierarchy(els), [])
+        # Even equal sizes are fine when nothing is ranked.
+        unranked = [
+            {"role": "a", "text": "x", "left": 457200, "top": 1600200,
+             "width": 1000000, "height": 200000, "font_pt": 40.0,
+             "colour": "#000000"},
+            {"role": "b", "text": "y", "left": 457200, "top": 2000000,
+             "width": 1000000, "height": 200000, "font_pt": 40.0,
+             "colour": "#000000"},
+        ]
+        self.assertEqual(lint.check_hierarchy(unranked), [])
+
+    def test_wired_into_check(self):
+        # Otherwise-clean elements (on token, on scale, inside margins, no
+        # overlap) that break only the hierarchy must still fail the gate.
+        els = [self._ranked(1, 40.0), self._ranked(2, 40.0, top=2000000)]
+        with self.assertRaises(lint.LintError) as ctx:
+            lint.check(els, TOKENS, SLIDE_W, SLIDE_H)
+        self.assertIn("[hierarchy]", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

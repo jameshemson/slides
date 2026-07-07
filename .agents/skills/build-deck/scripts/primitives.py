@@ -1270,6 +1270,11 @@ def draw(slide, elements) -> list:
     panel; within a z-band the planned order is kept (stable sort). Every
     colour written here comes from the element dict, which the caller filled
     from brand tokens — this module still emits no brand literal of its own.
+
+    An element may carry an optional `name` stamp (e.g. "slides-field:Title",
+    "slides-block:...") — the revise round trip reads this back off the
+    rendered shape to match it to its spec element, so every shape-creating
+    helper below writes it onto the shape it creates.
     """
     ordered = sorted(
         elements, key=lambda el: _Z_BY_KIND.get(el.get("kind", "text"), 2)
@@ -1306,6 +1311,8 @@ def _add_edge(slide, el):
     conn.line.color.rgb = RGBColor.from_string(el["colour"].lstrip("#"))
     if el.get("stroke_w"):
         conn.line.width = Emu(int(el["stroke_w"]))
+    if el.get("name"):
+        conn.name = el["name"]
     return conn
 
 
@@ -1317,10 +1324,13 @@ def _add_icon(slide, el):
     png = el.get("png")
     if not png:
         return None
-    return slide.shapes.add_picture(
+    pic = slide.shapes.add_picture(
         png, Emu(el["left"]), Emu(el["top"]),
         width=Emu(el["width"]), height=Emu(el["height"]),
     )
+    if el.get("name"):
+        pic.name = el["name"]
+    return pic
 
 
 def _add_text(slide, el):
@@ -1354,6 +1364,8 @@ def _add_text(slide, el):
             run.font.bold = True
         if el.get("font"):
             run.font.name = el["font"]
+    if el.get("name"):
+        tb.name = el["name"]
     return tb
 
 
@@ -1382,6 +1394,8 @@ def _add_box(slide, el):
         shp.shadow.inherit = False
     except Exception:  # noqa: BLE001 — some shapes lack a shadow element
         pass
+    if el.get("name"):
+        shp.name = el["name"]
     return shp
 
 
@@ -1506,4 +1520,6 @@ def _add_table(slide, el):
             # A muted bottom hairline on every data row except the last (D-002).
             if stroke and di < last:
                 _set_cell_bottom_border(cell, stroke, stroke_w)
+    if el.get("name"):
+        gf.name = el["name"]
     return gf
