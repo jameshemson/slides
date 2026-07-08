@@ -4,6 +4,55 @@ All notable changes to the slides skill pack are recorded here. The format
 follows [Keep a Changelog](https://keepachangelog.com/), and the pack uses
 [semantic versioning](https://semver.org/).
 
+## [0.19.0] - 2026-07-08
+
+The brief before the box. James's read on 0.18's decks: the same faults
+persisted — massive numbers, hero text spanning lines, a deck over-indexed on
+one device — and Claude's own template-heavy decks looked better. The trace:
+the pack jumped from content straight to placing boxes, with taste left to
+advisory bands and an optional render-back loop. Impeccable makes good design
+without a visual loop because it decides the composition up front and refuses
+the reflex, not the device. This adds that engine.
+
+### Added
+
+- **The composition brief (narrative Step 2).** Before a slide exists, the
+  model commits four things out loud — the one thing it carries, the form that
+  content EARNS and why, what leads the eye, and a named visual reference —
+  folded into the outline the user signs off. The decision the render only
+  executes now happens where it belongs, not at the moment a box is drawn. A
+  conversational contract, not a spec field.
+- **The reflex/earn-it check.** Across narrative, slop.md, build-deck,
+  slop-check and the always-loaded SKILL: name the device reflex — a hero
+  number, a dumbbell, a big-text line reached for by default — and refuse it,
+  not the device. A hero metric is right when one number is the whole point; a
+  dumbbell when the gap is the message. Earn the form; don't default to it.
+- **Deck-level device repetition (mechanical).** `deck_device_repetition`
+  flags one named composed device carried across most of the deck (≥3 slides
+  and more than half the content slides) in the run summary — a standalone
+  advisory beside `block-count`, outside the rule registry, never blocking.
+  Freeform and framing roles aren't counted, so heterogeneous freeform and
+  statement-bookend decks don't misfire.
+- **Freeform hero-wrap note.** A `display`/`h1` freeform line that wraps past
+  one line but still fits its box is owned up to in the run summary, the way a
+  stepped-down stat row already is.
+
+### Changed
+
+- **Template fidelity, reframed not re-mechanised.** A good template is frozen
+  composition thinking — equity, not debt; a bad one (most corporate templates)
+  is the debt brand fidelity was built to escape. Brand fidelity stays the
+  default; nothing about the render changed.
+- The FROM → TO authoring anti-goal in composition.md now governs any composed
+  beat, not just a stat slide; the three absolute bans stay hard, and devices
+  are explicitly kept off the banlist.
+
+### Unchanged
+
+- The type-scale ladder (deferred by decision): the reflex check reduces how
+  often a hero number appears and the wrap note catches the wrapping, without
+  the high-blast-radius ceiling change. Every existing spec renders identically.
+
 ## [0.18.0] - 2026-07-08
 
 Eyes and freeform. James's verdict on 0.17's decks — "a lot worse than
