@@ -15,14 +15,15 @@ _SCRIPTS_DIR = os.path.join(
 sys.path.insert(0, os.path.abspath(_SCRIPTS_DIR))
 
 import lint
-from primitives import ShapeError
+from primitives import ShapeError, _wrapped_lines
 from roles import (
-    ROLE_PLANNERS, TICK_H_EMU, TICK_W_FRAC,
+    ROLE_PLANNERS, TICK_H_EMU, TICK_W_FRAC, content_roles,
     plan_title, plan_section, plan_statement, plan_quote,
     plan_title_content, plan_two_column, plan_composed_title,
 )
 
 SLIDE_W, SLIDE_H = 12192000, 6858000
+CONTENT_W = SLIDE_W - 2 * 609600  # margin-to-margin span: 10972800
 
 GRID = {
     "margin_x": 609600,
@@ -384,6 +385,182 @@ class TestComposedTitle(unittest.TestCase):
     def test_title_consuming_the_band_raises(self):
         with self.assertRaises(ShapeError) as ctx:
             plan_composed_title(LONG, TOKENS, SLIDE_W, SLIDE_H)
+        self.assertEqual(
+            str(ctx.exception),
+            "composed title leaves no room below it — "
+            "shorten the title or drop it",
+        )
+
+
+class LineFitTest(unittest.TestCase):
+    """REQ-202: lead text prefers the ladder step that HOLDS ITS LINE COUNT,
+    not merely the first that fits the band — 'Q3 Business Review' must land
+    one-lined at the title step, not two-lined at display."""
+
+    def _title_el(self, els):
+        return next(e for e in els if e["role"] == "titleslide-title")
+
+    def test_title_steps_down_to_hold_one_line(self):
+        text = "Q3 Business Review"
+        els = plan_title({"Title": text}, TOKENS, SLIDE_W, SLIDE_H)
+        title = self._title_el(els)
+        # Two-lined at display (the v0.17 bug), one-lined at the title step.
+        self.assertEqual(_wrapped_lines(text, CONTENT_W, 96.0), 2)
+        self.assertEqual(title["font_pt"], 60.0)
+        self.assertEqual(_wrapped_lines(text, CONTENT_W, 60.0), 1)
+        self.assertIs(title.get("font_stepped"), True)
+
+    def test_short_title_stays_at_display(self):
+        els = plan_title({"Title": "Fieldnote"}, TOKENS, SLIDE_W, SLIDE_H)
+        title = self._title_el(els)
+        self.assertEqual(title["font_pt"], 96.0)
+        self.assertEqual(_wrapped_lines("Fieldnote", CONTENT_W, 96.0), 1)
+        self.assertNotIn("font_stepped", title)
+
+    def test_unfittable_title_takes_two_lines_at_the_floor(self):
+        # One line is impossible even at the floor step (60pt holds 14.4em;
+        # this is ~28em), so the floor relaxes to two lines rather than raise.
+        text = "A plain-language account of the quarter and what it means"
+        els = plan_title({"Title": text}, TOKENS, SLIDE_W, SLIDE_H)
+        title = self._title_el(els)
+        self.assertEqual(title["font_pt"], 60.0)
+        self.assertEqual(_wrapped_lines(text, CONTENT_W, 60.0), 2)
+        self.assertIs(title.get("font_stepped"), True)
+
+    def test_600_char_title_still_raises(self):
+        with self.assertRaises(ShapeError) as ctx:
+            plan_title({"Title": LONG}, TOKENS, SLIDE_W, SLIDE_H)
+        self.assertEqual(
+            str(ctx.exception),
+            "title slide content wraps deeper than the slide band — "
+            "shorten the title or subtitle",
+        )
+
+    def test_section_title_holds_one_line(self):
+        text = "Where the quarter went"
+        els = plan_section({"Title": text}, TOKENS, SLIDE_W, SLIDE_H)
+        title = next(e for e in els if e["role"] == "sectionslide-title")
+        self.assertEqual(title["width"], CONTENT_W * 7 // 12)
+        self.assertEqual(
+            _wrapped_lines(text, title["width"], title["font_pt"]), 1)
+
+    def test_statement_spans_full_content_width(self):
+        els = plan_statement(
+            FIELDS_BY_ROLE["statement"], TOKENS, SLIDE_W, SLIDE_H)
+        el = els[0]
+        self.assertEqual(el["left"], GRID["margin_x"])
+        self.assertEqual(el["width"], CONTENT_W)
+        self.assertEqual(el["align"], "center")
+        self.assertLessEqual(
+            _wrapped_lines(el["text"], el["width"], el["font_pt"]), 3)
+
+
+class ContentRolesTest(unittest.TestCase):
+    """D-410: content_roles maps the four colour roles onto a canvas."""
+
+    def test_paper_canvas_is_identity(self):
+        self.assertEqual(content_roles(TOKENS, canvas="paper"), COLOUR_ROLES)
+
+    def test_default_canvas_is_paper(self):
+        self.assertEqual(content_roles(TOKENS), COLOUR_ROLES)
+
+    def test_ink_canvas_inverts_for_legibility(self):
+        roles = content_roles(TOKENS, canvas="ink")
+        self.assertEqual(roles["ink"], COLOUR_ROLES["paper"])
+        # Muted lightens too — grey-on-dark does not read.
+        self.assertEqual(roles["muted"], COLOUR_ROLES["paper"])
+        self.assertEqual(roles["paper"], COLOUR_ROLES["ink"])
+        self.assertEqual(roles["accent"], COLOUR_ROLES["accent"])
+
+    def test_bad_canvas_raises_naming_it(self):
+        with self.assertRaises(ShapeError) as ctx:
+            content_roles(TOKENS, canvas="plum")
+        self.assertIn("plum", str(ctx.exception))
+
+    def test_luminance_boundary_uses_the_tokens_formula(self):
+        # Pure green: a naive channel mean is 85 (dark) but tokens._luminance
+        # weights green at .7152 -> 182.4 (light), so the mapping stays
+        # identity — this discriminates the formula from a naive average.
+        tokens = make_tokens(PRESENTED_SCALE)
+        tokens["colour_roles"]["accent"] = "#00FF00"
+        self.assertEqual(
+            content_roles(tokens, canvas="accent")["ink"], COLOUR_ROLES["ink"])
+        # Mid-grey straddles the threshold: 128.0 is light (strict < 128),
+        # 127.0 is dark.
+        tokens["colour_roles"]["accent"] = "#808080"
+        self.assertEqual(
+            content_roles(tokens, canvas="accent")["ink"], COLOUR_ROLES["ink"])
+        tokens["colour_roles"]["accent"] = "#7F7F7F"
+        self.assertEqual(
+            content_roles(tokens, canvas="accent")["ink"],
+            COLOUR_ROLES["paper"])
+
+
+class CanvasKwargTest(unittest.TestCase):
+    """Planners route their colours through content_roles(tokens, canvas);
+    default canvas='paper' is the identity, so existing suites (which call
+    with no canvas) prove current renders are unchanged."""
+
+    def test_statement_on_ink_canvas_uses_paper_text(self):
+        els = plan_statement(
+            FIELDS_BY_ROLE["statement"], TOKENS, SLIDE_W, SLIDE_H,
+            canvas="ink")
+        self.assertEqual(els[0]["colour"], COLOUR_ROLES["paper"])
+
+    def test_title_on_ink_canvas_lightens_text_keeps_accent_tick(self):
+        els = plan_title(
+            FIELDS_BY_ROLE["title"], TOKENS, SLIDE_W, SLIDE_H, canvas="ink")
+        by_role = {e["role"]: e for e in els}
+        self.assertEqual(
+            by_role["titleslide-title"]["colour"], COLOUR_ROLES["paper"])
+        self.assertEqual(
+            by_role["titleslide-subtitle"]["colour"], COLOUR_ROLES["paper"])
+        self.assertEqual(
+            by_role["titleslide-tick"]["fill"], COLOUR_ROLES["accent"])
+
+    def test_section_ghost_lightens_on_ink_canvas(self):
+        els = plan_section({"Title": "Momentum"}, TOKENS, SLIDE_W, SLIDE_H,
+                           ordinal=2, canvas="ink")
+        ghost = next(e for e in els if e["role"] == "sectionslide-ghost")
+        self.assertEqual(ghost["colour"], COLOUR_ROLES["paper"])
+
+    def test_every_planner_accepts_canvas_and_drops_dark_illegible_inks(self):
+        # On a dark canvas no element may keep ink or muted (grey-on-dark).
+        banned = {COLOUR_ROLES["ink"], COLOUR_ROLES["muted"]}
+        for role in ROLE_PLANNERS:
+            with self.subTest(role=role):
+                els = ROLE_PLANNERS[role](
+                    FIELDS_BY_ROLE[role], TOKENS, SLIDE_W, SLIDE_H,
+                    canvas="ink")
+                for el in els:
+                    for key in ("colour", "fill", "stroke"):
+                        if key in el:
+                            self.assertNotIn(el[key], banned)
+
+    def test_composed_title_accepts_canvas(self):
+        els, _band = plan_composed_title(
+            "Where the margin went", TOKENS, SLIDE_W, SLIDE_H, canvas="ink")
+        self.assertEqual(els[0]["colour"], COLOUR_ROLES["paper"])
+
+
+class ComposedTitleLineCapTest(unittest.TestCase):
+    """plan_composed_title has a single step (h1), so REQ-202's criterion
+    applies directly: past two lines it raises its existing ShapeError."""
+
+    def test_two_line_heading_still_plans(self):
+        # ~28em wraps to two lines at h1's 21.6em budget — allowed.
+        text = "A plain-language account of the quarter and what it means"
+        self.assertEqual(_wrapped_lines(text, CONTENT_W, 40.0), 2)
+        els, _band = plan_composed_title(text, TOKENS, SLIDE_W, SLIDE_H)
+        self.assertEqual(els[0]["font_pt"], 40.0)
+
+    def test_three_line_heading_raises_the_existing_error(self):
+        text = ("A heading that keeps qualifying itself until it has "
+                "wrapped well past the two lines a composed slide can "
+                "afford to spend on it")
+        self.assertGreater(_wrapped_lines(text, CONTENT_W, 40.0), 2)
+        with self.assertRaises(ShapeError) as ctx:
+            plan_composed_title(text, TOKENS, SLIDE_W, SLIDE_H)
         self.assertEqual(
             str(ctx.exception),
             "composed title leaves no room below it — "

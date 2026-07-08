@@ -34,8 +34,10 @@ from primitives import (  # noqa: E402
     _line_h,
     _require,
     _text_h,
+    _wrapped_lines,
 )
 from lint import GHOST_MULTIPLE  # noqa: E402
+from tokens import _luminance  # noqa: E402
 
 # The eyebrow tick (freehand study): a short accent bar seated above a slide's
 # title. Generic anatomy constants, not brand values — the tick's COLOUR is
@@ -83,34 +85,80 @@ def _hairline_emu(tokens) -> int:
     return round((tokens.get("shape") or {}).get("hairline_pt", 1.0) * EMU_PER_PT)
 
 
-def _fit_pt(text, width, avail_h, tokens, steps, err):
-    """The first ladder step whose wrapped text fits avail_h (D-310).
+def _fit_pt(text, width, avail_h, tokens, steps, err,
+            max_lines=None, floor_max_lines=None):
+    """The first ladder step whose wrapped text fits avail_h (D-310) — and,
+    with `max_lines`, holds its line count (REQ-202).
 
     Lead text is drawn as big as fits: try each named type-scale step in
     order (e.g. display -> title -> h1) and return (font_pt, stepped) where
     `stepped` is True when the first choice didn't fit — the caller marks
     the element "font_stepped" so the render summary owns up to it (the
-    v0.15 table body->caption step-down precedent). Past the last step the
-    text genuinely doesn't fit the band: raise the role's ShapeError.
+    v0.15 table body->caption step-down precedent).
+
+    A step qualifies iff the wrapped text fits avail_h AND (max_lines is
+    None or _wrapped_lines <= max_lines) — band-fit alone let a title hold
+    a big step by WRAPPING ("Q3 Business Review" drew two lines at display
+    when the title step held it on one). When no step holds max_lines and
+    `floor_max_lines` is set, the final (floor) step is tried once more
+    with the relaxed count, so a title that cannot hold one line at any
+    step still lands, two-lined, at the floor. Past that the text genuinely
+    doesn't fit the band: raise the role's ShapeError.
     """
     ts = tokens["type_scale"]
+
+    def _fits(pt, line_cap):
+        if _text_h(text, width, pt) > avail_h:
+            return False
+        return line_cap is None or _wrapped_lines(text, width, pt) <= line_cap
+
     for i, step in enumerate(steps):
-        pt = ts[step]
-        if _text_h(text, width, pt) <= avail_h:
-            return pt, i > 0
+        if _fits(ts[step], max_lines):
+            return ts[step], i > 0
+    if max_lines is not None and floor_max_lines is not None:
+        if _fits(ts[steps[-1]], floor_max_lines):
+            return ts[steps[-1]], True
     raise ShapeError(err)
+
+
+def content_roles(tokens, canvas="paper") -> dict:
+    """The four colour roles as CONTENT colouring on a `canvas` (D-410).
+
+    `canvas` names the colour role the slide is painted with. On a light
+    canvas the mapping is the identity. On a dark canvas (luminance below
+    128, the tokens._luminance formula) text must invert to stay legible:
+    ink AND muted both become the paper hex — grey-on-dark does not read —
+    paper becomes the ink hex, and the accent stays itself. Raises
+    ShapeError when `canvas` is not a colour-role name.
+    """
+    roles = tokens.get("colour_roles", {}) or {}
+    if canvas not in roles:
+        raise ShapeError(
+            f"canvas '{canvas}' is not a colour role "
+            f"(one of: {', '.join(sorted(roles)) or 'none defined'})"
+        )
+    if _luminance(roles[canvas]) < 128:
+        return {
+            "ink": roles["paper"], "muted": roles["paper"],
+            "paper": roles["ink"], "accent": roles["accent"],
+        }
+    return {
+        "ink": roles["ink"], "paper": roles["paper"],
+        "accent": roles["accent"], "muted": roles["muted"],
+    }
 
 
 # --- title -------------------------------------------------------------------
 
 
-def plan_title(fields, tokens, slide_w, slide_h) -> list:
+def plan_title(fields, tokens, slide_w, slide_h, canvas="paper") -> list:
     """The deck's opening slide: eyebrow tick, display-size assertion title,
     muted subtitle — seated at the optical centre of the band.
 
     fields: {"Title": str (required), "Subtitle": str?}.
     """
     grid, ts, roles = _require(tokens, ("display", "title", "body"))
+    roles = {**roles, **content_roles(tokens, canvas)}
     title = _field(fields, "Title")
     if not title:
         raise ShapeError("title slide needs a Title")
@@ -125,11 +173,13 @@ def plan_title(fields, tokens, slide_w, slide_h) -> list:
     fixed_h = TICK_H_EMU + 2 * baseline + (
         baseline + subtitle_h if subtitle else 0
     )
-    # Lead text draws as big as fits (D-310): display first, title step next.
+    # Lead text draws as big as fits ON ONE LINE (D-310 + REQ-202): display
+    # first, title step next; only the floor step may take a second line.
     title_pt, stepped = _fit_pt(
         title, content_w, band_h - fixed_h, tokens, ("display", "title"),
         "title slide content wraps deeper than the slide band — "
         "shorten the title or subtitle",
+        max_lines=1, floor_max_lines=2,
     )
     title_h = _text_h(title, content_w, title_pt)
     block_h = fixed_h + title_h
@@ -163,7 +213,8 @@ def plan_title(fields, tokens, slide_w, slide_h) -> list:
 # --- section -----------------------------------------------------------------
 
 
-def plan_section(fields, tokens, slide_w, slide_h, region=None, ordinal=None) -> list:
+def plan_section(fields, tokens, slide_w, slide_h, region=None, ordinal=None,
+                 canvas="paper") -> list:
     """A section divider: title-size heading, and — when the section is
     numbered — a ghost numeral in muted display type behind it.
 
@@ -173,6 +224,7 @@ def plan_section(fields, tokens, slide_w, slide_h, region=None, ordinal=None) ->
     display × GHOST_MULTIPLE, the one off-scale size the size rule sanctions.
     """
     grid, ts, roles = _require(tokens, ("display", "title", "h1"))
+    roles = {**roles, **content_roles(tokens, canvas)}
     title = _field(fields, "Title")
     if not title:
         raise ShapeError("section slide needs a Title")
@@ -195,10 +247,12 @@ def plan_section(fields, tokens, slide_w, slide_h, region=None, ordinal=None) ->
         })
 
     title_w = content_w * 7 // 12
-    # Lead text draws as big as fits (D-310): title step first, h1 next.
+    # Lead text draws as big as fits ON ONE LINE (D-310 + REQ-202): title
+    # step first, h1 next; only the floor step may take a second line.
     title_pt, stepped = _fit_pt(
         title, title_w, band_h, tokens, ("title", "h1"),
         "section title wraps deeper than the slide band — shorten it",
+        max_lines=1, floor_max_lines=2,
     )
     title_h = _text_h(title, title_w, title_pt)
     title_el = {
@@ -218,13 +272,14 @@ def plan_section(fields, tokens, slide_w, slide_h, region=None, ordinal=None) ->
 # --- statement ---------------------------------------------------------------
 
 
-def plan_statement(fields, tokens, slide_w, slide_h) -> list:
+def plan_statement(fields, tokens, slide_w, slide_h, canvas="paper") -> list:
     """One sentence, display size, centred at the optical centre — the slide
     IS the assertion, so nothing else shares it.
 
     fields: {"Statement": str (required)}.
     """
     _grid, ts, roles = _require(tokens, ("display", "title", "h1"))
+    roles = {**roles, **content_roles(tokens, canvas)}
     statement = _field(fields, "Statement")
     if not statement:
         raise ShapeError("statement slide needs a Statement")
@@ -233,18 +288,21 @@ def plan_statement(fields, tokens, slide_w, slide_h) -> list:
     band_top, band_bottom = _band(tokens, slide_h, None)
     band_h = band_bottom - band_top
 
-    width = round(content_w * 10 / 12)
-    # Lead text draws as big as fits (D-310): a two-word hero lands at
-    # display; a full sentence steps to title/h1 rather than refusing.
+    # Full content span; the centre alignment inside it carries the pose.
+    width = content_w
+    # Lead text draws as big as fits in three lines (D-310 + REQ-202): a
+    # two-word hero lands at display; a full sentence steps to title/h1
+    # rather than refusing.
     pt, stepped = _fit_pt(
         statement, width, band_h, tokens, ("display", "title", "h1"),
         "statement wraps deeper than the slide band — "
         "cut it to the line that lands",
+        max_lines=3,
     )
     height = _text_h(statement, width, pt)
     el = {
         "role": "statement-text", "text": statement,
-        "left": content_left + (content_w - width) // 2,
+        "left": content_left,
         "top": band_top + round((band_h - height) * OPTICAL_CENTRE),
         "width": width, "height": height,
         "font_pt": pt, "colour": roles["ink"],
@@ -259,7 +317,7 @@ def plan_statement(fields, tokens, slide_w, slide_h) -> list:
 # --- quote -------------------------------------------------------------------
 
 
-def plan_quote(fields, tokens, slide_w, slide_h) -> list:
+def plan_quote(fields, tokens, slide_w, slide_h, canvas="paper") -> list:
     """A quotation under an oversized accent quote mark, attribution below.
 
     fields: {"Quote": str (required), "Attribution": str?}. The mark is a
@@ -267,6 +325,7 @@ def plan_quote(fields, tokens, slide_w, slide_h) -> list:
     constrains the hierarchy; the quotation itself is the rank-1 lead.
     """
     grid, ts, roles = _require(tokens, ("display", "title", "h1", "body"))
+    roles = {**roles, **content_roles(tokens, canvas)}
     quote = _field(fields, "Quote")
     if not quote:
         raise ShapeError("quote slide needs a Quote")
@@ -282,11 +341,13 @@ def plan_quote(fields, tokens, slide_w, slide_h) -> list:
     attr_text = "— " + attribution if attribution else ""
     attr_h = _text_h(attr_text, quote_w, ts["body"]) if attribution else 0
     tail_h = (baseline + attr_h) if attribution else 0
-    # Lead text draws as big as fits (D-310): title step first, h1 next.
+    # Lead text draws as big as fits in three lines (D-310 + REQ-202):
+    # title step first, h1 next.
     avail = (band_bottom - quote_top) - tail_h
     quote_pt, stepped = _fit_pt(
         quote, quote_w, avail, tokens, ("title", "h1"),
         "quote wraps deeper than the slide band — trim the quotation",
+        max_lines=3,
     )
     quote_h = _text_h(quote, quote_w, quote_pt)
     bottom = quote_top + quote_h
@@ -323,13 +384,14 @@ def plan_quote(fields, tokens, slide_w, slide_h) -> list:
 # --- title-content -----------------------------------------------------------
 
 
-def plan_title_content(fields, tokens, slide_w, slide_h) -> list:
+def plan_title_content(fields, tokens, slide_w, slide_h, canvas="paper") -> list:
     """The workhorse body slide: eyebrow tick, h1 assertion title, body items
     stacked below with a muted hairline rule between neighbours.
 
     fields: {"Title": str (required), "Body": list-of-str or str?}.
     """
     grid, ts, roles = _require(tokens, ("h1", "body"))
+    roles = {**roles, **content_roles(tokens, canvas)}
     title = _field(fields, "Title")
     if not title:
         raise ShapeError("title-content slide needs a Title")
@@ -391,7 +453,7 @@ def plan_title_content(fields, tokens, slide_w, slide_h) -> list:
 # --- two-column ----------------------------------------------------------------
 
 
-def plan_two_column(fields, tokens, slide_w, slide_h) -> list:
+def plan_two_column(fields, tokens, slide_w, slide_h, canvas="paper") -> list:
     """Tick + title over two even columns of body text, split by a muted
     vertical hairline centred in the gutter.
 
@@ -399,6 +461,7 @@ def plan_two_column(fields, tokens, slide_w, slide_h) -> list:
     or str} — all three required.
     """
     grid, ts, roles = _require(tokens, ("h1", "body"))
+    roles = {**roles, **content_roles(tokens, canvas)}
     title = _field(fields, "Title")
     if not title:
         raise ShapeError("two-column slide needs a Title")
@@ -466,14 +529,17 @@ def plan_two_column(fields, tokens, slide_w, slide_h) -> list:
 # --- composed title -----------------------------------------------------------
 
 
-def plan_composed_title(title, tokens, slide_w, slide_h):
+def plan_composed_title(title, tokens, slide_w, slide_h, canvas="paper"):
     """The h1 heading a composed slide seats its blocks under.
 
     Returns (elements, band): one rank-1 heading element at the top margin,
     and the (left, top, width, height) band left below it — the region the
-    composed planners fill. Raises ShapeError when the heading eats the band.
+    composed planners fill. The heading has a single step (h1), so REQ-202's
+    line criterion applies directly: raises ShapeError when the heading
+    wraps past two lines or eats the band.
     """
     grid, ts, roles = _require(tokens, ("h1",))
+    roles = {**roles, **content_roles(tokens, canvas)}
     text = str(title)
     margin_x = grid["margin_x"]
     margin_top = grid["margin_top"]
@@ -484,7 +550,7 @@ def plan_composed_title(title, tokens, slide_w, slide_h):
     title_bottom = margin_top + title_h
     band_top = title_bottom + 2 * baseline
     band_h = (slide_h - grid["margin_bottom"]) - band_top
-    if band_h <= 0:
+    if band_h <= 0 or _wrapped_lines(text, content_w, ts["h1"]) > 2:
         raise ShapeError(
             "composed title leaves no room below it — "
             "shorten the title or drop it"
