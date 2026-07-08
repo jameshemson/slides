@@ -4,6 +4,50 @@ All notable changes to the slides skill pack are recorded here. The format
 follows [Keep a Changelog](https://keepachangelog.com/), and the pack uses
 [semantic versioning](https://semver.org/).
 
+## [0.18.0] - 2026-07-08
+
+Eyes and freeform. James's verdict on 0.17's decks — "a lot worse than
+freehand… I don't think this worked" — traced to three faults: rendered
+word-wrap defeating the planned geometry at display sizes, lead text sized
+to the band instead of the line, and hard-coded role planners with no
+judgment in the loop. The fix follows one insight from the freehand study:
+Claude designs well when it can see and iterate. So the model gets eyes,
+and freeform grows into the main stage.
+
+### Fixed
+
+- **Text fits the box, at every scale.** The wrap estimator packs by
+  per-glyph widths and character-wraps space-free tokens — the "$8.4M"
+  that overprinted its label can no longer happen, for any text element.
+  Stat numbers never wrap: they step down the ladder until every value
+  holds one line, past which the render fails naming the offender.
+- **Lead text holds the line.** Titles and section titles take the largest
+  step that keeps them on ONE line (two only at the floor); statements and
+  quotes cap at three. "Q3 Business Review" renders one line at 60pt, not
+  two at 96.
+
+### Added
+
+- **The vision loop.** build-deck's render-back check stops being
+  report-only: with a raster backend (LibreOffice headless preferred) it
+  looks at the rendered slides against the craft checklist, EDITS THE SPEC,
+  and re-renders — up to two passes — then reports what the look found and
+  changed. revise runs the same loop after re-rendering.
+- **Freeform percent placement** — `at x A%-B%` / `y A%-B%`, resolved
+  exactly against the band: fine enough to hand-place data-accurate
+  graphics. A dumbbell chart drawn from a spec is the shipped acceptance
+  test. The steering now encourages it when no Chart: type fits.
+- **Canvas colour blocking** — `Canvas: ink|accent|muted|paper` on any
+  brand-fidelity slide paints the background with the token role and
+  recolours content for contrast; `panel <colour> at full-bleed` washes a
+  whole slide behind freeform content. Hero moments stop being white.
+
+### Unchanged
+
+- Template fidelity (rejects Canvas by name rather than silently
+  ignoring it); every existing spec renders identically unless it uses
+  the new fields.
+
 ## [0.17.0] - 2026-07-08
 
 The brand carries the look — the template never did. Real use against a
