@@ -78,7 +78,11 @@ The brand's *identity* — its colours, its type, its design tokens — comes fr
 user's own brand, captured up front by the teach-slides skill and recorded in the
 brand profile. In brand fidelity, the default, the layouts and geometry are the
 pack's own design system, drawn entirely from those tokens, so a slide reads as
-the brand without inheriting a template's design debt. The craft above is constant
+the brand without inheriting the design debt of a weak template — and most
+corporate templates are exactly that: restrictive, placeholder-heavy, built to be
+filled. A genuinely good template is the opposite — frozen composition thinking, a
+designer's layouts worth standing on — which is what template fidelity (below) is
+for. The craft above is constant
 across every brand. The skin is the user's, and the skill never invents an
 off-brand value: every colour, size, and position resolves to a token. Within
 that guarantee, composition is open: the named compositions are fast paths,

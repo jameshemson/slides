@@ -813,12 +813,19 @@ def plan_freeform(elements, tokens, slide_w, slide_h, region=None) -> list:
                     f"{el['scale']} size and overflows its placement — give it "
                     f"more rows, a smaller scale, or shorter text"
                 )
-            out.append({
+            text_el = {
                 "role": "freeform-text", "text": el["text"],
                 "left": l, "top": t, "width": w, "height": h,
                 "font_pt": font_pt, "colour": roles[el["colour"]],
                 "anchor": "middle",
-            })
+            }
+            # A hero-scale line (display/h1) that wraps still fits its box — the
+            # overflow check above already raised if it didn't — but multi-line
+            # hero text reads as a wrapped paragraph, not a hero. Stamp it so the
+            # run summary can own up, the way a stepped-down stat row does.
+            if el["scale"] in ("display", "h1") and needed > 1:
+                text_el["hero_wrapped"] = needed
+            out.append(text_el)
         elif kind == "arrow":
             out.append({
                 "role": "freeform-arrow", "kind": "connector",

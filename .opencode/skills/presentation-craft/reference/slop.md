@@ -60,6 +60,21 @@ element.
   ipsum, sample names, and filler slides ("Agenda", "Thank You", "Any questions?")
   that carry nothing. *Detect:* boilerplate strings, divider-slide defaults, and
   slides with no real content.
+- **The device reflex.** Reaching for a hero number, a dumbbell, or a big-text
+  statement because it is the default reach, not because the beat earns it.
+  *Detect:* a hero metric on a slide whose number is not the whole point; a
+  hand-drawn dumbbell where the two-value gap is not the message; a line set huge
+  with nothing turning on it. The refuse here is unusual: **do not ban the
+  device.** A hero metric, a dumbbell, and big text each land when the content
+  earns them. Refuse the *reflex* — ask what the beat moves the audience
+  FROM → TO, and let that pick the form. Earn it; do not default to it.
+- **One device, deck-wide.** The same device carrying slide after slide — three
+  hero-number slides, a run of dumbbells, five near-identical stat rows — so the
+  deck reads as a template, not as an argument. *Detect:* across the whole deck,
+  one form (a composed primitive, a hand-drawn graphic, a role) dominates the
+  content slides; each slide can read clean and the deck still fail this.
+  `build-deck` also flags this mechanically when one named composed device carries
+  most of the deck. Vary the form.
 
 ## Layer 2: prose slop
 

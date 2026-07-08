@@ -385,6 +385,60 @@ BLOCK_COUNT = {
     ),
 }
 
+# Deck-level device repetition (the reflex/earn-it check, mechanical half). Like
+# BLOCK_COUNT this is a cross-slide note that cannot live in RULES — lint.review
+# is single-slide and family-gated, so it never sees the deck as a set. render.py
+# accumulates each content slide's primary device across the whole deck and calls
+# the helper below after the render loop, appending any finding to the same
+# advisory channel BLOCK_COUNT uses (same shape, same advisory guarantee).
+#
+# Only NAMED composed primitives count. `freeform` is excluded: it is mechanically
+# uniform but visually heterogeneous (a node graph, a dumbbell, and an annotated
+# layout are all freeform), so a count cannot tell a repeated dumbbell from three
+# distinct figures — that catch lives in the prose reflex. Fixed roles are
+# excluded too: statement/quote bookends are narrative framing, not a device
+# reflex.
+DECK_DEVICE_TYPES = frozenset({
+    "stat-row", "card-grid", "comparison", "process", "timeline",
+    "tree", "cycle", "matrix", "table", "icon-list",
+})
+
+DECK_DEVICE_REPETITION = {
+    "rule_id": "deck-device-repetition",
+    "tier": "quality",
+    "severity": "advisory",
+    "message": "",  # deck_device_repetition() fills this with the device + count
+}
+
+
+def deck_device_repetition(devices, content_slides):
+    """One device carried deck-wide reads as a template, not an argument.
+
+    `devices` is the list of named composed devices — one per composed slide whose
+    first block is a DECK_DEVICE_TYPES primitive (freeform and fixed roles are not
+    in it; render.py pre-filters). `content_slides` is the count of non-framing
+    slides (all but title/section) — the denominator for "how much of the deck is
+    this one device". Returns an advisory finding (same shape as BLOCK_COUNT) when
+    the most-repeated device is on >= 3 slides AND strictly more than half the
+    content slides; else None. Advisory only — never blocks a render.
+    """
+    if not devices or content_slides <= 0:
+        return None
+    counts = {}
+    for name in devices:
+        counts[name] = counts.get(name, 0) + 1
+    top = max(counts, key=counts.get)  # first-inserted on a tie (deterministic)
+    n = counts[top]
+    if n < 3 or n / content_slides <= 0.5:
+        return None
+    finding = dict(DECK_DEVICE_REPETITION)
+    finding["message"] = (
+        f"{n} of the deck's slides are a '{top}' — one device repeated reads as "
+        f"monotony; vary the form or let the point earn a different shape."
+    )
+    return finding
+
+
 RULES = [
     {
         "id": "hierarchy-ratio",

@@ -35,7 +35,7 @@ If the spec carries any `Chart:` slides, drawing them needs matplotlib: `pip ins
 
 Render slop and you ship slop. Run the detector on the deck spec before `render.py` touches it.
 
-Run both layers from `slop.md`: the presentation-slop checks and the prose-slop checks, plus the five-dimension score on the notes. Catch the tacked-on strapline, the wall of text, the slide-as-script, bullet soup, restatement, the deck about the presenter, unearned hype.
+Run both layers from `slop.md`: the presentation-slop checks and the prose-slop checks, plus the five-dimension score on the notes. Catch the tacked-on strapline, the wall of text, the slide-as-script, bullet soup, restatement, the deck about the presenter, unearned hype — and two the render only half-sees: the *device reflex* (a hero number, a dumbbell, a big-text line reached for by default rather than earned by the beat) and *one device carried deck-wide* (the same form on slide after slide). Devices are earned, never banned: refuse the reflex and the repetition, not the hero metric itself.
 
 Fix what you find in the spec itself. Show the user the changes and get a yes. A clean spec renders to a clean deck.
 
@@ -108,7 +108,7 @@ Check for a backend: `python3 -c "import sys; sys.path.insert(0,'scripts'); impo
 
 ## Step 5: Report
 
-Print the render summary. It states how many slides were written, which carry a native chart, which carry a `VISUAL TO ADD` note, any matplotlib or brand-font fallback warning, and any non-blocking composition advisory notes on `composed` and drawn role slides (evidence-cited "what good looks like" — see [composition.md](../presentation-craft/reference/composition.md)), plus a note when a role's lead text stepped down the type ladder to fit. Surface advisories to the user as suggestions, not errors; the deck still rendered.
+Print the render summary. It states how many slides were written, which carry a native chart, which carry a `VISUAL TO ADD` note, any matplotlib or brand-font fallback warning, and any non-blocking composition advisory notes on `composed` and drawn role slides (evidence-cited "what good looks like" — see [composition.md](../presentation-craft/reference/composition.md)), plus a note when a role's lead text stepped down the type ladder to fit, a deck-level note when one named composed device carries most of the deck (the repetition flag), and a note when a freeform hero line wrapped past one line. Surface advisories to the user as suggestions, not errors; the deck still rendered.
 
 A `Chart:` block is drawn natively and placed on the slide (PNGs are written to a `.charts/` folder beside the `.pptx` and embedded in it). A `Visual:` field is recorded in the slide's speaker notes, prefixed `VISUAL TO ADD:`, and is not drawn — tell the user which slides carry one and that placing it in PowerPoint is their step. If the summary reports a matplotlib fallback, tell the user that those chart slides became notes and that `pip install matplotlib` will draw them on the next run.
 
