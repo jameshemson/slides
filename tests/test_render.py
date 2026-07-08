@@ -2011,5 +2011,168 @@ class DumbbellRenderTest(unittest.TestCase):
                     )
 
 
+class CanvasRenderTest(unittest.TestCase):
+    """REQ-205/D-405/D-410/D-411: an optional `Canvas: <colour-role>` field
+    on composed and the six fixed roles — brand fidelity only — paints the
+    slide background with that token role and re-resolves content colours
+    for contrast. Template fidelity rejects the field by name (never a
+    silent drop), and an unknown role is a named SpecError listing the
+    canonical four."""
+
+    INK_HEX = "1A1A1A"       # BRAND_IDENTITY colours, pinned
+    PAPER_HEX = "FFFFFF"
+    ACCENT_HEX = "0B5FFF"
+
+    STATEMENT_SPEC = (
+        "---\ndeck: d\naudience: a\n---\n\n"
+        "## Slide 1\nlayout: statement\n"
+        "Statement: Hero moments stop being white.\n"
+        "Canvas: ink\n"
+    )
+    COMPOSED_SPEC = (
+        "---\ndeck: d\naudience: a\n---\n\n"
+        "## Slide 1\nlayout: composed\n"
+        "Title: What moved this quarter\n"
+        "Canvas: accent\n"
+        "Block: stat-row\n"
+        "56 | Days to close\n"
+        "4% | Churn rate\n"
+    )
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp(prefix="slides-canvas-render-test-")
+        self.addCleanup(shutil.rmtree, self._tmp, ignore_errors=True)
+
+    def _render(self, spec_text, brand, name):
+        spec_path = os.path.join(self._tmp, f"{name}.deck.md")
+        brand_path = os.path.join(self._tmp, f"{name}.brand.json")
+        out_path = os.path.join(self._tmp, f"{name}.pptx")
+        with open(spec_path, "w", encoding="utf-8") as fh:
+            fh.write(spec_text)
+        with open(brand_path, "w", encoding="utf-8") as fh:
+            json.dump(brand, fh)
+        result = subprocess.run(
+            [sys.executable, RENDER_PY, "--spec", spec_path,
+             "--brand", brand_path, "--out", out_path],
+            capture_output=True, text=True,
+        )
+        return result, out_path
+
+    def _run_colours(self, shape):
+        return {
+            str(run.font.color.rgb)
+            for para in shape.text_frame.paragraphs
+            for run in para.runs
+        }
+
+    def test_statement_on_ink_canvas_paints_bg_and_inverts_the_text(self):
+        # Exit 0 IS the lint-green pin: a lint failure is a SpecError and
+        # exits 1 before any .pptx is written.
+        result, out_path = self._render(
+            self.STATEMENT_SPEC, dict(BRAND_IDENTITY), "ink-statement")
+        self.assertEqual(
+            result.returncode, 0,
+            f"Canvas: ink render failed.\nstdout: {result.stdout}\n"
+            f"stderr: {result.stderr}",
+        )
+        slide = Presentation(out_path).slides[0]
+        xml = slide._element.xml
+        self.assertIn("<p:bg", xml, "no slide-level background painted")
+        self.assertIn(self.INK_HEX, xml, "background is not the ink hex")
+        statements = [
+            s for s in slide.shapes if s.name == "slides-field:Statement"
+        ]
+        self.assertEqual(len(statements), 1)
+        # D-410: on a dark canvas the statement's ink inverts to paper.
+        self.assertEqual(self._run_colours(statements[0]), {self.PAPER_HEX})
+
+    def test_composed_on_accent_canvas_recolours_title_not_blocks(self):
+        result, out_path = self._render(
+            self.COMPOSED_SPEC, dict(BRAND_IDENTITY), "accent-composed")
+        self.assertEqual(
+            result.returncode, 0,
+            f"Canvas: accent render failed.\nstdout: {result.stdout}\n"
+            f"stderr: {result.stderr}",
+        )
+        slide = Presentation(out_path).slides[0]
+        # The background is the accent role, painted slide-level.
+        from pptx.enum.dml import MSO_FILL  # noqa: PLC0415
+        fill = slide.background.fill
+        self.assertEqual(fill.type, MSO_FILL.SOLID)
+        self.assertEqual(str(fill.fore_color.rgb), self.ACCENT_HEX)
+        # The composed title re-resolves through content_roles: the accent
+        # canvas is dark, so ink text inverts to paper.
+        titles = [s for s in slide.shapes if s.name == "slides-field:Title"]
+        self.assertEqual(len(titles), 1)
+        self.assertEqual(self._run_colours(titles[0]), {self.PAPER_HEX})
+        # BLOCK primitives keep their own token colours (D-410 scope): the
+        # stat numbers stay accent, exactly as they draw on paper.
+        stat_runs = {
+            run.text: str(run.font.color.rgb)
+            for s in slide.shapes
+            if (s.name or "").startswith("slides-block:stat-row")
+            for para in s.text_frame.paragraphs
+            for run in para.runs
+        }
+        self.assertEqual(stat_runs.get("56"), self.ACCENT_HEX)
+        self.assertEqual(stat_runs.get("4%"), self.ACCENT_HEX)
+
+    def test_unknown_canvas_role_is_a_named_error_listing_the_roles(self):
+        spec = self.STATEMENT_SPEC.replace("Canvas: ink", "Canvas: navy")
+        result, out_path = self._render(
+            spec, dict(BRAND_IDENTITY), "navy")
+        self.assertEqual(
+            result.returncode, 1,
+            f"expected exit 1 on Canvas: navy.\nstdout: {result.stdout}\n"
+            f"stderr: {result.stderr}",
+        )
+        self.assertIn("navy", result.stderr)
+        for role in ("ink", "paper", "accent", "muted"):
+            self.assertIn(role, result.stderr)
+        self.assertFalse(
+            os.path.exists(out_path),
+            "no .pptx may be written on a bad Canvas value",
+        )
+
+    def test_template_fidelity_rejects_canvas_naming_the_slide(self):
+        # D-411: never a silent drop — the error names the slide and the fix.
+        brand = {
+            "fidelity": "template",
+            "template": TEMPLATE,
+            "fonts": {"heading": "Calibri", "body": "Calibri"},
+            "colours": dict(BRAND_IDENTITY["colours"]),
+            "layout_map": dict(LAYOUT_MAP),
+        }
+        result, out_path = self._render(
+            self.STATEMENT_SPEC, brand, "template-reject")
+        self.assertEqual(
+            result.returncode, 1,
+            f"expected exit 1 for Canvas under template fidelity.\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}",
+        )
+        self.assertIn("slide 1", result.stderr)
+        self.assertIn("Canvas is a brand-fidelity field", result.stderr)
+        self.assertIn('"fidelity": "brand"', result.stderr)
+        self.assertFalse(
+            os.path.exists(out_path),
+            "no .pptx may be written when Canvas meets template fidelity",
+        )
+
+    def test_composed_canvas_under_template_fidelity_is_also_rejected(self):
+        # The composed parser stores Canvas in fields, not meta — the D-411
+        # gate must catch that shape too.
+        brand = {
+            "fidelity": "template",
+            "template": TEMPLATE,
+            "fonts": {"heading": "Calibri", "body": "Calibri"},
+            "colours": dict(BRAND_IDENTITY["colours"]),
+            "layout_map": {**LAYOUT_MAP, "composed": 5},
+        }
+        result, _ = self._render(
+            self.COMPOSED_SPEC, brand, "template-composed-reject")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Canvas is a brand-fidelity field", result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -867,5 +867,112 @@ class StampedComposedFlattenTest(unittest.TestCase):
         )
 
 
+# REQ-205 round trip: one Canvas: ink hero slide and one plain paper slide.
+CANVAS_SPEC_TEXT = (
+    "---\n"
+    "deck: Canvas Round Trip\n"
+    "audience: The leadership team.\n"
+    "register: presented\n"
+    "---\n"
+    "\n"
+    "## Slide 1\n"
+    "layout: statement\n"
+    "Statement: The hero moment lands on ink.\n"
+    "Canvas: ink\n"
+    "\n"
+    "## Slide 2\n"
+    "layout: statement\n"
+    "Statement: The plain slide stays on paper.\n"
+)
+
+
+class CanvasRoundTripTest(unittest.TestCase):
+    """REQ-205: a brand-fidelity `Canvas: ink` slide's painted background
+    reverse-maps to a `Canvas: ink` line on extraction with --brand; the
+    paper slide and a non-token background recover no Canvas line."""
+
+    @classmethod
+    def setUpClass(cls):
+        _require_deck_to_spec()
+        cls._tmp = tempfile.mkdtemp(prefix="slides-deck-to-spec-canvas-")
+        cls.spec_path, cls.brand_path, cls.out_path = _render_identity(
+            cls._tmp, CANVAS_SPEC_TEXT, name="canvas")
+        cls.extracted_path = os.path.join(cls._tmp, "canvas-extracted.deck.md")
+        cls.proc = _extract([
+            cls.out_path, "--brand", cls.brand_path,
+            "--out", cls.extracted_path,
+            "--report", os.path.join(cls._tmp, "canvas.import-report.md"),
+        ])
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls._tmp, ignore_errors=True)
+
+    def test_extraction_exits_zero(self):
+        self.assertEqual(
+            self.proc.returncode, 0,
+            f"stdout: {self.proc.stdout}\nstderr: {self.proc.stderr}",
+        )
+
+    def test_emitted_spec_parses(self):
+        render.parse_spec(self.extracted_path)
+
+    def test_canvas_restored_on_the_ink_slide_only(self):
+        extracted = render.parse_spec(self.extracted_path)
+        self.assertEqual(len(extracted), 2)
+        self.assertEqual(
+            extracted[0]["meta"].get("Canvas"), "ink",
+            "slide 1's ink background did not reverse-map to Canvas: ink",
+        )
+        self.assertNotIn(
+            "Canvas", extracted[1]["meta"],
+            "the paper slide must not grow a Canvas line",
+        )
+        with open(self.extracted_path, encoding="utf-8") as fh:
+            text = fh.read()
+        self.assertIn("Canvas: ink", text)
+        self.assertEqual(
+            text.count("Canvas:"), 1,
+            "exactly one Canvas line: the ink slide's",
+        )
+
+    def test_non_token_background_recovers_no_canvas_line(self):
+        # A hand-made deck: a stamped statement slide (so Tier 0 resolves
+        # it) painted a hex that is NOT any of the brand's colour roles.
+        # The reverse map has nothing to say — no Canvas line, no crash.
+        from pptx.dml.color import RGBColor  # noqa: PLC0415
+        from pptx.util import Emu  # noqa: PLC0415
+
+        prs = Presentation()
+        slide = prs.slides.add_slide(prs.slide_layouts[6])
+        slide.name = "slides-role:statement"
+        box = slide.shapes.add_textbox(
+            Emu(914400), Emu(914400), Emu(6096000), Emu(914400))
+        box.name = "slides-field:Statement"
+        box.text_frame.text = "A hand-made slide on a house-party purple."
+        fill = slide.background.fill
+        fill.solid()
+        fill.fore_color.rgb = RGBColor.from_string("123456")
+        deck_path = os.path.join(self._tmp, "foreign-bg.pptx")
+        prs.save(deck_path)
+
+        extracted_path = os.path.join(self._tmp, "foreign-bg.deck.md")
+        proc = _extract([
+            deck_path, "--brand", self.brand_path,
+            "--out", extracted_path,
+            "--report", os.path.join(self._tmp, "foreign-bg.report.md"),
+        ])
+        self.assertEqual(
+            proc.returncode, 0,
+            f"stdout: {proc.stdout}\nstderr: {proc.stderr}",
+        )
+        with open(extracted_path, encoding="utf-8") as fh:
+            text = fh.read()
+        self.assertNotIn(
+            "Canvas:", text,
+            "a non-token background must not invent a Canvas line",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

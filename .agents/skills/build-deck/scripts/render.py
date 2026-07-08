@@ -61,7 +61,12 @@ OPTIONAL_FIELDS = {
 # Block fields may carry a bullet list or short paragraphs across many lines.
 BLOCK_FIELDS = {"Body", "Left", "Right"}
 # Fields any slide may carry, handled outside the role's placeholder fill.
-META_FIELDS = {"Visual", "Notes"}
+# Canvas (REQ-205/D-405) names the colour role a brand-fidelity slide's
+# background is painted with; template fidelity rejects it by name (D-411).
+META_FIELDS = {"Visual", "Notes", "Canvas"}
+# The colour roles a `Canvas:` value may name — the same four canonical role
+# names the freeform vocabulary uses (_FREEFORM_COLOURS); listed in the error.
+CANVAS_ROLES = ("ink", "paper", "accent", "muted")
 # Structured block fields collect raw lines like a block but are parsed by a
 # dedicated parser (not _block_items). Chart is the only one. It is NOT in
 # BLOCK_FIELDS on purpose, so it skips the bullet-list / inline-value paths.
@@ -537,15 +542,17 @@ def _parse_block_header(number, rest):
 def _parse_composed_slide(number, lines, spec_dir=None):
     """Parse a `composed` slide into title, blocks, and meta. Raises SpecError.
 
-    Recognises `Title:` (optional, inline), `Notes:` (optional, meta), and one
-    or more `Block: <type> [at <placement>]` blocks, each followed by its item
+    Recognises `Title:` (optional, inline), `Canvas:` (optional, a colour-role
+    name, REQ-205), `Notes:` (optional, meta), and one or more
+    `Block: <type> [at <placement>]` blocks, each followed by its item
     lines. Several blocks either all carry an `at ...` placement (they tile the
     grid) or none do (they stack top to bottom). Returns:
 
-        {"number", "role": "composed", "fields": {"Title": str?},
+        {"number", "role": "composed", "fields": {"Title": str?, "Canvas": str?},
          "blocks": [parsed block dict + "placement", ...], "meta": {"Notes": str?}}
     """
     title = None
+    canvas = None
     notes_lines = []
     blocks = []
     current = None  # None | "notes" | a raw block dict {"type", "items"}
@@ -557,6 +564,15 @@ def _parse_composed_slide(number, lines, spec_dir=None):
             continue
         if low.startswith("title:"):
             title = stripped.split(":", 1)[1].strip()
+            current = None
+            continue
+        if low.startswith("canvas:"):
+            # REQ-205: the colour role this slide's background is painted
+            # with, validated here (this parser never reaches
+            # _validate_slide_fields).
+            canvas = _validate_canvas_value(
+                number, stripped.split(":", 1)[1].strip()
+            )
             current = None
             continue
         if low.startswith("notes:"):
@@ -598,7 +614,11 @@ def _parse_composed_slide(number, lines, spec_dir=None):
         parsed = _parse_composed_block(number, b, spec_dir)
         parsed["placement"] = b.get("placement")
         parsed_blocks.append(parsed)
-    fields = {"Title": title} if title else {}
+    fields = {}
+    if title:
+        fields["Title"] = title
+    if canvas:
+        fields["Canvas"] = canvas
     meta = {"Notes": " ".join(notes_lines)} if notes_lines else {}
     return {
         "number": number,
@@ -1590,6 +1610,19 @@ def _parse_chart_block(number, lines, spec_dir=None):
             "native": native, "stacked": stacked, "target": target}
 
 
+def _validate_canvas_value(number, value):
+    """A `Canvas:` value must name one of the four canonical colour roles
+    (REQ-205). Returns the normalised (lower-cased) role name, or raises a
+    SpecError naming the bad value and listing the roles."""
+    canvas = str(value or "").strip().lower()
+    if canvas not in CANVAS_ROLES:
+        raise SpecError(
+            f"slide {number}: unknown Canvas colour role {value!r}; "
+            f"use one of {', '.join(CANVAS_ROLES)}"
+        )
+    return canvas
+
+
 def _validate_slide_fields(number, role, fields):
     """Check a slide carries exactly the fields its role allows. Raises SpecError."""
     has_chart = "Chart" in fields
@@ -1610,6 +1643,11 @@ def _validate_slide_fields(number, role, fields):
                 f"slide {number} ({role}) has field {name!r}, which is not "
                 f"allowed for this role"
             )
+
+    # REQ-205: a Canvas value must name a colour role; normalise it in place
+    # so the renderer and the round trip read one canonical spelling.
+    if "Canvas" in fields:
+        fields["Canvas"] = _validate_canvas_value(number, fields["Canvas"])
     for name in required:
         value = fields.get(name)
         empty = value is None or value == "" or value == []
@@ -1722,6 +1760,18 @@ def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None,
         number = spec["number"]
         role = spec["role"]
 
+        # D-411: Canvas is brand-fidelity vocabulary — placeholder fill has
+        # no token background to paint. Rejected by name, never silently
+        # dropped.
+        if fidelity == "template" and (
+            spec.get("meta", {}).get("Canvas")
+            or spec.get("fields", {}).get("Canvas")
+        ):
+            raise SpecError(
+                f"slide {number}: Canvas is a brand-fidelity field; "
+                f'remove it or set "fidelity": "brand"'
+            )
+
         if fidelity == "brand":
             if composed_tokens is None:
                 composed_tokens = tokens_mod.resolve_tokens(
@@ -1731,7 +1781,7 @@ def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None,
                 (advisories, dropped_icons, slide_render_notes, font_family,
                  font_warning) = _render_composed_slide(
                     prs, brand, spec, composed_tokens, charts_dir,
-                    font_family, font_warning, brand_path, brand_canvas=True
+                    font_family, font_warning, brand_path, pack_canvas=True
                 )
                 if advisories:
                     composed_advisories.append((number, advisories))
@@ -2224,8 +2274,9 @@ def _strip_placeholders(slide):
     _drop_unused(list(slide.placeholders))
 
 
-def _paint_background(slide, paper_hex):
-    """Paint the slide's own background with the paper colour role (REQ-005).
+def _paint_background(slide, canvas_hex):
+    """Paint the slide's own background with a canvas colour (REQ-005/205) —
+    the paper role by default, or the slide's `Canvas:` role.
 
     A slide-level solid fill, not a shape: it costs no lint element and
     covers whatever the layout would otherwise show through (A-004 probe:
@@ -2235,7 +2286,7 @@ def _paint_background(slide, paper_hex):
 
     fill = slide.background.fill
     fill.solid()
-    fill.fore_color.rgb = RGBColor.from_string(paper_hex.lstrip("#"))
+    fill.fore_color.rgb = RGBColor.from_string(canvas_hex.lstrip("#"))
 
 
 def _brand_chart_region(elements, tokens, slide_w, slide_h):
@@ -2261,8 +2312,9 @@ def _render_role_slide_brand(prs, brand, spec, tokens, charts_dir,
 
     The role's drawn anatomy comes from roles.py, gates through the same
     mechanical lint as composed slides (plus check_hierarchy's rank
-    invariant), draws on a clean paper canvas, and stamps the slide and its
-    field shapes for the revise round trip. A title-content Chart occupies
+    invariant), draws on a clean canvas painted with the slide's `Canvas:`
+    colour role (paper by default, REQ-205/D-405), and stamps the slide and
+    its field shapes for the revise round trip. A title-content Chart occupies
     the band below the planned text — its bbox joins the lint and is
     fulfilled after draw, the composed `Block: chart` pattern exactly.
 
@@ -2277,22 +2329,35 @@ def _render_role_slide_brand(prs, brand, spec, tokens, charts_dir,
     role = spec["role"]
     slide = prs.slides.add_slide(_blank_layout(prs))
     _strip_placeholders(slide)
-    _paint_background(
-        slide, (tokens.get("colour_roles") or {}).get("paper", "#FFFFFF")
-    )
+
+    # REQ-205/D-405: the slide is painted with its `Canvas:` colour role
+    # (paper unless the spec says otherwise); the planner re-resolves its
+    # content colours for contrast via roles.content_roles (D-410).
+    canvas = spec["meta"].get("Canvas") or "paper"
+    try:
+        roles_mod.content_roles(tokens, canvas)  # validates against the brand
+    except primitives.ShapeError as exc:
+        raise SpecError(f"slide {number}: {exc}")
+    _paint_background(slide, tokens["colour_roles"][canvas])
 
     slide_w, slide_h = prs.slide_width, prs.slide_height
     planner = roles_mod.ROLE_PLANNERS[role]
     try:
         if role == "section":
             elements = planner(
-                spec["fields"], tokens, slide_w, slide_h, ordinal=ordinal
+                spec["fields"], tokens, slide_w, slide_h, ordinal=ordinal,
+                canvas=canvas,
             )
         else:
-            elements = planner(spec["fields"], tokens, slide_w, slide_h)
+            elements = planner(
+                spec["fields"], tokens, slide_w, slide_h, canvas=canvas
+            )
     except primitives.ShapeError as exc:
         raise SpecError(f"slide {number}: {exc}")
 
+    # A chart on a Canvas slide needs no special handling: the chart figure
+    # (native or PNG) draws its own plot area and simply sits on the painted
+    # canvas, exactly as it sits on paper (REQ-205 scope note).
     chart = spec["fields"].get("Chart")
     chart_el = None
     if chart:
@@ -2384,7 +2449,7 @@ def _render_role_slide_brand(prs, brand, spec, tokens, charts_dir,
 
 def _render_composed_slide(prs, brand, spec, tokens, charts_dir,
                             font_family, font_warning, brand_path,
-                            brand_canvas=False):
+                            pack_canvas=False):
     """Render a composed slide: fill an optional title, then draw token-bound
     primitives that must pass the mechanical lint before any shape is added.
 
@@ -2409,7 +2474,7 @@ def _render_composed_slide(prs, brand, spec, tokens, charts_dir,
     import lint  # noqa: PLC0415
 
     number = spec["number"]
-    layout = _blank_layout(prs) if brand_canvas \
+    layout = _blank_layout(prs) if pack_canvas \
         else _resolve_composed_layout(prs, brand)
     slide = prs.slides.add_slide(layout)
 
@@ -2419,18 +2484,25 @@ def _render_composed_slide(prs, brand, spec, tokens, charts_dir,
     title = spec.get("fields", {}).get("Title")
     base_band = _full_band(grid, slide_w, slide_h)
     title_elements = []
-    if brand_canvas:
-        # Brand fidelity: clean paper canvas, and the title is a DRAWN
-        # element (D-308) — a blank layout has no title placeholder to fill.
+    if pack_canvas:
+        # Brand fidelity: a clean canvas painted with the slide's `Canvas:`
+        # colour role (paper unless the spec says otherwise, REQ-205/D-405),
+        # and the title is a DRAWN element (D-308) — a blank layout has no
+        # title placeholder to fill. Only the background and the composed
+        # title recolour for the canvas (D-410): BLOCK primitives keep their
+        # own token colours — a paper panel reads on any canvas.
         _strip_placeholders(slide)
-        _paint_background(
-            slide, (tokens.get("colour_roles") or {}).get("paper", "#FFFFFF")
-        )
+        import roles as roles_mod  # noqa: PLC0415
+        canvas = spec.get("fields", {}).get("Canvas") or "paper"
+        try:
+            roles_mod.content_roles(tokens, canvas)  # validates vs the brand
+        except primitives.ShapeError as exc:
+            raise SpecError(f"slide {number}: {exc}")
+        _paint_background(slide, tokens["colour_roles"][canvas])
         if title:
-            import roles as roles_mod  # noqa: PLC0415
             try:
                 title_elements, base_band = roles_mod.plan_composed_title(
-                    title, tokens, slide_w, slide_h
+                    title, tokens, slide_w, slide_h, canvas=canvas
                 )
             except primitives.ShapeError as exc:
                 raise SpecError(f"slide {number}: {exc}")
@@ -2506,7 +2578,7 @@ def _render_composed_slide(prs, brand, spec, tokens, charts_dir,
             planned = planner(block[key], tokens, slide_w, slide_h, region)
         except primitives.ShapeError as exc:
             raise SpecError(f"slide {number}: {exc}")
-        if brand_canvas:
+        if pack_canvas:
             # D-303: block elements carry a stamp the revise round trip can
             # read back (forward-compat; composed import still flattens,
             # D-304). Template fidelity stays byte-identical — no stamps.
@@ -2614,7 +2686,7 @@ def _render_composed_slide(prs, brand, spec, tokens, charts_dir,
             raise SpecError(f"slide {number}: {exc}")
         _place_picture(slide, png, region)
 
-    if brand_canvas:
+    if pack_canvas:
         slide.name = "slides-role:composed"
 
     _apply_meta(slide, spec.get("meta", {}), extra_visual=chart_notes or None)

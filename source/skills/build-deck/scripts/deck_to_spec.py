@@ -62,9 +62,11 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from pptx.enum.dml import MSO_FILL  # noqa: E402
 from pptx.enum.shapes import MSO_SHAPE_TYPE, PP_PLACEHOLDER  # noqa: E402
 from pptxlib import CONTENT_PLACEHOLDER_TYPES, load_template  # noqa: E402
 import render  # noqa: E402
+import tokens as tokens_mod  # noqa: E402
 
 # D-007: the placeholder sentence extraction always writes for `audience` — a
 # real audience cannot be recovered from a rendered deck, so a human is asked
@@ -131,12 +133,24 @@ def main(argv=None):
     try:
         prs, stamp_note = _open_deck(args.deck)
         layout_map = None
+        colour_roles = None
         if args.brand:
             # .get, not [...]: a brand-fidelity profile carries no layout_map
             # at all (identity is all it needs); its decks resolve by Tier-0
             # stamps, and _extract_slides/_invert_layout_map tolerate None.
-            layout_map = render.load_brand(args.brand).get("layout_map")
-        slides, slide_reports = _extract_slides(prs, layout_map)
+            brand = render.load_brand(args.brand)
+            layout_map = brand.get("layout_map")
+            # REQ-205 round trip: the brand's colour roles let a stamped
+            # slide's painted background reverse-map to its `Canvas:` role.
+            # Same resolution render-side tokens use: explicit tokens
+            # overrides merged over the roles derived from the colours.
+            colour_roles = {
+                **tokens_mod.resolve_colour_roles(
+                    brand.get("colours", {}) or {}
+                ),
+                **((brand.get("tokens", {}) or {}).get("colour_roles", {}) or {}),
+            }
+        slides, slide_reports = _extract_slides(prs, layout_map, colour_roles)
         deck_title = _frontmatter_deck(args.deck, slides)
         spec_text = _format_spec(
             deck_title, AUDIENCE_PLACEHOLDER, DEFAULT_REGISTER, slides
@@ -373,6 +387,52 @@ def _stamped_fields(slide, role):
     return fields
 
 
+# REQ-205 inverse: the roles a painted background may reverse-map to. `paper`
+# is deliberately absent — paper is the default canvas, so it never emits a
+# `Canvas:` line — and any role sharing paper's hex is dropped below for the
+# same reason. Order is the tie-break when two roles share one hex.
+_CANVAS_REVERSE_ROLES = ("ink", "accent", "muted")
+
+
+def _canvas_map(colour_roles):
+    """'RRGGBB' (uppercase, no '#') -> canvas role name, from a --brand
+    profile's resolved colour roles. Empty when there is nothing to map
+    (no --brand): foreign decks recover no Canvas line."""
+    if not colour_roles:
+        return {}
+    mapping = {}
+    for role in _CANVAS_REVERSE_ROLES:
+        hex_val = colour_roles.get(role)
+        if hex_val:
+            mapping.setdefault(str(hex_val).lstrip("#").upper(), role)
+    paper_hex = str(colour_roles.get("paper") or "").lstrip("#").upper()
+    mapping.pop(paper_hex, None)
+    return mapping
+
+
+def _read_canvas(slide, canvas_map):
+    """The `Canvas:` role a stamped slide's painted background names, or None.
+
+    Only a slide-level solid RGB fill counts (that is exactly what
+    render._paint_background writes); an inherited, themed, patterned, or
+    unreadable background — any foreign deck — recovers no Canvas. Guarded
+    end to end: a background python-pptx cannot read is 'no canvas', never a
+    crash.
+    """
+    if not canvas_map:
+        return None
+    try:
+        fill = slide.background.fill
+        if fill.type != MSO_FILL.SOLID:
+            return None
+        rgb = fill.fore_color.rgb
+    except Exception:  # noqa: BLE001 — an unreadable fill is "no canvas"
+        return None
+    if rgb is None:
+        return None
+    return canvas_map.get(str(rgb).upper())
+
+
 # --- role resolution: mapped (Tier 1), heuristic (Tier 2), flattened --------
 
 
@@ -527,7 +587,8 @@ def _flatten(slide, number, drawn_texts):
     return "title-content", {"Title": title, "Body": items}, note
 
 
-def _resolve_slide(prs, slide, number, layout_roles, has_brand):
+def _resolve_slide(prs, slide, number, layout_roles, has_brand,
+                   canvas_map=None):
     """Resolve one slide's role and fields. Returns (role, fields, meta, how,
     note) — `how`/`note` feed the per-slide report line."""
     notes_text, visual_from_notes = _read_notes(slide)
@@ -550,6 +611,11 @@ def _resolve_slide(prs, slide, number, layout_roles, has_brand):
                 # texts never trigger a flatten on a stamped slide.
                 _, has_picture = _harvest_drawn_content(slide)
                 meta = _build_meta(notes_text, visual_from_notes, has_picture)
+                # REQ-205: a stamped slide's painted background reverse-maps
+                # to its `Canvas:` role (paper/foreign/no --brand -> nothing).
+                canvas = _read_canvas(slide, canvas_map)
+                if canvas:
+                    meta["Canvas"] = canvas
                 note = (
                     "picture on this slide flagged for re-placement"
                     if has_picture else None
@@ -629,13 +695,14 @@ def _build_meta(notes_text, visual_from_notes, has_picture):
 # --- walking the deck / frontmatter / spec text formatting -----------------
 
 
-def _extract_slides(prs, layout_map):
+def _extract_slides(prs, layout_map, colour_roles=None):
     has_brand = bool(layout_map)
     layout_roles = _invert_layout_map(layout_map) if has_brand else {}
+    canvas_map = _canvas_map(colour_roles)
     slides, reports = [], []
     for i, slide in enumerate(prs.slides, start=1):
         role, fields, meta, how, note = _resolve_slide(
-            prs, slide, i, layout_roles, has_brand
+            prs, slide, i, layout_roles, has_brand, canvas_map=canvas_map
         )
         slides.append({"number": i, "role": role, "fields": fields, "meta": meta})
         line = f"- Slide {i}: role `{role}` ({how})"
@@ -676,6 +743,9 @@ def _format_spec(deck_title, audience, register, slides):
                 lines.extend(f"- {item}" for item in value)
             else:
                 lines.append(f"{field}: {value}")
+        # REQ-205: Canvas sits with the meta fields, after the role fields.
+        if s["meta"].get("Canvas"):
+            lines.append(f"Canvas: {s['meta']['Canvas']}")
         if s["meta"].get("Notes"):
             lines.append(f"Notes: {s['meta']['Notes']}")
         if s["meta"].get("Visual"):
