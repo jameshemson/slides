@@ -123,6 +123,11 @@ def check_within_margins(elements: list, tokens: dict, slide_w: int, slide_h: in
     Checks: left >= margin_x, top >= margin_top,
             left+width <= slide_w - margin_x,
             top+height <= slide_h - margin_bottom.
+
+    An element marked `full_bleed` (a freeform box placed `at full-bleed`)
+    deliberately paints the whole slide, margins included, and is skipped —
+    the REQ-204 full-bleed carve-out, mirroring the ghost pattern in
+    check_sizes/check_no_overlap. Its colour is still token-checked.
     """
     grid = tokens["grid"]
     mx = grid["margin_x"]
@@ -130,6 +135,8 @@ def check_within_margins(elements: list, tokens: dict, slide_w: int, slide_h: in
     mb = grid["margin_bottom"]
     messages = []
     for el in elements:
+        if el.get("full_bleed"):
+            continue
         violations = []
         if el["left"] < mx:
             violations.append(f"left={el['left']} < margin_x={mx}")

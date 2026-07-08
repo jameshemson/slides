@@ -887,6 +887,136 @@ class StatNeverWrapsTest(unittest.TestCase):
         self.assertIn("cannot fit its cell", str(cm.exception))
 
 
+# --- T-801 (REQ-204/D-409): percent placement + full-bleed -------------------
+
+
+class SubrectPercentTest(unittest.TestCase):
+    """_subrect: {x, y} percent placements resolve fractionally against the
+    band — EXACT EMU, no gutter/baseline insets (D-409: the author owns the
+    geometry). Mirrors render._place_region's maths."""
+
+    BASE = (457200, 1600200, 8229600, 4525963)
+    GRID = TOKENS["grid"]  # gutter/baseline nonzero — insets would show
+
+    def _sub(self, **axes):
+        placement = {"cols": None, "rows": None, "x": None, "y": None}
+        placement.update(axes)
+        return primitives._subrect(self.BASE, placement, self.GRID)
+
+    def test_x_only_exact_full_band_vertically(self):
+        # left = bl + round(0.2*bw) = 457200 + 1645920; width = round(0.5*bw).
+        self.assertEqual(
+            self._sub(x=(0.20, 0.70)),
+            (2103120, 1600200, 4114800, 4525963),
+        )
+
+    def test_y_only_exact_full_band_horizontally(self):
+        # top = bt + round(0.1*bh) = 1600200 + 452596;
+        # height = round(0.25*bh) = 1131491.
+        self.assertEqual(
+            self._sub(y=(0.10, 0.35)),
+            (457200, 2052796, 8229600, 1131491),
+        )
+
+    def test_both_axes_exact(self):
+        self.assertEqual(
+            self._sub(x=(0.20, 0.70), y=(0.10, 0.35)),
+            (2103120, 2052796, 4114800, 1131491),
+        )
+
+    def test_grid_placement_keeps_insets(self):
+        # Existing behaviour pin: a cols placement still gets the breathing
+        # inset (gutter/2 horizontally, baseline vertically).
+        pad_x = self.GRID["gutter"] // 2
+        pad_y = self.GRID["baseline"]
+        left, top, w, h = self._sub(cols=(1, 6))
+        self.assertEqual(left, 457200 + pad_x)
+        self.assertEqual(top, 1600200 + pad_y)
+        self.assertEqual(w, 6 * 8229600 // 12 - 2 * pad_x)
+        self.assertEqual(h, 4525963 - 2 * pad_y)
+
+
+class FreeformPercentTest(unittest.TestCase):
+    """plan_freeform with percent placements: dot geometry lands at the exact
+    band fractions — the dumbbell acceptance maths at the planner level."""
+
+    def test_dot_lands_at_exact_fraction(self):
+        mx = TOKENS["grid"]["margin_x"]
+        band_w = SLIDE_W - 2 * mx
+        els = plan_freeform([
+            {"kind": "dot", "colour": "accent",
+             "placement": {"cols": None, "rows": None,
+                           "x": (0.63, 0.67), "y": (0.18, 0.26)}},
+        ], TOKENS, SLIDE_W, SLIDE_H)
+        dot = els[0]
+        self.assertEqual(dot["role"], "freeform-dot")
+        self.assertEqual(dot["left"], mx + round(0.63 * band_w))
+        self.assertEqual(dot["width"], round(0.04 * band_w))
+
+    def test_single_axis_percent_spans_band_on_the_other(self):
+        mx = TOKENS["grid"]["margin_x"]
+        mt = TOKENS["grid"]["margin_top"]
+        els = plan_freeform([
+            {"kind": "box", "fill": "paper",
+             "placement": {"cols": None, "rows": None,
+                           "x": (0.25, 0.75), "y": None}},
+        ], TOKENS, SLIDE_W, SLIDE_H)
+        box = els[0]
+        self.assertEqual(box["top"], mt)
+        self.assertEqual(box["height"], SLIDE_H - mt - TOKENS["grid"]["margin_bottom"])
+
+    def test_dumbbell_row_plans_lint_clean(self):
+        # One category row of the acceptance case: caption, two dots, a rail.
+        els = plan_freeform([
+            {"kind": "text", "scale": "caption", "colour": "ink",
+             "text": "Alpha",
+             "placement": {"cols": None, "rows": None,
+                           "x": (0.02, 0.16), "y": (0.18, 0.26)}},
+            {"kind": "dot", "colour": "muted",
+             "placement": {"cols": None, "rows": None,
+                           "x": (0.18, 0.22), "y": (0.18, 0.26)}},
+            {"kind": "line", "colour": "muted",
+             "placement": {"cols": None, "rows": None,
+                           "x": (0.22, 0.63), "y": (0.18, 0.26)}},
+            {"kind": "dot", "colour": "accent",
+             "placement": {"cols": None, "rows": None,
+                           "x": (0.63, 0.67), "y": (0.18, 0.26)}},
+        ], TOKENS, SLIDE_W, SLIDE_H)
+        self.assertIsNone(lint.check(els, TOKENS, SLIDE_W, SLIDE_H))
+
+
+class FreeformFullBleedTest(unittest.TestCase):
+    """plan_freeform full-bleed: the box spans the FULL SLIDE (0,0,w,h),
+    carries full_bleed + container, and the whole gate still clears."""
+
+    FULL_BLEED = {"kind": "box", "fill": "accent", "full_bleed": True,
+                  "placement": None}
+
+    def test_box_spans_the_slide(self):
+        els = plan_freeform([dict(self.FULL_BLEED)], TOKENS, SLIDE_W, SLIDE_H)
+        box = els[0]
+        self.assertEqual(
+            (box["left"], box["top"], box["width"], box["height"]),
+            (0, 0, SLIDE_W, SLIDE_H),
+        )
+        self.assertTrue(box["full_bleed"])
+        self.assertTrue(box["container"])
+        # A wash meets the slide edge squarely, whatever the corner token.
+        self.assertEqual(box["shape"], "rect")
+
+    def test_full_bleed_with_contained_text_passes_the_gate(self):
+        # Container semantics: elements inside the wash overlap it legally,
+        # and the margins rule carves the wash out (REQ-204).
+        els = plan_freeform([
+            dict(self.FULL_BLEED),
+            {"kind": "text", "scale": "h1", "colour": "paper",
+             "text": "Edge to edge",
+             "placement": {"cols": (2, 11), "rows": (5, 8),
+                           "x": None, "y": None}},
+        ], TOKENS, SLIDE_W, SLIDE_H)
+        self.assertIsNone(lint.check(els, TOKENS, SLIDE_W, SLIDE_H))
+
+
 @unittest.skipUnless(
     os.environ.get("RASTER_MEASURE"),
     "opt-in: set RASTER_MEASURE=1 (needs a raster backend + PIL)")

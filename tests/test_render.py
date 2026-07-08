@@ -1710,5 +1710,306 @@ class ParseFrontmatterTest(unittest.TestCase):
         self.assertIn("frontmatter", str(ctx.exception))
 
 
+# --- T-801 (REQ-204/D-404/D-409): percent placement + full-bleed -------------
+#
+# Freeform elements (and blocks) accept fine-grained percent bounds
+# (`x A%-B%` / `y A%-B%`, exact band fractions, no insets) so the model can
+# hand-draw data-accurate graphics; a box/panel may sit `at full-bleed`
+# (the whole slide, margins included — the lint carves it out).
+
+
+class PercentPlacementParseTest(unittest.TestCase):
+    """_parse_placement: the `x A%-B%` / `y A%-B%` grammar (REQ-204)."""
+
+    def _err(self, text, *needles):
+        with self.assertRaises(render.SpecError) as cm:
+            render._parse_placement(1, text)
+        msg = str(cm.exception)
+        for needle in needles:
+            self.assertIn(needle, msg)
+
+    def test_single_axis_x(self):
+        self.assertEqual(
+            render._parse_placement(1, "x 10%-60%"),
+            {"cols": None, "rows": None, "x": (0.10, 0.60), "y": None},
+        )
+
+    def test_single_axis_y(self):
+        self.assertEqual(
+            render._parse_placement(1, "y 30%-40%"),
+            {"cols": None, "rows": None, "x": None, "y": (0.30, 0.40)},
+        )
+
+    def test_both_axes(self):
+        self.assertEqual(
+            render._parse_placement(1, "x 20%-65% y 18%-26%"),
+            {"cols": None, "rows": None, "x": (0.20, 0.65), "y": (0.18, 0.26)},
+        )
+
+    def test_decimals(self):
+        self.assertEqual(
+            render._parse_placement(1, "x 12.5%-63.75%"),
+            {"cols": None, "rows": None, "x": (0.125, 0.6375), "y": None},
+        )
+
+    def test_full_span_bounds(self):
+        self.assertEqual(
+            render._parse_placement(1, "x 0%-100%")["x"], (0.0, 1.0))
+
+    def test_equal_bounds_named_quoting_token(self):
+        self._err("x 40%-40%", "x 40%-40%", "start < end")
+
+    def test_inverted_bounds_named_quoting_token(self):
+        self._err("x 60%-20%", "x 60%-20%", "start < end")
+
+    def test_over_100_named_quoting_token(self):
+        self._err("y 20%-120%", "y 20%-120%", "0-100")
+
+    def test_mixed_grammar_named(self):
+        self._err("cols 1-6 x 20%-40%",
+                  "mix cols/rows with x%/y% — pick one grammar per placement")
+        self._err("rows 2-5 y 10%-30%", "pick one grammar per placement")
+
+    def test_percent_signs_required(self):
+        # Without the % signs neither grammar matches — the generic
+        # could-not-read error names the text.
+        with self.assertRaises(render.SpecError) as cm:
+            render._parse_placement(1, "x 20-65")
+        self.assertIn("could not read placement", str(cm.exception))
+
+    def test_grid_grammar_untouched(self):
+        # Existing placements keep parsing; the dict simply gains x/y keys.
+        self.assertEqual(
+            render._parse_placement(1, "cols 1-6"),
+            {"cols": (1, 6), "rows": None, "x": None, "y": None},
+        )
+        self.assertEqual(
+            render._parse_placement(1, "left"),
+            {"cols": (1, 6), "rows": None, "x": None, "y": None},
+        )
+
+
+class PercentPlaceRegionTest(unittest.TestCase):
+    """_place_region: percent placements resolve fractionally against the
+    band — EXACT, no insets (D-409: the author owns the geometry). Grid
+    placements keep their breathing insets."""
+
+    BAND = (1000000, 2000000, 8000000, 6000000)
+    TOKENS = {"grid": {"columns": 12, "gutter": 152400, "baseline": 91211}}
+
+    def _place(self, **axes):
+        placement = {"cols": None, "rows": None, "x": None, "y": None}
+        placement.update(axes)
+        return render._place_region(self.BAND, placement, self.TOKENS)
+
+    def test_x_only_exact_full_band_vertically(self):
+        self.assertEqual(
+            self._place(x=(0.10, 0.60)),
+            (1800000, 2000000, 4000000, 6000000),
+        )
+
+    def test_y_only_exact_full_band_horizontally(self):
+        self.assertEqual(
+            self._place(y=(0.25, 0.50)),
+            (1000000, 3500000, 8000000, 1500000),
+        )
+
+    def test_both_axes_exact(self):
+        self.assertEqual(
+            self._place(x=(0.10, 0.60), y=(0.25, 0.50)),
+            (1800000, 3500000, 4000000, 1500000),
+        )
+
+    def test_decimal_fractions_round_to_emu(self):
+        self.assertEqual(
+            self._place(x=(0.125, 0.6375)),
+            (2000000, 2000000, 4100000, 6000000),
+        )
+
+    def test_grid_placement_keeps_insets(self):
+        # The existing behaviour pin: cols placements still get the gutter/
+        # baseline breathing inset percent placements do without.
+        left, top, w, h = render._place_region(
+            self.BAND, {"cols": (1, 6), "rows": None, "x": None, "y": None},
+            self.TOKENS)
+        self.assertEqual((left, top), (1000000 + 76200, 2000000 + 91211))
+        self.assertEqual(w, 4000000 - 152400)
+        self.assertEqual(h, 6000000 - 2 * 91211)
+
+
+class FullBleedParseTest(unittest.TestCase):
+    """`at full-bleed` parses only on freeform box/panel elements; anything
+    else — other kinds, blocks — fails with a named SpecError."""
+
+    def test_box_parses_with_flag(self):
+        el = render._parse_freeform_element(1, "box accent at full-bleed")
+        self.assertEqual(el["kind"], "box")
+        self.assertTrue(el["full_bleed"])
+        self.assertIsNone(el["placement"])
+        self.assertEqual(el["fill"], "accent")
+
+    def test_panel_parses_with_flag(self):
+        el = render._parse_freeform_element(
+            1, "panel ink outline accent at full-bleed")
+        self.assertTrue(el["full_bleed"])
+        self.assertEqual(el["fill"], "ink")
+        self.assertEqual(el["stroke"], "accent")
+
+    def test_other_kinds_named_error(self):
+        for line in ("dot accent at full-bleed",
+                     "line muted at full-bleed",
+                     "arrow ink at full-bleed",
+                     "text h1 ink at full-bleed | words"):
+            with self.subTest(line=line):
+                with self.assertRaises(render.SpecError) as cm:
+                    render._parse_freeform_element(1, line)
+                msg = str(cm.exception)
+                self.assertIn("full-bleed", msg)
+                self.assertIn("box/panel", msg)
+
+    def test_block_at_full_bleed_named_error(self):
+        with self.assertRaises(render.SpecError) as cm:
+            render._parse_block_header(1, "stat-row at full-bleed")
+        msg = str(cm.exception)
+        self.assertIn("full-bleed", msg)
+        self.assertIn("block", msg)
+
+
+class FullBleedRenderTest(unittest.TestCase):
+    """End to end: a full-bleed box paints the whole slide (0,0,w,h), the
+    margins lint carves it out, and contained elements draw on top."""
+
+    SPEC = ("---\ndeck: d\naudience: a\n---\n\n"
+            "## Slide 1\nlayout: composed\n"
+            "Block: freeform\n"
+            "box accent at full-bleed\n"
+            "text h1 paper at cols 2-11 rows 5-8 | Edge to edge\n")
+
+    def test_full_bleed_box_spans_the_slide(self):
+        tmp = tempfile.mkdtemp(prefix="slides-fullbleed-test-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        spec_path = os.path.join(tmp, "deck.md")
+        brand_path = os.path.join(tmp, "brand.json")
+        out_path = os.path.join(tmp, "out.pptx")
+        with open(spec_path, "w", encoding="utf-8") as fh:
+            fh.write(self.SPEC)
+        with open(brand_path, "w", encoding="utf-8") as fh:
+            json.dump(BRAND_IDENTITY, fh)
+        result = subprocess.run(
+            [sys.executable, RENDER_PY, "--spec", spec_path,
+             "--brand", brand_path, "--out", out_path],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(
+            result.returncode, 0,
+            f"full-bleed render failed.\nstdout: {result.stdout}\n"
+            f"stderr: {result.stderr}",
+        )
+        prs = Presentation(out_path)
+        slide = prs.slides[0]
+        washes = [
+            s for s in slide.shapes
+            if s.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE
+            and s.left == 0 and s.top == 0
+            and s.width == prs.slide_width and s.height == prs.slide_height
+        ]
+        self.assertEqual(len(washes), 1, "expected one full-slide box")
+        from pptx.dml.color import RGBColor
+        self.assertEqual(
+            washes[0].fill.fore_color.rgb, RGBColor.from_string("0B5FFF"))
+        # A wash meets the slide edge squarely — no rounded paper wedges.
+        from pptx.enum.shapes import MSO_SHAPE
+        self.assertEqual(washes[0].auto_shape_type, MSO_SHAPE.RECTANGLE)
+
+
+class DumbbellRenderTest(unittest.TestCase):
+    """The REQ-204 acceptance case: a hand-drawn 3-category dumbbell chart
+    from percent-placed freeform dots and connecting lines, rendered brand
+    fidelity. Each dot's left EMU in the produced .pptx must land at
+    margin_x + round(frac * content_w) — the data positions ARE the geometry."""
+
+    # Per category: (2019 value frac, 2026 value frac) — dot spans are the
+    # value +/- 2% so each dot CENTRES on its value; asserted on dot left
+    # (value - 0.02). First category pins the acceptance positions 20%/65%.
+    CATS = [
+        ("Alpha", 0.20, 0.65, "18%-22%", "63%-67%", "22%-63%", "18%-26%"),
+        ("Beta", 0.26, 0.60, "24%-28%", "58%-62%", "28%-58%", "44%-52%"),
+        ("Gamma", 0.32, 0.72, "30%-34%", "70%-74%", "34%-70%", "70%-78%"),
+    ]
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.mkdtemp(prefix="slides-dumbbell-test-")
+        lines = ["---", "deck: d", "audience: a", "---", "",
+                 "## Slide 1", "layout: composed", "Block: freeform"]
+        for name, _v19, _v26, dot19, dot26, rail, band in cls.CATS:
+            lines.append(f"text caption ink at x 2%-16% y {band} | {name}")
+            lines.append(f"dot muted at x {dot19} y {band}")
+            lines.append(f"line muted at x {rail} y {band}")
+            lines.append(f"dot accent at x {dot26} y {band}")
+        spec_path = os.path.join(cls._tmp, "deck.md")
+        brand_path = os.path.join(cls._tmp, "brand.json")
+        cls.out_path = os.path.join(cls._tmp, "out.pptx")
+        with open(spec_path, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(lines) + "\n")
+        with open(brand_path, "w", encoding="utf-8") as fh:
+            json.dump(BRAND_IDENTITY, fh)
+        cls.result = subprocess.run(
+            [sys.executable, RENDER_PY, "--spec", spec_path,
+             "--brand", brand_path, "--out", cls.out_path],
+            capture_output=True, text=True,
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls._tmp, ignore_errors=True)
+
+    def test_render_exits_zero(self):
+        self.assertEqual(
+            self.result.returncode, 0,
+            f"dumbbell render failed.\nstdout: {self.result.stdout}\n"
+            f"stderr: {self.result.stderr}",
+        )
+
+    def _dots_by_colour(self):
+        """The slide's oval shapes, grouped by fill hex, sorted by top —
+        category order. Lines are rectangles, so ovals are exactly the dots."""
+        from pptx.enum.shapes import MSO_SHAPE
+        prs = Presentation(self.out_path)
+        slide = prs.slides[0]
+        dots = {}
+        for shape in slide.shapes:
+            if shape.shape_type != MSO_SHAPE_TYPE.AUTO_SHAPE:
+                continue
+            if shape.auto_shape_type != MSO_SHAPE.OVAL:
+                continue
+            dots.setdefault(str(shape.fill.fore_color.rgb), []).append(shape)
+        for shapes in dots.values():
+            shapes.sort(key=lambda s: s.top)
+        return prs, dots
+
+    def test_dot_lefts_match_percent_maths_exactly(self):
+        self.assertEqual(self.result.returncode, 0, self.result.stderr)
+        prs, dots = self._dots_by_colour()
+        # Brand fidelity draws the pack grid: margin_x = 5% of the slide
+        # width (tokens.pack_grid), the band the percent bounds resolve on.
+        margin_x = round(prs.slide_width * 0.05)
+        content_w = prs.slide_width - 2 * margin_x
+        tol = round(0.01 * content_w)  # within 1% of content width
+        muted = dots.get("6B7280", [])
+        accent = dots.get("0B5FFF", [])
+        self.assertEqual(len(muted), 3, "expected one muted dot per category")
+        self.assertEqual(len(accent), 3, "expected one accent dot per category")
+        for i, (name, v19, v26, *_rest) in enumerate(self.CATS):
+            for dot, value in ((muted[i], v19), (accent[i], v26)):
+                expected = margin_x + round((value - 0.02) * content_w)
+                with self.subTest(category=name, value=value):
+                    self.assertLessEqual(
+                        abs(dot.left - expected), tol,
+                        f"dot left {dot.left} not within {tol} EMU of "
+                        f"{expected} (frac {value - 0.02})",
+                    )
+
+
 if __name__ == "__main__":
     unittest.main()

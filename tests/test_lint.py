@@ -619,5 +619,59 @@ class TestHierarchyRule(unittest.TestCase):
         self.assertIn("[hierarchy]", str(ctx.exception))
 
 
+# --- Full-bleed margins carve-out (T-801, REQ-204) --------------------------
+#
+# A freeform box placed `at full-bleed` deliberately paints the whole slide,
+# margins included. check_within_margins skips elements with a truthy
+# `full_bleed` flag (mirroring the ghost pattern); the SAME geometry without
+# the flag is still a margins fault. Colour stays token-checked either way,
+# and container semantics make overlap with contained elements legal.
+
+
+def full_bleed_box(fill="#4F81BD", **overrides):
+    el = {
+        "role": "freeform-panel", "kind": "box", "container": True,
+        "full_bleed": True, "text": "full-bleed wash",
+        "fill": fill, "left": 0, "top": 0, "width": SLIDE_W, "height": SLIDE_H,
+    }
+    el.update(overrides)
+    return el
+
+
+class TestFullBleedMargins(unittest.TestCase):
+    def test_full_bleed_skips_the_margins_rule(self):
+        self.assertEqual(
+            lint.check_within_margins([full_bleed_box()], TOKENS,
+                                      SLIDE_W, SLIDE_H),
+            [],
+        )
+
+    def test_same_geometry_without_the_flag_fails(self):
+        el = full_bleed_box()
+        del el["full_bleed"]
+        violations = lint.check_within_margins([el], TOKENS, SLIDE_W, SLIDE_H)
+        self.assertTrue(violations)
+        self.assertIn("[margins]", violations[0])
+        with self.assertRaises(lint.LintError) as ctx:
+            lint.check([el], TOKENS, SLIDE_W, SLIDE_H)
+        self.assertIn("[margins]", str(ctx.exception))
+
+    def test_colour_rule_still_applies(self):
+        off_token = full_bleed_box(fill="#ABCDEF")
+        violations = lint.check_colours([off_token], TOKENS)
+        self.assertTrue(violations)
+        self.assertIn("[colour]", violations[0])
+        with self.assertRaises(lint.LintError) as ctx:
+            lint.check([off_token], TOKENS, SLIDE_W, SLIDE_H)
+        self.assertIn("[colour]", str(ctx.exception))
+
+    def test_container_semantics_admit_contained_elements(self):
+        # The wash is a container covering the whole slide: any element it
+        # wholly holds overlaps it legally, and the full gate clears.
+        els = [full_bleed_box()] + good_elements()
+        self.assertEqual(lint.check_no_overlap(els), [])
+        self.assertIsNone(lint.check(els, TOKENS, SLIDE_W, SLIDE_H))
+
+
 if __name__ == "__main__":
     unittest.main()

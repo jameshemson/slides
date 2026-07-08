@@ -717,8 +717,23 @@ def _subrect(base, placement, grid):
 
     Mirrors render._place_region but relative to whatever band the freeform
     block was given, so element placement composes under block placement. A
-    small inset keeps adjacent elements from touching."""
+    small inset keeps adjacent elements from touching.
+
+    REQ-204/D-409: an {x, y} percent placement resolves as an exact band
+    fraction instead — no insets, the author owns the geometry. An axis left
+    unspecified spans the full band, as with single-axis grid spans."""
     bl, bt, bw, bh = base
+    x, y = placement.get("x"), placement.get("y")
+    if x or y:
+        if x:
+            left, width = bl + round(x[0] * bw), round((x[1] - x[0]) * bw)
+        else:
+            left, width = bl, bw
+        if y:
+            top, height = bt + round(y[0] * bh), round((y[1] - y[0]) * bh)
+        else:
+            top, height = bt, bh
+        return (left, top, max(1, width), max(1, height))
     cols_n = grid.get("columns", 12) or 12
     rows_n = 12
     cols = placement.get("cols")
@@ -762,7 +777,13 @@ def plan_freeform(elements, tokens, slide_w, slide_h, region=None) -> list:
 
     out = []
     for el in elements:
-        l, t, w, h = _subrect(band, el["placement"], grid)
+        if el.get("full_bleed"):
+            # REQ-204: a full-bleed box paints the whole slide, margins
+            # included; the flag rides the element so lint's margins rule can
+            # carve it out. Only box/panel parse with the flag (render.py).
+            l, t, w, h = 0, 0, slide_w, slide_h
+        else:
+            l, t, w, h = _subrect(band, el["placement"], grid)
         kind = el["kind"]
         if kind in ("box", "panel"):
             box = {
@@ -770,6 +791,11 @@ def plan_freeform(elements, tokens, slide_w, slide_h, region=None) -> list:
                 "left": l, "top": t, "width": w, "height": h,
                 "fill": roles[el["fill"]],
             }
+            if el.get("full_bleed"):
+                # A background wash meets the slide edge squarely — a rounded
+                # corner would show paper wedges at all four corners.
+                box["full_bleed"] = True
+                box["shape"] = "rect"
             if el.get("stroke"):
                 box["stroke"] = roles[el["stroke"]]
                 box["stroke_w"] = _STROKE_EMU
