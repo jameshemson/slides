@@ -1947,9 +1947,16 @@ def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None,
     # Deck-level reflex/earn-it advisory: one named device carried across the
     # deck. Appended under sentinel slide 0 (a deck-wide finding has no one
     # slide); the summary renders it "slide 0 [deck-device-repetition] ...".
-    _dev_adv = _composition.deck_device_repetition(device_tally, content_slides)
-    if _dev_adv:
-        composed_advisories.append((0, [_dev_adv]))
+    # Wrapped like every advisory (mirrors the composed-slide review guard): a
+    # broken advisory layer must never change the exit code of a render that
+    # already passed its lint gate.
+    try:
+        _dev_adv = _composition.deck_device_repetition(
+            device_tally, content_slides)
+        if _dev_adv:
+            composed_advisories.append((0, [_dev_adv]))
+    except Exception:  # noqa: BLE001 — advisory must never block a render
+        pass
 
     out_dir = os.path.dirname(os.path.abspath(out_path))
     if out_dir:
