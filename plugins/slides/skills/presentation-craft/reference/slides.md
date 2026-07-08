@@ -80,7 +80,14 @@ brand profile. In brand fidelity, the default, the layouts and geometry are the
 pack's own design system, drawn entirely from those tokens, so a slide reads as
 the brand without inheriting a template's design debt. The craft above is constant
 across every brand. The skin is the user's, and the skill never invents an
-off-brand value: every colour, size, and position resolves to a token. Template
+off-brand value: every colour, size, and position resolves to a token. Within
+that guarantee, composition is open: the named compositions are fast paths,
+not the ceiling, and freeform with fine placement is the main stage for
+design-led slides — a title, divider, or statement moment composed entirely.
+Percent bounds (`x 10%-60%`) resolve exactly against the content band, with no
+gutter insets, so the author owns the geometry — precise enough to hand-draw a
+data graphic; a `full-bleed` panel colour-blocks the whole slide behind the
+content, and `Canvas:` paints the ground itself in a token role. Template
 fidelity remains for a user whose template genuinely is good — there the
 template's own layouts carry the look and the renderer fills their placeholders.
 
