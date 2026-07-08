@@ -93,6 +93,7 @@ reach for, and reject it. Common reflexes to catch and replace:
 - A deck about the presenter or the product instead of the audience.
 - Superlatives, hype, and urgency with nothing concrete beneath them.
 - A chart or diagram that decorates rather than clarifies.
+- A hero number, a dumbbell, or a big-text line reached for by default rather than earned by the beat — or one such device carried across the whole deck.
 - Throat-clearing openers, business jargon, em dashes, passive voice.
 
 Replace each with the craft in the reference files before generating.
@@ -127,6 +128,11 @@ Match and refuse on sight, every time:
 - **Unearned emotion.** Sensationalism, ad-copy voice, and hype with nothing
   concrete beneath them. Earned emotion, grounded in a true and specific thing, is
   kept; the unearned kind is refused.
+
+Devices are not on this list. A hero metric, a dumbbell, big text — each is right
+when the content earns it. The pack governs them by the earn-it check (name what
+the beat moves the audience FROM → TO), never by a ban: refuse the reflexive reach
+and the deck-wide repetition, not the device itself.
 
 ## The reference library
 

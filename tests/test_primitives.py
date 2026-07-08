@@ -1098,5 +1098,47 @@ class RasterMeasureTest(unittest.TestCase):
               f"ink row bands (px): {bands}")
 
 
+class TestFreeformHeroWrap(unittest.TestCase):
+    """plan_freeform stamps hero_wrapped on a display/h1 line that wraps past one
+    line but still fits its box — the reflex/earn-it 'don't shout, don't wrap'
+    note. Text that does NOT fit still raises ShapeError, unchanged."""
+
+    def _els(self, scale, text, cols, rows=(1, 11)):
+        return [{"kind": "text", "scale": scale, "colour": "ink",
+                 "text": text, "placement": {"cols": cols, "rows": rows}}]
+
+    def test_display_wrap_stamps_hero_wrapped(self):
+        text = "Weekly status review agenda"
+        out = plan_freeform(self._els("display", text, cols=(1, 5)),
+                            TOKENS, SLIDE_W, SLIDE_H)
+        tel = next(e for e in out if e["role"] == "freeform-text")
+        expected = primitives._wrapped_lines(
+            text, tel["width"], TOKENS["type_scale"]["display"])
+        self.assertGreater(expected, 1, "fixture must actually wrap")
+        self.assertEqual(tel["hero_wrapped"], expected)
+
+    def test_single_line_display_has_no_stamp(self):
+        out = plan_freeform(self._els("display", "Short", cols=(1, 12)),
+                            TOKENS, SLIDE_W, SLIDE_H)
+        tel = next(e for e in out if e["role"] == "freeform-text")
+        self.assertNotIn("hero_wrapped", tel)
+
+    def test_body_scale_wrap_has_no_stamp(self):
+        text = "Weekly status review agenda and open action items"
+        out = plan_freeform(self._els("body", text, cols=(1, 4)),
+                            TOKENS, SLIDE_W, SLIDE_H)
+        tel = next(e for e in out if e["role"] == "freeform-text")
+        self.assertGreater(
+            primitives._wrapped_lines(
+                text, tel["width"], TOKENS["type_scale"]["body"]), 1)
+        self.assertNotIn("hero_wrapped", tel)
+
+    def test_display_overflow_still_raises(self):
+        text = "Weekly status review agenda and open action items to discuss"
+        with self.assertRaises(ShapeError):
+            plan_freeform(self._els("display", text, cols=(1, 3), rows=(1, 2)),
+                          TOKENS, SLIDE_W, SLIDE_H)
+
+
 if __name__ == "__main__":
     unittest.main()

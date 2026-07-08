@@ -1755,10 +1755,24 @@ def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None,
     if hierarchy_note:
         render_notes.append(hierarchy_note)
     section_counter = 0  # brand fidelity: ordinal for the section ghost numeral
+    # Reflex/earn-it check (deck-level): accumulate each content slide's primary
+    # device across the whole deck, then flag one device carried deck-wide after
+    # the loop. Fidelity-agnostic — composed slides route the same in both modes.
+    import composition as _composition  # noqa: PLC0415 — deck-level advisory
+    device_tally = []
+    content_slides = 0
 
     for spec in slides:
         number = spec["number"]
         role = spec["role"]
+
+        if role not in ("title", "section"):
+            content_slides += 1
+        if role == "composed":
+            _blocks = spec.get("blocks") or []
+            _first = _blocks[0].get("type") if _blocks else None
+            if _first in _composition.DECK_DEVICE_TYPES:
+                device_tally.append(_first)
 
         # D-411: Canvas is brand-fidelity vocabulary — placeholder fill has
         # no token background to paint. Rejected by name, never silently
@@ -1929,6 +1943,13 @@ def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None,
         _apply_meta(slide, spec["meta"], extra_visual=extra_visual)
         if "Visual" in spec["meta"]:
             visual_slides.append(number)
+
+    # Deck-level reflex/earn-it advisory: one named device carried across the
+    # deck. Appended under sentinel slide 0 (a deck-wide finding has no one
+    # slide); the summary renders it "slide 0 [deck-device-repetition] ...".
+    _dev_adv = _composition.deck_device_repetition(device_tally, content_slides)
+    if _dev_adv:
+        composed_advisories.append((0, [_dev_adv]))
 
     out_dir = os.path.dirname(os.path.abspath(out_path))
     if out_dir:
@@ -2619,6 +2640,14 @@ def _render_composed_slide(prs, brand, spec, tokens, charts_dir,
         render_notes.append(
             f"slide {number}: stat numbers stepped down to fit their cells"
         )
+    # Reflex/earn-it: a freeform hero line (display/h1) that wrapped past one
+    # line — it fits its box but reads as a paragraph, not a hero.
+    render_notes += [
+        f"slide {number}: freeform hero text wrapped to "
+        f"{el['hero_wrapped']} lines"
+        for el in all_elements
+        if el.get("hero_wrapped")
+    ]
 
     # Resolve icon elements to recoloured PNGs — AFTER the lint has cleared their
     # token colour, so the planners stay pure (the charts pattern). A missing

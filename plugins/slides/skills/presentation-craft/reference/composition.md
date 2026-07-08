@@ -116,12 +116,18 @@ they are authored judgement — the generator must not pretend to test them:
 
 ## The authoring anti-goal
 
-Before composing a stat slide, answer one question:
+Before composing any beat — a stat row, a comparison, a hand-drawn figure, a hero
+line — answer one question:
 
-> **What does this slide move the audience FROM → TO — and is the number
-> concrete (imaginable), not just big?**
+> **What does this slide move the audience FROM → TO — and does *this* content
+> earn *this* form?** (For a number: concrete and imaginable, not just big.)
 
-If you can't name the move, the slide hasn't earned its place yet.
+If you can't name the move, or can't say why the content earns the form, the slide
+hasn't earned its place — it wants a different form, or it wants cutting. No device
+is banned: a hero metric, a dumbbell, and big text each land when the content earns
+them. What fails is the reflexive reach for one, and the same device carried across
+the whole deck. Earn the form, vary it slide to slide, and the same facts stop
+reading as a template.
 
 ## Myths not encoded
 

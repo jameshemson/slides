@@ -2174,5 +2174,101 @@ class CanvasRenderTest(unittest.TestCase):
         self.assertIn("Canvas is a brand-fidelity field", result.stderr)
 
 
+# ---------------------------------------------------------------------------
+# Deck-level device repetition + freeform hero-wrap notes surface in the run
+# summary (composition.deck_device_repetition + primitives hero_wrapped stamp).
+# Brand fidelity (no `fidelity` key → brand): composed slides draw from tokens.
+# ---------------------------------------------------------------------------
+
+COMPOSED_BRAND = {
+    "template": TEMPLATE,
+    "fonts": {"heading": "Calibri", "body": "Calibri"},
+    "colours": {"accent": "#4F81BD", "accent2": "#C0504D",
+                "ink": "#000000", "paper": "#FFFFFF"},
+    "layout_map": {"title": 0, "title-content": 1, "section": 2,
+                   "two-column": 3, "statement": 5, "quote": 2, "composed": 5},
+}
+
+_FRONT = "---\ndeck: d\naudience: a\n---\n\n"
+_STAT = "layout: composed\nBlock: stat-row\n56 | Days\n4% | Rate\n"
+_CARDS = "layout: composed\nBlock: card-grid\nSize | a\nKnowledge | b\n!Aim | c\n"
+_CMP = "layout: composed\nBlock: comparison\nBefore | slow\n!After | fast\n"
+_PROC = "layout: composed\nBlock: process\nPlan\nCreate\nDeliver\n"
+_TL = ("layout: composed\nBlock: timeline\n"
+       "2026 | Kickoff\n!2027 | Launch\n2028 | Scale\n")
+
+
+def _deck_spec(*slide_bodies):
+    """A minimal deck spec: each arg is one slide's body (its layout/fields)."""
+    out = [_FRONT]
+    for i, body in enumerate(slide_bodies, start=1):
+        out.append(f"## Slide {i}\n{body}\n")
+    return "".join(out)
+
+
+class DeckDeviceRepetitionRenderTest(unittest.TestCase):
+    """End-to-end: the deck-level repetition advisory and the freeform hero-wrap
+    render note reach the printed run summary."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.mkdtemp(prefix="slides-deck-advisory-test-")
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls._tmp, ignore_errors=True)
+
+    def _render(self, name, spec_text):
+        spec_path = os.path.join(self._tmp, f"{name}.deck.md")
+        brand_path = os.path.join(self._tmp, f"{name}.brand.json")
+        out_path = os.path.join(self._tmp, f"{name}.pptx")
+        with open(spec_path, "w", encoding="utf-8") as fh:
+            fh.write(spec_text)
+        with open(brand_path, "w", encoding="utf-8") as fh:
+            json.dump(COMPOSED_BRAND, fh)
+        proc = subprocess.run(
+            [sys.executable, RENDER_PY, "--spec", spec_path,
+             "--brand", brand_path, "--out", out_path],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(
+            proc.returncode, 0,
+            f"render failed:\nstdout: {proc.stdout}\nstderr: {proc.stderr}")
+        return proc.stdout + proc.stderr
+
+    def test_repeated_device_advises(self):
+        # 4 stat-row + 1 comparison composed slides: stat-row dominates.
+        summary = self._render("repeat", _deck_spec(
+            _STAT, _STAT, _STAT, _STAT, _CMP))
+        self.assertIn("deck-device-repetition", summary)
+        self.assertIn("stat-row", summary)
+
+    def test_varied_deck_no_advisory(self):
+        # 5 distinct devices → no single device dominates.
+        summary = self._render("varied", _deck_spec(
+            _STAT, _CARDS, _CMP, _PROC, _TL))
+        self.assertNotIn("deck-device-repetition", summary)
+
+    def test_statement_bookend_no_advisory(self):
+        # 2 statement (fixed-role) slides bracket 3 varied composed slides:
+        # fixed roles are not tallied, composed devices vary → nothing dominates.
+        summary = self._render("bookend", _deck_spec(
+            "layout: statement\nStatement: The meeting costs six hours a week.",
+            _STAT, _CARDS, _CMP,
+            "layout: statement\nStatement: Write it down instead.",
+        ))
+        self.assertNotIn("deck-device-repetition", summary)
+
+    def test_freeform_hero_wrap_note(self):
+        # A display-scale freeform line that wraps in a tall box that still holds
+        # it is owned up to in the run summary, by slide number.
+        summary = self._render("hero", _deck_spec(
+            "layout: composed\nBlock: freeform\n"
+            "text display ink at cols 1-12 rows 1-11 | The weekly status meeting",
+        ))
+        self.assertIn("freeform hero text wrapped", summary)
+        self.assertIn("slide 1", summary)
+
+
 if __name__ == "__main__":
     unittest.main()

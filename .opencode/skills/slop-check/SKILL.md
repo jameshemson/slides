@@ -44,7 +44,7 @@ for i, s in enumerate(p.slides, 1):
 
 Work through `slop.md` end to end.
 
-**Layer 1, presentation slop.** Check every slide for: the tacked-on strapline, the slide as a document, the slide as a script, bullet soup, title and body restating each other, the deck being about the presenter or the product, facts with no story, unearned hype and ad-copy voice, decoration that does not clarify, register mismatch, leftover scaffolding.
+**Layer 1, presentation slop.** Check every slide for: the tacked-on strapline, the slide as a document, the slide as a script, bullet soup, title and body restating each other, the deck being about the presenter or the product, facts with no story, unearned hype and ad-copy voice, decoration that does not clarify, register mismatch, leftover scaffolding, and the device reflex — a hero number, a dumbbell, or a big-text line reached for by default rather than earned by the beat (flag the reflex, not the device: each is right when the content earns it).
 
 **Layer 2, prose slop.** Check the speaker notes and any prose against the banned phrases and banned structures: throat-clearing openers, emphasis crutches, business jargon, adverbs, filler, binary contrasts, negative listing, dramatic fragmentation, passive voice, em dashes, lazy extremes.
 
@@ -53,6 +53,8 @@ Work through `slop.md` end to end.
 Hold the emotion line. Earned emotion, grounded in something true and concrete, passes. Flag only the unearned kind.
 
 **Chart figures match the words.** When a slide carries a `Chart:` block, check its numbers against the figures in the Body and the Notes. A chart that shows one figure while the prose claims another is a trust break: flag it and name both numbers. (A finished `.pptx` holds the chart as an image, so run this check on the deck spec, where the chart data is readable.)
+
+**One device, deck-wide.** Read the deck as a set, not only slide by slide. If one device carries most of the content slides — a run of hero-number slides, a wall of dumbbells, five near-identical stat rows — flag it even when each slide reads clean alone; a deck of one device reads as a template, not an argument. Name the device and the slides it repeats on. (`build-deck` flags this mechanically for named composed devices; here you also catch the ones it cannot count — repeated hand-drawn dumbbells, a repeated freeform treatment.)
 
 ## Step 3: Score
 

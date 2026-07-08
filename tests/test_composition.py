@@ -768,3 +768,51 @@ class TestStatementTerseness(unittest.TestCase):
         els += [{"role": "stat-number", "text": " ".join(["word"] * 100)}
                 for _ in range(10)]
         self.assertTrue(rule["check"](els, TOKENS, SLIDE_W, SLIDE_H))
+
+
+class TestDeckDeviceRepetition(unittest.TestCase):
+    """composition.deck_device_repetition — the deck-level reflex/earn-it note.
+
+    A standalone constant + helper, deliberately OUTSIDE RULES (like BLOCK_COUNT),
+    so EXPECTED_IDS and the RULES-shape assertions are untouched.
+    """
+
+    def test_fires_when_one_device_dominates(self):
+        adv = composition.deck_device_repetition(["stat-row"] * 4, 5)
+        self.assertIsNotNone(adv)
+        self.assertIn("stat-row", adv["message"])
+        self.assertIn("4", adv["message"])
+
+    def test_varied_deck_returns_none(self):
+        self.assertIsNone(composition.deck_device_repetition(
+            ["stat-row", "stat-row", "card-grid", "comparison", "table"], 5))
+
+    def test_exactly_half_returns_none(self):
+        # 3 of 6 == 50%; the rule fires only strictly above half.
+        self.assertIsNone(composition.deck_device_repetition(["stat-row"] * 3, 6))
+
+    def test_above_half_fires(self):
+        self.assertIsNotNone(
+            composition.deck_device_repetition(["stat-row"] * 4, 6))
+
+    def test_below_three_returns_none(self):
+        # 2 of 2 is 100% but under the >=3 floor — too few to read as monotony.
+        self.assertIsNone(composition.deck_device_repetition(["stat-row"] * 2, 2))
+
+    def test_empty_or_zero_returns_none(self):
+        self.assertIsNone(composition.deck_device_repetition([], 0))
+        self.assertIsNone(composition.deck_device_repetition(["stat-row"] * 3, 0))
+
+    def test_shape_matches_block_count(self):
+        adv = composition.deck_device_repetition(["stat-row"] * 4, 5)
+        self.assertEqual(set(adv.keys()), set(composition.BLOCK_COUNT.keys()))
+        self.assertEqual(adv["severity"], "advisory")
+        self.assertEqual(adv["rule_id"], "deck-device-repetition")
+
+    def test_rules_registry_unchanged(self):
+        # The deck-level note lives outside RULES; the 35-rule registry stands.
+        self.assertEqual(len(composition.RULES), 35)
+
+
+if __name__ == "__main__":
+    unittest.main()
