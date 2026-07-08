@@ -1,6 +1,11 @@
 """Tests for primitives.py — D-002 carve-out."""
+import json
+import math
+import shutil
+import subprocess
 import sys
 import os
+import tempfile
 import unittest
 
 # Add the scripts directory to sys.path so `import primitives` resolves.
@@ -718,6 +723,249 @@ class DrawNameStampTest(unittest.TestCase):
         }
         shapes = primitives.draw(slide, [text])
         self.assertFalse(shapes[0].name.startswith("slides-field:"))
+
+
+# --- glyph-aware estimator + stat-number ladder (D-407/D-408) ----------------
+#
+# The live incident these pin: a composed stat-row on the pack "presented"
+# ladder (display 96pt) with the pack grid on a 16:9 canvas gave each of 4
+# stats a 2 590 800 EMU cell; "$8.4M" is a single space-free token, so the
+# old whitespace-split estimator counted 1 line, but PowerPoint CHARACTER-
+# wraps an over-long token — the real render was 2 lines and the wrapped "M"
+# overprinted the label below.
+
+# The exact pack tokens of the incident (tokens.pack_grid / PACK_TYPE_SCALES
+# "presented", pinned literally so this test cannot drift with the pack).
+PACK_TOKENS = {
+    "grid": {
+        "margin_x": 609600,
+        "margin_top": 548640,
+        "margin_bottom": 548640,
+        "columns": 12,
+        "gutter": 203200,
+        "baseline": 91211,
+    },
+    "type_scale": {
+        "display": 96.0,
+        "title": 60.0,
+        "h1": 40.0,
+        "body": 24.0,
+        "caption": 16.0,
+    },
+    "colour_roles": {
+        "ink": "#1A1A1A",
+        "paper": "#FFFFFF",
+        "accent": "#0B5FFF",
+        "muted": "#6B7280",
+    },
+}
+PACK_W, PACK_H = 12192000, 6858000
+# 4 stats across the pack grid: (content_w - 3*gutter) // 4.
+PACK_CELL_W = (PACK_W - 2 * 609600 - 3 * 203200) // 4   # 2590800
+
+PACK_STATS = [
+    {"value": "$8.4M", "label": "Revenue / +12% QoQ"},
+    {"value": "412", "label": "Enterprise customers"},
+    {"value": "98.2%", "label": "Retention / trailing 12 months"},
+    {"value": "$1.9M", "label": "Net new ARR"},
+]
+
+
+class TokenWrapTest(unittest.TestCase):
+    """D-407: _wrapped_lines is glyph-aware and token-safe — a single
+    space-free token wider than its box counts the character-wrap lines
+    PowerPoint will actually draw, instead of assuming one line."""
+
+    def test_dollar_stat_char_wraps_at_display_size(self):
+        # The fix: "$8.4M" at 96pt in a 2590800 EMU cell is ~3.09em against a
+        # ~2.13em budget — two rendered lines, not one.
+        self.assertGreaterEqual(
+            primitives._wrapped_lines("$8.4M", PACK_CELL_W, 96.0), 2)
+
+    def test_short_number_stays_one_line(self):
+        self.assertEqual(
+            primitives._wrapped_lines("8.4", PACK_CELL_W, 96.0), 1)
+
+    def test_long_url_token_char_wraps_to_ceil(self):
+        url = "https://example.com/a/very/long/path/that/never/breaks"
+        budget_em = PACK_CELL_W / (18.0 * primitives.EMU_PER_PT)
+        expected = math.ceil(primitives._text_em(url) / budget_em)
+        self.assertGreater(expected, 1)
+        self.assertEqual(
+            primitives._wrapped_lines(url, PACK_CELL_W, 18.0), expected)
+
+    def test_multi_word_short_text_unchanged(self):
+        # Ordinary word-wrap behaviour is preserved: short multi-word text is
+        # one line, explicit breaks still count, and a narrow box wraps words.
+        self.assertEqual(primitives._wrapped_lines("Win rate", 3000000, 18.0), 1)
+        self.assertEqual(primitives._wrapped_lines("a\nb", 3000000, 18.0), 2)
+        self.assertGreater(
+            primitives._wrapped_lines(
+                "several plain words that share one narrow box", 1500000, 18.0),
+            1)
+
+
+class GlyphWidthTest(unittest.TestCase):
+    """D-407: _text_em sums per-character em advances by glyph class."""
+
+    def test_wide_glyphs_wider_than_narrow(self):
+        self.assertGreater(primitives._text_em("MW"), primitives._text_em("il"))
+
+    def test_digits_wider_than_default(self):
+        self.assertGreater(primitives._text_em("88"), primitives._text_em("xx"))
+
+    def test_exact_table_values(self):
+        self.assertEqual(primitives.GLYPH_EM, {
+            "digit": 0.60,
+            "upper": 0.72,
+            "wide": 0.85,
+            "default": 0.52,
+            "space": 0.33,
+        })
+        # "$8.4M" = default + digit + default + digit + wide.
+        self.assertAlmostEqual(primitives._text_em("$8.4M"),
+                               0.52 + 0.60 + 0.52 + 0.60 + 0.85)
+        # M and W match upper too — wide wins; @ is wide; space is space.
+        self.assertAlmostEqual(primitives._text_em("M"), 0.85)
+        self.assertAlmostEqual(primitives._text_em("W"), 0.85)
+        self.assertAlmostEqual(primitives._text_em("@"), 0.85)
+        self.assertAlmostEqual(primitives._text_em("A B"), 0.72 + 0.33 + 0.72)
+
+
+class StatNeverWrapsTest(unittest.TestCase):
+    """D-408: a stat number never wraps. On the exact incident tokens the
+    planner steps the ladder (display -> title -> h1) until every value is
+    one estimated line in its cell, so the planned rects can no longer
+    under-provision the row."""
+
+    def setUp(self):
+        self.els = plan_stat_row(PACK_STATS, PACK_TOKENS, PACK_W, PACK_H)
+        self.numbers = [e for e in self.els if e["role"] == "stat-number"]
+        self.labels = [e for e in self.els if e["role"] == "stat-label"]
+
+    def test_every_number_is_one_line_at_a_ladder_step(self):
+        self.assertEqual(len(self.numbers), 4)
+        for num in self.numbers:
+            self.assertIn(num["font_pt"], (96.0, 60.0, 40.0))
+            self.assertEqual(
+                primitives._wrapped_lines(
+                    num["text"], num["width"], num["font_pt"]),
+                1)
+
+    def test_number_box_plus_baseline_clears_label(self):
+        baseline = PACK_TOKENS["grid"]["baseline"]
+        for num, lab in zip(self.numbers, self.labels):
+            self.assertLessEqual(
+                num["top"] + num["height"] + baseline, lab["top"])
+        # And the box is sized for the CHOSEN step, not display.
+        for num in self.numbers:
+            self.assertEqual(
+                num["height"],
+                round(num["font_pt"] * primitives.EMU_PER_PT
+                      * primitives.LINE_HEIGHT))
+
+    def test_stepped_row_marks_font_stepped(self):
+        # "$8.4M" cannot fit its cell at display 96pt, so the whole row steps
+        # down and every number element owns up to it.
+        for num in self.numbers:
+            self.assertLess(num["font_pt"], 96.0)
+            self.assertTrue(num.get("font_stepped"))
+
+    def test_unstepped_row_carries_no_font_stepped(self):
+        els = plan_stat_row([{"value": "56", "label": "Days"}],
+                            PACK_TOKENS, PACK_W, PACK_H)
+        num = next(e for e in els if e["role"] == "stat-number")
+        self.assertEqual(num["font_pt"], 96.0)
+        self.assertNotIn("font_stepped", num)
+
+    def test_too_wide_value_raises_naming_it(self):
+        long_token = "123456789012345678901234567890"  # 30 chars, no spaces
+        stats = PACK_STATS[:3] + [{"value": long_token, "label": "Huge"}]
+        with self.assertRaises(ShapeError) as cm:
+            plan_stat_row(stats, PACK_TOKENS, PACK_W, PACK_H)
+        self.assertIn(long_token, str(cm.exception))
+        self.assertIn("cannot fit its cell", str(cm.exception))
+
+
+@unittest.skipUnless(
+    os.environ.get("RASTER_MEASURE"),
+    "opt-in: set RASTER_MEASURE=1 (needs a raster backend + PIL)")
+class RasterMeasureTest(unittest.TestCase):
+    """The reproducible measurement backing the estimator bound (REQ-201):
+    render the live-incident stat row end to end under brand fidelity,
+    rasterise slide 1, and print its ink row bands so a human can verify the
+    number no longer overprints its label. Opt-in because it needs a
+    rasteriser backend (LibreOffice/PowerPoint/Keynote) and PIL."""
+
+    SPEC = (
+        "---\n"
+        "deck: estimator raster measure\n"
+        "audience: engineering leadership\n"
+        "register: presented live\n"
+        "---\n"
+        "\n"
+        "## Slide 1\n"
+        "layout: composed\n"
+        "Title: What moved this quarter\n"
+        "Block: stat-row\n"
+        "$8.4M | Revenue / +12% QoQ\n"
+        "412 | Enterprise customers\n"
+        "98.2% | Retention / trailing 12 months\n"
+        "$1.9M | Net new ARR\n"
+    )
+    BRAND = {
+        "fidelity": "brand",
+        "fonts": {"heading": "Calibri", "body": "Calibri"},
+        "colours": {
+            "ink": "#1A1A1A",
+            "paper": "#FFFFFF",
+            "accent": "#0B5FFF",
+            "muted": "#6B7280",
+        },
+    }
+
+    def test_stat_row_renders_rasterises_and_prints_ink_bands(self):
+        from PIL import Image  # noqa: PLC0415 — opt-in dependency
+        import raster  # noqa: PLC0415 — scripts dir is on sys.path
+
+        tmp = tempfile.mkdtemp(prefix="slides-raster-measure-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        spec_path = os.path.join(tmp, "deck.md")
+        with open(spec_path, "w", encoding="utf-8") as fh:
+            fh.write(self.SPEC)
+        brand_path = os.path.join(tmp, "brand.json")
+        with open(brand_path, "w", encoding="utf-8") as fh:
+            json.dump(self.BRAND, fh)
+        out_path = os.path.join(tmp, "out.pptx")
+        render_py = os.path.join(os.path.abspath(_SCRIPTS_DIR), "render.py")
+        proc = subprocess.run(
+            [sys.executable, render_py, "--spec", spec_path,
+             "--brand", brand_path, "--out", out_path],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(
+            proc.returncode, 0,
+            f"render failed:\nstdout: {proc.stdout}\nstderr: {proc.stderr}")
+
+        pngs = raster.rasterise(out_path, os.path.join(tmp, "png"))
+        self.assertGreaterEqual(len(pngs), 1)
+
+        # Ink row bands: contiguous pixel rows containing any non-paper ink.
+        im = Image.open(pngs[0]).convert("L")
+        w, h = im.size
+        px = im.load()
+        bands, start = [], None
+        for y in range(h):
+            has_ink = any(px[x, y] < 200 for x in range(w))
+            if has_ink and start is None:
+                start = y
+            elif not has_ink and start is not None:
+                bands.append((start, y - 1))
+                start = None
+        if start is not None:
+            bands.append((start, h - 1))
+        print(f"\nRASTER_MEASURE {os.path.basename(pngs[0])} size={w}x{h} "
+              f"ink row bands (px): {bands}")
 
 
 if __name__ == "__main__":

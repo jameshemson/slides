@@ -136,11 +136,15 @@ class ComposedLintGateTest(unittest.TestCase):
     """The mechanical lint is wired into the render gate."""
 
     def test_over_cap_fails_render(self):
-        """13 stats -> 26 elements -> over the element cap -> render fails, no file."""
+        """13 stats -> 26 elements -> over the element cap -> render fails, no file.
+
+        Values stay single-digit so D-408's never-wrap ladder passes even in
+        13-way-narrow cells — the element cap must be what trips here.
+        """
         spec = (
             "---\ndeck: d\naudience: a\n---\n\n## Slide 1\nlayout: composed\n"
             "Block: stat-row\n"
-            + "".join(f"{i} | label{i}\n" for i in range(13))
+            + "".join(f"{i % 10} | label{i}\n" for i in range(13))
         )
         proc, out = _run(spec)
         self.assertNotEqual(proc.returncode, 0)

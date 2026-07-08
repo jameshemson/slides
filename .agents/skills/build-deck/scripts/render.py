@@ -2476,6 +2476,12 @@ def _render_composed_slide(prs, brand, spec, tokens, charts_dir,
         for el in all_elements
         if el.get("kind") == "table" and el.get("font_stepped")
     ]
+    # D-408: stat numbers that stepped down the ladder rather than wrap.
+    if any(el.get("role") == "stat-number" and el.get("font_stepped")
+           for el in all_elements):
+        render_notes.append(
+            f"slide {number}: stat numbers stepped down to fit their cells"
+        )
 
     # Resolve icon elements to recoloured PNGs — AFTER the lint has cleared their
     # token colour, so the planners stay pure (the charts pattern). A missing

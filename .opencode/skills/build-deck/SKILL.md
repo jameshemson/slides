@@ -64,21 +64,41 @@ estimate missed, a slide that reads as cluttered. This step is the lint *with
 eyes*: rasterise the deck and look at it. It needs a deck-to-image backend, so
 it is optional and degrades.
 
+The checklist for the look:
+
+- text overflowing or wrapping badly — especially any word alone on its own line
+- elements colliding or crowding the slide edge
+- dead space that reads as emptiness rather than pacing
+- hierarchy reading by SIZE (the lead unmistakably largest)
+- one accent held (grey field, colour spent on the insight) and rendered
+  contrast legible (small text vs its actual background)
+- composed slides reading as composed, not templated
+- freeform slides especially — they have no advisory rules, the look is
+  their only craft check
+- cliché tells: an evenly-weighted card grid where nothing leads, a
+  comparison that doesn't resolve, a chevron-ribbon process, a timeline
+  where nothing is the turn
+- any `[check]` likely-blank slide
+
 Check for a backend: `python3 -c "import sys; sys.path.insert(0,'scripts'); import raster; print(raster.available_backend())"`.
 
 - **`libreoffice`** (headless, safe): rasterise and review automatically —
   `python3 scripts/raster.py <deck>.pptx --out-dir <deck>.review --sheet --check`.
-  Then **open the per-slide PNGs (and `contact-sheet.png`) and look**: does any text
-  overflow its box or wrap badly? Do elements collide or crowd the edge? Does each
-  composed slide read as *composed*, or templated? Report what you see as
-  suggestions (the deck already rendered), and note any `[check] likely-blank`
-  slide from the summary.
+  Then **open the per-slide PNGs (and `contact-sheet.png`) and look** against
+  the checklist above. When you find a fault you can fix by editing the deck
+  spec — tighter text, a different block or placement, a Canvas moment,
+  cutting an item — edit the spec and re-render (Step 3) and re-raster. At
+  most two fix-and-re-render passes, then stop and report. A fault you can't
+  fix from the spec (a brand font not installed, a photograph needed) is
+  reported as a suggestion instead, same as before.
 - **`powerpoint`**: the user's own Microsoft PowerPoint does the render-back —
   the same `raster.py` command, and the deck is checked by the very app it will
   be presented from. On **Windows** this drives PowerPoint over COM with no
-  visible window, so run it automatically like LibreOffice. On **macOS** it
-  **opens the PowerPoint app** (and may prompt once for automation permission),
-  so say so and run it on the user's yes.
+  visible window, so run it automatically like LibreOffice, including the same
+  look-against-the-checklist, edit-the-spec, re-render-and-re-raster loop,
+  capped at two passes. On **macOS** it **opens the PowerPoint app** (and may
+  prompt once for automation permission), so say so and run it — and that
+  same fix-and-re-render loop — on the user's yes.
 - **`keynote`** (macOS): the render-back works via Keynote, but it **opens the
   Keynote app** (and may prompt for automation permission), so do not run it
   automatically — tell the user it is available and run it only if they ask.
@@ -91,5 +111,7 @@ Check for a backend: `python3 -c "import sys; sys.path.insert(0,'scripts'); impo
 Print the render summary. It states how many slides were written, which carry a native chart, which carry a `VISUAL TO ADD` note, any matplotlib or brand-font fallback warning, and any non-blocking composition advisory notes on `composed` and drawn role slides (evidence-cited "what good looks like" — see [composition.md](../presentation-craft/reference/composition.md)), plus a note when a role's lead text stepped down the type ladder to fit. Surface advisories to the user as suggestions, not errors; the deck still rendered.
 
 A `Chart:` block is drawn natively and placed on the slide (PNGs are written to a `.charts/` folder beside the `.pptx` and embedded in it). A `Visual:` field is recorded in the slide's speaker notes, prefixed `VISUAL TO ADD:`, and is not drawn — tell the user which slides carry one and that placing it in PowerPoint is their step. If the summary reports a matplotlib fallback, tell the user that those chart slides became notes and that `pip install matplotlib` will draw them on the next run.
+
+If Step 4's render-back loop ran, include a short "what the look found and changed" note — which faults it caught and fixed, across how many passes — or say plainly the look found nothing to fix.
 
 Tell the user where the `.pptx` was written. To audit the finished deck, point them at `slop-check` (via the skill tool). To change it later, point them at `revise` (via the skill tool).
