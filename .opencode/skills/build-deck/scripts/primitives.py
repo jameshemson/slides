@@ -22,11 +22,19 @@ from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 # allowed (generic, not brand values).
 EMU_PER_PT = 12700
 LINE_HEIGHT = 1.2
-# Average glyph advance as a fraction of the point size, for a mixed-case
-# proportional face (~0.45-0.55em across common sans faces). Used to estimate
+# Per-character glyph advance in em (a fraction of the point size) for a
+# mixed-case proportional sans face. Digits and capitals run wider than the
+# lowercase average (~0.45-0.55em across common sans faces); M/W/@ are the
+# widest common glyphs; a space is narrow. _text_em sums these to estimate
 # where the renderer's word-wrap will break; deliberately a touch generous so
 # a planner errs toward allocating MORE height, never less.
-AVG_CHAR_W = 0.52
+GLYPH_EM = {
+    "digit": 0.60,
+    "upper": 0.72,
+    "wide": 0.85,
+    "default": 0.52,
+    "space": 0.33,
+}
 # Optical centre: place the row's vertical centre slightly above the geometric
 # centre (~45% from the top). Dead-centre reads as marginally low; the optical
 # centre is the conventional resting point for a single focal element.
@@ -62,6 +70,13 @@ def plan_stat_row(stats, tokens, slide_w, slide_h, region=None) -> list:
     Each element dict has keys:
       role, text, left, top, width, height, font_pt, colour
     where left/top/width/height are in EMU and colour is '#RRGGBB'.
+
+    D-408: a stat number never wraps. The planner walks the type ladder
+    (display -> title -> h1) and takes the first step at which EVERY value
+    fits its cell on one line per the glyph-aware estimator; a value too wide
+    even at the h1 floor raises ShapeError. A stepped-down row marks its
+    number elements "font_stepped" (the render-note channel). Stat numbers
+    carry no hierarchy rank — unchanged.
     """
     grid = tokens["grid"]
     ts = tokens["type_scale"]
@@ -84,8 +99,25 @@ def plan_stat_row(stats, tokens, slide_w, slide_h, region=None) -> list:
 
     content_left, content_w = _content_span(tokens, slide_w, region)
     cell_w = (content_w - (N - 1) * gutter) // N
+    # Per-cell widths: the last cell absorbs the rounding remainder (same rule
+    # as _even_cells).
+    widths = [cell_w] * (N - 1) + [content_w - (N - 1) * (cell_w + gutter)]
 
-    number_pt = ts["display"]
+    # D-408: a stat number never wraps — the fix for "$8.4M" character-
+    # wrapping at display size and overprinting its label. First ladder step
+    # where every value is one estimated line in its own cell wins.
+    values = [str(s["value"]) for s in stats]
+    number_pt = None
+    for step in (ts[k] for k in ("display", "title", "h1") if k in ts):
+        if all(_wrapped_lines(v, w, step) == 1 for v, w in zip(values, widths)):
+            number_pt = step
+            break
+    if number_pt is None:
+        widest = max(values, key=_text_em)
+        raise ShapeError(
+            f"stat value {widest!r} cannot fit its cell — shorten it or cut stats"
+        )
+    font_stepped = number_pt != ts["display"]
     label_pt = ts["caption"]
 
     # ' / ' breaks a label line (the card/panel body convention). Every label
@@ -117,22 +149,23 @@ def plan_stat_row(stats, tokens, slide_w, slide_h, region=None) -> list:
     elements = []
     for i in range(N):
         cell_left = content_left + i * (cell_w + gutter)
-        if i < N - 1:
-            width_i = cell_w
-        else:
-            # Last cell absorbs rounding remainder.
-            width_i = content_w - (N - 1) * (cell_w + gutter)
+        width_i = widths[i]
 
-        elements.append({
+        number_el = {
             "role": "stat-number",
-            "text": str(stats[i]["value"]),
+            "text": values[i],
             "left": cell_left,
             "top": row_top,
             "width": width_i,
             "height": number_h,
             "font_pt": number_pt,
             "colour": roles["accent"],
-        })
+        }
+        if font_stepped:
+            # The render-note channel: a row that stepped down the ladder to
+            # keep its numbers on one line owns up to it in the run summary.
+            number_el["font_stepped"] = True
+        elements.append(number_el)
         elements.append({
             "role": "stat-label",
             "text": labels[i],
@@ -164,6 +197,28 @@ def _line_h(font_pt) -> int:
     return round(font_pt * EMU_PER_PT * LINE_HEIGHT)
 
 
+def _text_em(text) -> float:
+    """Width of `text` in em: the sum of its per-character GLYPH_EM advances.
+
+    Class per character: "MW@" -> wide (M and W also match upper — wide wins),
+    0-9 -> digit, A-Z -> upper, space -> space, anything else -> default.
+    """
+    em = GLYPH_EM
+    total = 0.0
+    for ch in str(text):
+        if ch in "MW@":
+            total += em["wide"]
+        elif "0" <= ch <= "9":
+            total += em["digit"]
+        elif "A" <= ch <= "Z":
+            total += em["upper"]
+        elif ch == " ":
+            total += em["space"]
+        else:
+            total += em["default"]
+    return total
+
+
 def _wrapped_lines(text, width_emu, font_pt) -> int:
     """Estimate the line count of `text` word-wrapped in a box `width_emu` wide.
 
@@ -171,26 +226,50 @@ def _wrapped_lines(text, width_emu, font_pt) -> int:
     than its box wraps at render time — invisible to a planner that counts only
     explicit '\\n' breaks, which is exactly how rendered text used to spill out
     of its box and overlap the element below. This is the planner's stand-in
-    for that line-breaker: each '\\n' segment is greedily wrapped at an average
-    glyph width (AVG_CHAR_W). An estimate, not font metrics — the render-back
-    check stays the ground truth — but it errs generous, so declared heights
-    cover what the renderer will actually draw.
+    for that line-breaker: each '\\n' segment is greedily word-packed against
+    an em-width budget (width_emu at font_pt), each word costing its summed
+    GLYPH_EM advances (_text_em). A single space-free token wider than the
+    budget cannot word-wrap — PowerPoint CHARACTER-wraps it — so it costs
+    ceil(token_em / budget_em) lines; the old flat per-character count assumed
+    any single token was one line, which is exactly how "$8.4M" at display
+    size rendered on two lines and overprinted the label below it. An
+    estimate, not font metrics — the render-back check stays the ground
+    truth — but it errs generous, so declared heights cover what the renderer
+    will actually draw.
     """
-    per_line = max(1, int(width_emu / (font_pt * EMU_PER_PT * AVG_CHAR_W)))
+    # At least one default glyph per line (the old `max(1, per_line)` guard),
+    # so a degenerate width can never divide by zero or loop a token forever.
+    budget_em = max(width_emu / (font_pt * EMU_PER_PT), GLYPH_EM["default"])
+    space_em = GLYPH_EM["space"]
     total = 0
     for segment in str(text).split("\n"):
         words = segment.split()
         if not words:
             total += 1
             continue
-        lines, current = 1, len(words[0])
-        for word in words[1:]:
-            if current + 1 + len(word) <= per_line:
-                current += 1 + len(word)
+        lines = 0
+        current = None  # em width of the open line; None = no open line
+        for word in words:
+            w_em = _text_em(word)
+            if w_em > budget_em:
+                # An unbreakable token wider than the line: close the open
+                # line, then charge the character-wrap lines PowerPoint will
+                # draw. Conservative: its last fragment counts as a full
+                # line, so the next word opens a fresh one.
+                if current is not None:
+                    lines += 1
+                    current = None
+                lines += math.ceil(w_em / budget_em)
+            elif current is None:
+                current = w_em
+            elif current + space_em + w_em <= budget_em:
+                current += space_em + w_em
             else:
                 lines += 1
-                current = len(word)
-        total += lines
+                current = w_em
+        if current is not None:
+            lines += 1
+        total += max(1, lines)
     return total
 
 

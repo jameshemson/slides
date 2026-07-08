@@ -117,8 +117,8 @@ python3 ../build-deck/scripts/render.py --spec <deck>.deck.md \
 
 Never point `--out` at the original `.pptx` without an explicit yes. If the user hesitates, offer `<deck>-v2.pptx` instead and render there.
 
-Point the user at build-deck's Step 4 render-back check before calling the revision done — the lint proves on-brand, not that nothing overflowed.
+Run build-deck's Step 4 render-back loop on the re-rendered deck before calling the revision done — the lint proves on-brand, not that nothing overflowed. Same terms: look against the checklist, and for a fault fixable from the spec, edit the spec and re-render, at most two fix-and-re-render passes, then stop and report.
 
 ## Step 7: Report
 
-Tell the user what changed, where the spec lives, and where the deck was written (the original path, or the `-v2` one). The new render carries a fresh lineage stamp, so this deck round-trips again — the next `/slides:revise` starts at Tier 1.
+Tell the user what changed, where the spec lives, and where the deck was written (the original path, or the `-v2` one). Include the "what the look found and changed" note from Step 4's loop (or that it found nothing to fix). The new render carries a fresh lineage stamp, so this deck round-trips again — the next `/slides:revise` starts at Tier 1.

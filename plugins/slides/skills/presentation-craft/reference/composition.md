@@ -40,7 +40,7 @@ strays outside the band. Thresholds are advisory bands, not law.
 |------|------|-----------------------------------|--------|
 | `hierarchy-ratio` | quality | The number dominates: ~3–4× its label (band 2.5–6×). Too close and the number doesn't read as the hero. *No perceptual study pins the exact ratio — this is an advisory band from the brand's own decks.* | report#3; decks §F |
 | `stat-count` | quality | 3–5 figures in a row. More is a table, not a hero row — working memory holds ~3–5 items (Cowan, correcting the folkloric 7±2). | report#4 (Cowan) |
-| `contrast` | quality | Legible: number ≥ 3:1 vs the paper (large text); a small label ≥ 4.5:1 (WCAG 2.2 AA). *Assumes the `paper` colour role is the background — true rendered contrast is a later vision-loop check.* | report#9 (WCAG) |
+| `contrast` | quality | Legible: number ≥ 3:1 vs the paper (large text); a small label ≥ 4.5:1 (WCAG 2.2 AA). *Assumes the `paper` colour role is the background — the render-back vision loop (build-deck Step 4) checks the true rendered contrast.* | report#9 (WCAG) |
 | `value-terseness` | quality | The value is terse (≤ ~5 chars): `56`, `4%`, `$1.2M`. A long number is a sentence, not a hero. | report#3; inknarrates |
 | `label-terseness` | quality | The label is ≤ 3 words. | report#3; decks §F |
 | `breathing-room` | quality | The row leaves whitespace — it shouldn't fill the content band. White space is pacing; a sparse slide signals importance. | report §E; decks §E |
@@ -88,7 +88,8 @@ warn when a spec strays.
 The `freeform` block is otherwise deliberately advisory-free: it trades
 good-by-construction for freedom, so its composition is the author's judgement.
 The hard lint still holds (on-token, on-grid, no overlap, under the cap) — that is
-the guardrail that makes the freedom safe.
+the guardrail that makes the freedom safe. The render-back loop is freeform's
+quality check: build-deck looks at the rendered slide (Step 4) and iterates.
 
 The full evidence base — per-primitive layout patterns, James's own vocabulary, and
 the design-system principles (hierarchy, type scale, imagery, colour) — is in
