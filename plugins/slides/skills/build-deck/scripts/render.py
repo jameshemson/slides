@@ -435,24 +435,41 @@ MAX_COMPOSED_BLOCKS = 4
 
 # 'at <placement>' shortcuts: half-band placements on the 12x12 block grid.
 _PLACEMENT_SHORTCUTS = {
-    "left": {"cols": (1, 6), "rows": None},
-    "right": {"cols": (7, 12), "rows": None},
-    "top": {"cols": None, "rows": (1, 6)},
-    "bottom": {"cols": None, "rows": (7, 12)},
+    "left": {"cols": (1, 6), "rows": None, "x": None, "y": None},
+    "right": {"cols": (7, 12), "rows": None, "x": None, "y": None},
+    "top": {"cols": None, "rows": (1, 6), "x": None, "y": None},
+    "bottom": {"cols": None, "rows": (7, 12), "x": None, "y": None},
 }
+
+# REQ-204: fine-grained percent bounds — `x 10%-60%` / `y 33.5%-40%`.
+# Integers or decimals; the % signs are required (that is what separates the
+# percent grammar from a cols/rows typo).
+_PERCENT_BOUNDS_RE = re.compile(r"\b(x|y)\s+(\d+(?:\.\d+)?)%\s*-\s*(\d+(?:\.\d+)?)%")
 
 
 def _parse_placement(number, text):
-    """Parse an `at ...` clause into {'cols': (c1,c2)|None, 'rows': (r1,r2)|None}.
+    """Parse an `at ...` clause into
+    {'cols': (c1,c2)|None, 'rows': (r1,r2)|None, 'x': (f0,f1)|None, 'y': ...}.
 
     The content band is a 12-column by 12-row grid. `cols 1-6` is the left half,
     `rows 1-6` the top half; the two combine (`cols 1-6 rows 7-12` = lower left).
     `left`/`right`/`top`/`bottom` are shortcuts. An unspecified axis spans full.
+
+    REQ-204: `x A%-B%` / `y A%-B%` place by exact band fraction instead —
+    parsed to (A/100, B/100) under the 'x'/'y' keys — so the model can
+    hand-draw data-accurate graphics (a dumbbell, a slope). The two grammars
+    must not mix within one placement: an axis is either on the grid (with its
+    breathing insets) or author-owned percent (exact, D-409), never both.
     """
     low = text.strip().lower()
+    if low == "full-bleed":
+        raise SpecError(
+            f"slide {number}: 'at full-bleed' applies only to freeform "
+            f"box/panel elements, not to blocks"
+        )
     if low in _PLACEMENT_SHORTCUTS:
         return dict(_PLACEMENT_SHORTCUTS[low])
-    place = {"cols": None, "rows": None}
+    place = {"cols": None, "rows": None, "x": None, "y": None}
     for m in re.finditer(r"\b(cols|rows)\s+(\d+)\s*-\s*(\d+)", low):
         axis, a, b = m.group(1), int(m.group(2)), int(m.group(3))
         if not 1 <= a <= b <= 12:
@@ -461,10 +478,29 @@ def _parse_placement(number, text):
                 f"with start <= end"
             )
         place[axis] = (a, b)
-    if place["cols"] is None and place["rows"] is None:
+    for m in _PERCENT_BOUNDS_RE.finditer(low):
+        axis, token = m.group(1), m.group(0)
+        a, b = float(m.group(2)), float(m.group(3))
+        if a > 100 or b > 100:
+            raise SpecError(
+                f"slide {number}: placement {token!r} is out of range — "
+                f"percent bounds must sit within 0-100%"
+            )
+        if a >= b:
+            raise SpecError(
+                f"slide {number}: placement {token!r} needs start < end — "
+                f"equal or inverted percent bounds place nothing"
+            )
+        place[axis] = (a / 100.0, b / 100.0)
+    if (place["cols"] or place["rows"]) and (place["x"] or place["y"]):
+        raise SpecError(
+            f"slide {number}: placement {text!r} would mix cols/rows with "
+            f"x%/y% — pick one grammar per placement"
+        )
+    if all(place[k] is None for k in ("cols", "rows", "x", "y")):
         raise SpecError(
             f"slide {number}: could not read placement {text!r}; use e.g. "
-            f"'at cols 1-6', 'at rows 1-6', 'at left', 'at top'"
+            f"'at cols 1-6', 'at rows 1-6', 'at x 10%-60%', 'at left', 'at top'"
         )
     return place
 
@@ -642,7 +678,9 @@ def _parse_freeform_element(number, item):
       arrow|dot|line <colour>         at <placement>
     Colours are role names (ink/paper/accent/muted), sizes scale names
     (display/h1/body/caption), placement is `cols A-B` / `rows C-D` (or a
-    shortcut) on the block's 12x12 grid.
+    shortcut) on the block's 12x12 grid, or exact percent bounds
+    `x A%-B%` / `y A%-B%` of the band (REQ-204). A box/panel may instead sit
+    `at full-bleed`: the whole slide, margins included.
     """
     line = item.strip()
     if line[:1] in "-*":
@@ -666,8 +704,20 @@ def _parse_freeform_element(number, item):
         )
     at_idx = lowered.index("at")
     style = tokens[1:at_idx]
-    placement = _parse_placement(number, " ".join(tokens[at_idx + 1:]))
-    el = {"kind": "box" if kind == "panel" else kind, "placement": placement}
+    place_text = " ".join(tokens[at_idx + 1:])
+    if place_text.strip().lower() == "full-bleed":
+        # REQ-204: `at full-bleed` paints the whole slide, margins included —
+        # only a box/panel may carry it (a background wash, not a text home).
+        if kind not in ("box", "panel"):
+            raise SpecError(
+                f"slide {number}: 'at full-bleed' applies only to freeform "
+                f"box/panel elements, not {kind!r}"
+            )
+        el = {"kind": "box", "placement": None, "full_bleed": True}
+    else:
+        placement = _parse_placement(number, place_text)
+        el = {"kind": "box" if kind == "panel" else kind,
+              "placement": placement}
 
     if kind == "text":
         if len(style) != 2:
@@ -1995,8 +2045,23 @@ def _place_region(base_band, placement, tokens):
     The band is a 12-column by 12-row grid. A small breathing inset keeps two
     adjacent placements from touching, so the slide-level lint's no-overlap rule
     is never even tested at the seam.
+
+    REQ-204/D-409: an `x A%-B%` / `y A%-B%` placement resolves as an exact
+    band fraction instead — no insets, the author owns the geometry. An axis
+    left unspecified spans the full band, as with single-axis grid spans.
     """
     bl, bt, bw, bh = base_band
+    x, y = placement.get("x"), placement.get("y")
+    if x or y:
+        if x:
+            left, width = bl + round(x[0] * bw), round((x[1] - x[0]) * bw)
+        else:
+            left, width = bl, bw
+        if y:
+            top, height = bt + round(y[0] * bh), round((y[1] - y[0]) * bh)
+        else:
+            top, height = bt, bh
+        return (left, top, max(1, width), max(1, height))
     grid = tokens.get("grid", {}) or {}
     cols_n = grid.get("columns", 12) or 12
     rows_n = 12
