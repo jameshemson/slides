@@ -86,6 +86,10 @@ Each user-invocable skill is useful on its own:
 - `/slides:slop-check` — Audit any deck for slop, not just ones built with this pack
 - `/slides:revise deck.pptx` — Change a rendered deck by conversation, even one you didn't build with this pack
 
+## Roadmap
+
+- **Delegate rendering to Anthropic's `pptx` skill where it's installed.** Their skill already does editable-pptx mechanics well — native generation, a corruption-catching validator, slide thumbnails. Where present (Claude Code), `build-deck` will generate through it under this pack's deck spec and brand tokens, and `slop-check`/`revise` will read its thumbnail grids; this pack's own renderer remains the cross-harness fallback on Codex and OpenCode. The deck spec stays the contract on both paths.
+
 ## License
 
 MIT
