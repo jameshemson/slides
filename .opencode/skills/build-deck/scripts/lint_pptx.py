@@ -244,6 +244,20 @@ def _colour_state(colour_format):
         return ABSENT, None
 
 
+def _line_format_state(line_format):
+    """(state, hex) for a LineFormat (a series or point outline), three-state."""
+    try:
+        kind = line_format.fill.type
+    except Exception:  # noqa: BLE001
+        return ABSENT, None
+    if kind is None or kind == MSO_FILL.BACKGROUND:
+        return ABSENT, None
+    if kind == MSO_FILL.SOLID:
+        hex_value = _rgb_hex(line_format.color)
+        return (RGB, hex_value) if hex_value is not None else (OTHER, None)
+    return OTHER, None
+
+
 def _cell_fill_alpha(cell):
     """A table cell fill's <a:alpha> value, or None."""
     try:
@@ -562,17 +576,9 @@ def _check_chart(index, shape, ground, tk, brand_fonts):
         for j, one in enumerate(series):
             fill_state, fill_hex = _paint_state(one.format.fill)
             try:
-                line_fill = one.format.line.fill
-                line_kind = line_fill.type
+                line_state, line_hex = _line_format_state(one.format.line)
             except Exception:  # noqa: BLE001
-                line_kind = None
-            if line_kind is None or line_kind == MSO_FILL.BACKGROUND:
                 line_state, line_hex = ABSENT, None
-            elif line_kind == MSO_FILL.SOLID:
-                line_hex = _rgb_hex(one.format.line.color)
-                line_state = RGB if line_hex is not None else OTHER
-            else:
-                line_state, line_hex = OTHER, None
 
             if point_family:
                 try:
@@ -582,6 +588,15 @@ def _check_chart(index, shape, ground, tk, brand_fonts):
                 for k, point in enumerate(points):
                     p_state, p_hex = _paint_state(point.format.fill)
                     m = _judge(f"series {j} point {k} fill", p_state, p_hex, True)
+                    if m:
+                        messages.append(m)
+                    # AR-011: a slice's own outline is visible paint too; an
+                    # absent point line lets the series line govern.
+                    try:
+                        l_state, l_hex = _line_format_state(point.format.line)
+                    except Exception:  # noqa: BLE001
+                        l_state, l_hex = ABSENT, None
+                    m = _judge(f"series {j} point {k} line", l_state, l_hex, False)
                     if m:
                         messages.append(m)
                 required_fill, required_line = False, False
