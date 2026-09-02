@@ -699,6 +699,24 @@ class TestCharts(unittest.TestCase):
         messages = _tagged(_violations(prs), "[explicit]")
         self.assertTrue(any("theme" in m and "cell" in m for m in messages), _violations(prs))
 
+    def test_theme_outline_on_filled_series_is_explicit_violation(self):
+        # AR-007: a token fill does not excuse a theme-coloured outline.
+        from pptx.enum.dml import MSO_THEME_COLOR
+        prs = _deck()
+        slide = _slide(prs)
+        frame = _chart(slide, 1, 1, 6, 3, name="figure")
+        chart = frame.chart
+        for axis in (chart.category_axis, chart.value_axis):
+            _style_chart_font(axis.tick_labels.font, 16, INK, "Calibri")
+        series = chart.plots[0].series[0]
+        series.format.fill.solid()
+        series.format.fill.fore_color.rgb = RGBColor.from_string(ACCENT.lstrip("#"))
+        series.format.line.color.theme_color = MSO_THEME_COLOR.ACCENT_2
+        messages = _tagged(_violations(prs), "[chart]")
+        self.assertTrue(
+            any("[explicit]" in m and "line" in m and "theme" in m for m in messages),
+            messages)
+
     def test_clean_chart(self):
         prs = _deck()
         slide = _slide(prs)
