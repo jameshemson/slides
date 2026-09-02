@@ -819,6 +819,36 @@ class TestCharts(unittest.TestCase):
         messages = _tagged(_violations(prs), "[chart]")
         self.assertTrue(any("[colour]" in m and "point 0" in m for m in messages), messages)
 
+    def test_pie_off_token_point_line_is_colour(self):
+        # AR-011: a slice outline is visible paint too.
+        prs = _deck()
+        series = self._pie(_slide(prs))
+        points = list(series.points)
+        for point in points:
+            self._paint_point(point, ACCENT)
+        points[0].format.line.color.rgb = RGBColor.from_string(OFF_TOKEN.lstrip("#"))
+        messages = _tagged(_violations(prs), "[chart]")
+        self.assertTrue(any("[colour]" in m and "point 0 line" in m for m in messages), messages)
+
+    def test_pie_non_solid_point_line_is_explicit(self):
+        prs = _deck()
+        series = self._pie(_slide(prs))
+        points = list(series.points)
+        for point in points:
+            self._paint_point(point, ACCENT)
+        points[0].format.line.fill.gradient()
+        messages = _tagged(_violations(prs), "[chart]")
+        self.assertTrue(any("[explicit]" in m and "point 0 line" in m for m in messages), messages)
+
+    def test_pie_token_point_line_is_clean(self):
+        prs = _deck()
+        series = self._pie(_slide(prs))
+        points = list(series.points)
+        for point in points:
+            self._paint_point(point, ACCENT)
+        points[0].format.line.color.rgb = RGBColor.from_string(PAPER.lstrip("#"))
+        self.assertEqual(_tagged(_violations(prs), "[chart]"), [])
+
     def test_gradient_outline_on_series_is_explicit(self):
         # AR-010: a present non-solid outline is not "no outline".
         prs = _deck()
