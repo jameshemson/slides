@@ -4,6 +4,65 @@ All notable changes to the slides skill pack are recorded here. The format
 follows [Keep a Changelog](https://keepachangelog.com/), and the pack uses
 [semantic versioning](https://semver.org/).
 
+## [0.20.0] - 2026-09-02
+
+Composition by code. James's read on 0.19: the decks were bland and showed
+none of the creativity the model has when it writes a deck directly. The
+trace: the renderer composed every slide from one fixed anatomy through a
+narrow spec DSL, so the model's judgement never reached the slide. The fix
+moves composition back to the model — as a per-deck pptxgenjs script written
+under the brand tokens — and moves the guarantees to a lint over the finished
+file. The deck spec stays the content contract; the tokens stay the identity
+constraint; the Python renderer stays as the fallback.
+
+### Added
+
+- **The script path (build-deck's default).** `emit_tokens.py` writes
+  `.slides/tokens.cjs` from `brand.json` and the spec's register; the model
+  writes `<deck>.build.cjs` from the spec (content in one JSON block, every
+  colour, font and size a token); `check_script.py` names the common mistakes
+  before the run; the script runs under Node's permission model
+  (`node --permission --allow-fs-read=<project> --allow-fs-write=<deck dir>`:
+  no child processes, no files outside the two allowlists); `lint_pptx.py`
+  holds every visible run to an explicit scale size, token colour, brand font
+  and legible contrast on its real ground (alpha composited, whole-box
+  containment, translucent panels), plus text-shape fills, table cells and
+  chart text and series, margins, overlap, the element cap and hierarchy, and
+  notes a missing lead, an orphan mark and a deck that never leaves plain
+  paper; `stamp.py` names slides and writes the lineage comment so `revise`
+  round-trips; `check_fonts.py` reports installed / missing / unknown per
+  brand font so a substituted preview is never mistaken for the deck.
+- **`Brief:` on every slide, `structure:` and `motif:` in the frontmatter.**
+  The composition brief narrative commits now lives in the spec, so the
+  build reads the decision instead of guessing it.
+- **The stamp grammar.** `slides-field:<Field>`, `slides-lead:<Field>` (the
+  field that leads), bare `slides-lead` (a drawn lead), `slides-ghost` (the one
+  deliberate decorative mark, exempt from contrast and outside the hierarchy);
+  Tier 0 reads the lead stamp like a field stamp.
+- **`composing-in-code.md`** — how to compose a deck as code, what reads as AI
+  in drawn slides, the script contract, the boundary and the gates — and a
+  worked example, `build-deck/reference/example.build.cjs`.
+- **`lint.check_contrast`** in the mechanical lint (WCAG 3.0 / 4.5, ghost
+  exempt), inert for callers that pass no ground.
+- **Builder guard.** `npm run build` no longer copies `node_modules` or
+  `__pycache__` from source and sweeps stale copies from the output trees.
+
+### Changed
+
+- `build-deck` composes as code by default when Node 22+ and pptxgenjs 4.0.1
+  are present; otherwise, or with `"renderer": "python"` or template fidelity,
+  it renders through `render.py` exactly as before.
+- `render.py` accepts `Brief:` on every role and takes its lineage stamp from
+  `stamp.lineage_comment`; `deck_to_spec.py --against` treats `Brief:` as
+  non-drift.
+- README, CLAUDE.md and HARNESSES.md describe the runtime (Node 22+,
+  pptxgenjs 4.0.1, LibreOffice optional) and the six skills.
+
+### Unchanged
+
+- Every existing spec renders identically through `render.py`; template
+  fidelity is untouched; the type scale stays hard.
+
 ## [0.19.0] - 2026-07-08
 
 The brief before the box. James's read on 0.18's decks: the same faults
