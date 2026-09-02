@@ -7,12 +7,12 @@ A skill pack that takes someone from a vague idea to a finished, on-brand, slop-
 The pack constrains to a brand's *identity*, not to a house style, and leaves *composition* to the model. Guardrails and freedom are separated on purpose — changes should preserve that separation:
 
 - **Identity is the constraint.** Colour and type come from the user's own brand, captured as design tokens (with logo and shape language to follow); the grid and the register-keyed type ladder are the pack's own defaults, overridable per key. Every drawn element must resolve to a token; a mechanical lint enforces it, so nothing goes off-brand.
-- **Composition is the craft.** How a slide is arranged is the model's judgement, per deck. We never impose a "slides-skill look" — a finished deck should read as *the brand*, not as this tool.
+- **Composition is the craft.** How a slide is arranged is the model's judgement, per deck: by default the model composes each deck as a pptxgenjs script (`<deck>.build.cjs`) under the brand tokens, run inside Node's permission model, and the lint gates the file (`lint_pptx.py`: every visible run on-token, on-scale, in the brand font and legible on its real ground). We never impose a "slides-skill look" — a finished deck should read as *the brand*, not as this tool. The Python renderer (`render.py`) is the fallback for machines without Node 22+ and for template fidelity.
 - **Extract identity, not layout.** Faithfully filling a template's placeholders reproduces its layouts — *frozen composition thinking*: equity when the template is genuinely well-made, debt when it is the usual restrictive corporate template (which most are). Brand-constrained composition from tokens — the `composed`/`freeform` path and the six drawn fixed roles — is the default (`"fidelity": "brand"`, also the absent-key default), so a weak template's debt is never inherited; template placeholder-fill is the explicit opt-in (`"fidelity": "template"`) for the good template whose layouts are worth standing on.
 - **No generated imagery, no slop.** Visual meaning is built from structured, on-token elements (the composed primitives and the freeform placer), never AI-generated images; a `Visual:` note defers real photography to a human. An adversarial slop-check guards the prose.
 - **The lint is the only rigidity.** On-token colour, type-scale size, on-grid, no overlap, text hierarchy (rank-2 strictly below rank-1), and the element cap are absolute; composition quality is advisory. Constrain what is unsafe; leave the rest free.
 
-The craft behind this lives in `source/skills/presentation-craft/reference/` (`slides.md`, `composition.md`, `design-research.md`).
+The craft behind this lives in `source/skills/presentation-craft/reference/` (`slides.md`, `composition.md`, `composing-in-code.md`, `design-research.md`).
 
 ## Structure
 
@@ -71,7 +71,7 @@ Full version-drift coverage requires BOTH commands to pass before push:
 - `npm run check-sync` — catches structural drift of generated output directories AND version drift via a pre-build parity assertion across all four version carriers listed in `scripts/transformers/version-carriers.js`.
 - `npm test` — cross-checks the same version parity in-process via `manifests.test.js` (reading the same `VERSION_CARRIERS` list), AND verifies the drift-detection mechanism itself by spawning `check-sync.js` with a mismatched version in `check-sync.test.js`.
 
-Neither command alone is a complete gate. There is no CI; the gate is self-enforced.
+Neither command alone is a complete gate. CI (`.github/workflows/ci.yml`) runs the same three gates on push and PR to main; the Node-dependent tests (`tests/test_build_script.py`, `tests/test_sandbox.py`) need pptxgenjs 4.0.1 under `.build/runtime` (`npm install --prefix .build/runtime pptxgenjs@4.0.1`) and skip in CI.
 
 ## Versioning
 

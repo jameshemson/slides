@@ -25,7 +25,7 @@ The skill takes either form.
 
 **A deck spec (`.deck.md`).** Read the Markdown directly. You see the slide structure, the field text, the speaker notes, and the `Visual:` descriptions.
 
-**A finished `.pptx`.** Read it with `python-pptx`. Run `python3 -c "import pptx"` first; if it fails, tell the user to `pip install python-pptx` (on a managed macOS Python, `pip install --break-system-packages python-pptx` or a virtualenv). Then pull each slide's text (drawn or placeholder), its role, and the speaker notes:
+**A finished `.pptx`.** Read it with `python-pptx`. Run `python3 -c "import pptx"` first; if it fails, tell the user to `pip install python-pptx` (on a managed macOS Python, `pip install --break-system-packages python-pptx` or a virtualenv). Then pull each slide's text (drawn or placeholder), its role, and the speaker notes. A script-built deck's field text sits in shapes named `slides-field:<Field>` or `slides-lead:<Field>`, which the inline script below reads the same way as any other text frame:
 
 ```
 python3 -c "

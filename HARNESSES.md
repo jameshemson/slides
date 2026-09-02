@@ -1,6 +1,6 @@
 # Harness capability matrix
 
-This table is the authoritative reference for transformer decisions. Any new skill that depends on a row marked "No" for a given harness must be excluded from that harness's output. Today, none of the five slides skills do — all five are portable.
+This table is the authoritative reference for transformer decisions. Any new skill that depends on a row marked "No" for a given harness must be excluded from that harness's output. Today, none of the six slides skills do — all six are portable.
 
 | Capability | Claude Code | OpenCode | Codex |
 | --- | --- | --- | --- |
@@ -11,6 +11,7 @@ This table is the authoritative reference for transformer decisions. Any new ski
 | Sub-agent / Task tools (`Agent`, `TaskCreate`, etc.) | Yes | No | No |
 | Per-skill `model` / `effort` / `context` frontmatter | Yes | No | No |
 | Per-skill `allowed-tools` frontmatter | Yes | No | No |
+| Runtime for `build-deck`: Python 3.9+ with python-pptx (always); Node 22+ with pptxgenjs 4.0.1 for the default script path, run under `node --permission`, else the Python fallback | Yes | Yes | Yes |
 
 ## Skill availability
 
@@ -21,8 +22,9 @@ This table is the authoritative reference for transformer decisions. Any new ski
 | `narrative` | Yes | Yes | Yes | Portable |
 | `build-deck` | Yes | Yes | Yes | Portable |
 | `slop-check` | Yes | Yes | Yes | Portable |
+| `revise` | Yes | Yes | Yes | Portable |
 
-All five skills run on every harness. No skill relies on Claude-only sub-agent or Task tooling, so no provider has an `exclude` list — every output tree contains the full five-skill set.
+All six skills run on every harness. No skill relies on Claude-only sub-agent or Task tooling, so no provider has an `exclude` list — every output tree contains the full six-skill set.
 
 ## OpenCode install story
 

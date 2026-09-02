@@ -9,7 +9,7 @@ A skill pack that takes you from a vague idea to a finished, on-brand, slop-free
 | `presentation-craft` | Shared knowledge base on presentation craft. Not invoked directly — every other skill in the pack draws on it |
 | `/slides:teach-slides` | Onboards you to presentation craft: narrative, structure, design, and how to avoid slop |
 | `/slides:narrative` | Shapes a vague idea into a tight, audience-aware deck story |
-| `/slides:build-deck` | Renders an on-brand `.pptx` deck from a narrative and your brand profile (a template is optional), drawing native charts from chart data in the spec |
+| `/slides:build-deck` | Composes an on-brand `.pptx` deck as code from a narrative and your brand profile: a per-deck pptxgenjs script written under your design tokens, run inside Node's permission model, and gated by a mechanical lint (a template is optional; native charts included) |
 | `/slides:slop-check` | Audits a deck for generic, AI-flavoured slop and reports fixes |
 | `/slides:revise` | Changes a rendered deck by conversation — syncs or extracts its spec, reconciles hand-edits, and re-renders through the same gates |
 
@@ -40,10 +40,12 @@ All six skills are available in every harness. Unlike a typical orchestrated pac
 
 ## Requirements
 
-Only `/slides:build-deck` and `/slides:revise` need anything beyond the skill files — `revise` re-renders through the same renderer, and can extract a spec from an existing `.pptx`:
+Only `/slides:build-deck` and `/slides:revise` need anything beyond the skill files — `revise` re-renders through the same path, and can extract a spec from an existing `.pptx`:
 
-- **Python 3.9+** and **python-pptx** (`pip install python-pptx`) to render a `.pptx`.
-- **matplotlib** (`pip install matplotlib`) is optional, needed only to draw `Chart:` slides. Without it, chart slides fall back to a "VISUAL TO ADD" note and the rest of the deck renders normally.
+- **Python 3.9+** and **python-pptx** (`pip install python-pptx`), always: the post-render lint, the stamp, the round trip, and the fallback renderer.
+- **Node 22+** and **pptxgenjs 4.0.1** for the default path, in which the deck is composed as a per-deck script: `npm install --prefix .slides pptxgenjs@4.0.1 --no-audit --no-fund` once per project. The script runs under `node --permission` with read access to the project and write access to the deck's directory only. Without Node 22+ or pptxgenjs, `build-deck` renders through the Python fallback exactly as before.
+- **matplotlib** (`pip install matplotlib`) is optional: it draws `Chart:` slides on the fallback path and powers the font-availability check. Without it, fallback chart slides become a "VISUAL TO ADD" note.
+- **LibreOffice** (`brew install --cask libreoffice`) is optional: it enables the automatic render-back visual check. A brand font that is not installed on the machine is reported (`check_fonts.py`) and substituted in that preview only; the deck file always names the brand font.
 
 On a managed macOS Python, add `--break-system-packages` to the `pip install`, or use a virtualenv. The other four skills are prompt-only and need no dependencies.
 
@@ -66,7 +68,7 @@ The pack moves an idea through five stages:
 
 1. **Learn** — `/slides:teach-slides` grounds you in presentation craft: how to find the through-line, structure a deck, design slides that read, and recognise slop before it ships. It also captures your brand into a `.slides/` profile the other skills read; point it at a template or an existing deck and it reads your fonts and colours straight from that file rather than asking you to type them. And if `.slides/` is missing when you run `/slides:build-deck` or `/slides:narrative`, they offer to set up your brand from a template or deck in one step, so you are never left with an off-brand deck.
 2. **Shape** — `/slides:narrative` turns a vague brief into a concrete story: the audience, the one thing they should remember, the spine of the argument, and a slide-by-slide outline.
-3. **Build** — `/slides:build-deck` renders an on-brand `.pptx` from the narrative and your brand profile, drawing every slide from your brand's design tokens (or, on request, filling your own template's layouts). A slide can carry a `Chart:` block (bar, column, pie, scatter, or line); the renderer draws it on-brand with matplotlib and places it on the slide. Without matplotlib installed, a chart slide degrades to a "VISUAL TO ADD" note, so the deck still builds.
+3. **Build** — `/slides:build-deck` composes the deck as code: from the narrative's deck-level brief (`structure:`, `motif:`) and each slide's `Brief:`, it writes a per-deck pptxgenjs script under your brand's design tokens, runs it inside Node's permission model, and gates the file — every visible run held to an explicit token colour, a type-scale size, the brand font and legible contrast on its real ground, plus margins, overlap, hierarchy and an element cap — then stamps it for the round trip and rasters it for a look. On request, or without Node, the Python renderer draws every slide from the same tokens (or fills your own template's layouts).
 4. **Check** — `/slides:slop-check` audits a finished deck for generic, AI-flavoured slop — hollow phrasing, filler bullets, decorative-but-empty visuals — and reports concrete fixes.
 5. **Revise** — `/slides:revise` closes the loop: point it at the rendered `.pptx`, hand-edit a title in PowerPoint or LibreOffice first if you want to see it work, and it names the edit before anything is overwritten — nothing gets clobbered without a yes. To try this yourself: render a deck, change one slide's title in PowerPoint, save, then run `/slides:revise deck.pptx` and confirm it reports the title as changed and asks whether to fold it into the spec before it re-renders.
 
@@ -88,7 +90,8 @@ Each user-invocable skill is useful on its own:
 
 ## Roadmap
 
-- **Delegate rendering to Anthropic's `pptx` skill where it's installed.** Their skill already does editable-pptx mechanics well — native generation, a corruption-catching validator, slide thumbnails. Where present (Claude Code), `build-deck` will generate through it under this pack's deck spec and brand tokens, and `slop-check`/`revise` will read its thumbnail grids; this pack's own renderer remains the cross-harness fallback on Codex and OpenCode. The deck spec stays the contract on both paths.
+- **Done in 0.20.0: composition by code.** The model composes each deck as a pptxgenjs script under the brand tokens; the lint gates the file; the Python renderer is the fallback.
+- **Where Anthropic's `pptx` skill is installed, `build-deck` runs its validator after the lint; using its thumbnail grid in `slop-check` and `revise` is next.** That skill is proprietary, so the pack only ever calls it by path.
 
 ## License
 
