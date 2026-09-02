@@ -186,35 +186,70 @@ def _background_hex(slide):
         return None
 
 
-def _theme_fill(fill):
-    """True when a fill is solid but its colour is a theme/scheme colour.
+ABSENT, RGB, OTHER = "absent", "rgb", "other"
+THEME = "theme"  # a run colour that is set but is not an RGB value
 
-    Paint is three-state: absent, explicit RGB, or present-but-not-RGB. The
-    third state is visible paint the brand gate cannot read, so it is an
-    [explicit] violation, never silently treated as no paint (AR-006).
+
+def _paint_state(fill):
+    """(state, hex) for a FillFormat — paint is three-state.
+
+    ABSENT: no fill object, no fill set, or an explicit no-fill. RGB: a solid
+    fill with an explicit RGB colour (hex returned). OTHER: every other
+    present representation — a solid theme/scheme colour, a gradient, a
+    pattern, a picture, a texture. OTHER is visible paint the brand gate
+    cannot read, so callers report it as [explicit]; only ABSENT is ignored
+    (AR-006, AR-010).
     """
+    if fill is None:
+        return ABSENT, None
     try:
-        return (fill is not None and fill.type == MSO_FILL.SOLID
-                and fill.fore_color.type != MSO_COLOR_TYPE.RGB)
+        kind = fill.type
     except Exception:  # noqa: BLE001
-        return False
+        return ABSENT, None
+    if kind is None or kind == MSO_FILL.BACKGROUND:
+        return ABSENT, None
+    if kind == MSO_FILL.SOLID:
+        hex_value = _rgb_hex(fill.fore_color)
+        return (RGB, hex_value) if hex_value is not None else (OTHER, None)
+    return OTHER, None
 
 
-def _theme_line(shape):
-    """True when a shape's line is solid but its colour is a theme colour."""
+def _line_state(shape):
+    """(state, hex) for a shape's line, by the same three-state rule."""
     try:
         line = shape.line
-        return (line.fill.type == MSO_FILL.SOLID
-                and line.color.type != MSO_COLOR_TYPE.RGB)
     except Exception:  # noqa: BLE001
-        return False
-
-
-def _theme_background(slide):
+        return ABSENT, None
     try:
-        return _theme_fill(slide.background.fill)
+        kind = line.fill.type
     except Exception:  # noqa: BLE001
-        return False
+        return ABSENT, None
+    if kind is None or kind == MSO_FILL.BACKGROUND:
+        return ABSENT, None
+    if kind == MSO_FILL.SOLID:
+        hex_value = _rgb_hex(line.color)
+        return (RGB, hex_value) if hex_value is not None else (OTHER, None)
+    return OTHER, None
+
+
+def _colour_state(colour_format):
+    """(state, hex) for a ColorFormat: ABSENT when unset, RGB, else OTHER."""
+    try:
+        if colour_format is None or colour_format.type is None:
+            return ABSENT, None
+        if colour_format.type == MSO_COLOR_TYPE.RGB:
+            return RGB, "#" + str(colour_format.rgb).upper()
+        return OTHER, None
+    except Exception:  # noqa: BLE001
+        return ABSENT, None
+
+
+def _cell_fill_alpha(cell):
+    """A table cell fill's <a:alpha> value, or None."""
+    try:
+        return _alpha_of(cell._tc.tcPr)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -320,11 +355,18 @@ def _effective_size(run, paragraph):
 
 
 def _effective_colour(run, paragraph):
-    """A run's effective EXPLICIT RGB colour (its own, else its paragraph's)."""
+    """A run's effective colour: '#RRGGBB', THEME, or None.
+
+    The run's own setting wins whatever it is — an explicit theme colour on
+    the run is THEME and never falls through to a paragraph's RGB (AR-010).
+    Only an unset run inherits the paragraph's colour.
+    """
     for font in (run.font, paragraph.font):
-        hex_value = _rgb_hex(getattr(font, "color", None))
-        if hex_value is not None:
+        state, hex_value = _colour_state(getattr(font, "color", None))
+        if state == RGB:
             return hex_value
+        if state == OTHER:
+            return THEME
     return None
 
 
@@ -355,6 +397,11 @@ def _check_run(index, name, text, size, colour, alpha, font_name,
 
     if colour is None:
         messages.append(f"{label} has no explicit colour; pass color: T.colours.<role>")
+    elif colour == THEME:
+        messages.append(
+            f"{label} colour is a theme colour, not a token; pass color: T.colours.<role>"
+        )
+        colour = None
     else:
         messages.extend(
             f"slide {index}: " + m for m in lint.check_colours(
@@ -488,49 +535,66 @@ def _check_chart(index, shape, ground, tk, brand_fonts):
             series = list(plot.series)
         except Exception:  # noqa: BLE001
             series = []
-        # AR-002/AR-005: the VISIBLE paint must be explicit and a token — the
-        # line for line, radar and scatter families, the fill for the rest —
-        # and any other paint that is present must be a token too. Theme or
-        # automatic paint on the visible channel is [explicit].
+        # AR-002/AR-005/AR-007/AR-008: the VISIBLE paint must be explicit and
+        # a token — on the data points for pie/doughnut families, on the line
+        # for line/radar/scatter families, on the fill for the rest — and any
+        # other paint that is present must be a token too; theme or
+        # non-solid paint anywhere is [explicit].
         family = getattr(chart.chart_type, "name", str(chart.chart_type)).upper()
+        point_family = any(key in family for key in ("PIE", "DOUGHNUT"))
         line_family = any(key in family for key in ("LINE", "RADAR", "XY"))
+        allowed = _token_colours(tk)
+
+        def _judge(label, state, hex_value, required):
+            if state == RGB and lint._norm(hex_value) not in allowed:
+                return (f"[chart] slide {index}: chart '{name}' {label} [colour] "
+                        f"has {hex_value!r} which is not in colour_roles")
+            if state == OTHER:
+                return (f"[chart] slide {index}: chart '{name}' {label} [explicit] "
+                        f"is a theme or non-solid paint, not a token; pass a "
+                        f"T.colours value")
+            if state == ABSENT and required:
+                return (f"[chart] slide {index}: chart '{name}' {label} [explicit] "
+                        f"is automatic, not a token; pass chartColors with "
+                        f"T.colours values")
+            return None
+
         for j, one in enumerate(series):
-            fill_hex = _solid_fill_hex(one.format.fill)
-            fill_theme = _theme_fill(one.format.fill)
-            line_hex, line_theme = None, False
+            fill_state, fill_hex = _paint_state(one.format.fill)
             try:
                 line_fill = one.format.line.fill
-                if line_fill.type == MSO_FILL.SOLID:
-                    line_hex = _rgb_hex(one.format.line.color)
-                    line_theme = line_hex is None
+                line_kind = line_fill.type
             except Exception:  # noqa: BLE001
-                pass
-            visible_hex, visible_theme, channel = (
-                (line_hex, line_theme, "line") if line_family
-                else (fill_hex, fill_theme, "fill"))
-            if visible_hex is None:
-                why = "is a theme colour" if visible_theme else "is automatic"
-                messages.append(
-                    f"[chart] slide {index}: chart '{name}' series {j} {channel} "
-                    f"[explicit] {why}, not a token; pass chartColors with "
-                    f"T.colours values"
-                )
-            # AR-007: every other present paint is held to the same rule —
-            # an explicit off-token RGB is [colour], a theme colour is [explicit].
-            for label, hex_value, is_theme in (
-                ("fill", fill_hex, fill_theme), ("line", line_hex, line_theme)
+                line_kind = None
+            if line_kind is None or line_kind == MSO_FILL.BACKGROUND:
+                line_state, line_hex = ABSENT, None
+            elif line_kind == MSO_FILL.SOLID:
+                line_hex = _rgb_hex(one.format.line.color)
+                line_state = RGB if line_hex is not None else OTHER
+            else:
+                line_state, line_hex = OTHER, None
+
+            if point_family:
+                try:
+                    points = list(one.points)
+                except Exception:  # noqa: BLE001
+                    points = []
+                for k, point in enumerate(points):
+                    p_state, p_hex = _paint_state(point.format.fill)
+                    m = _judge(f"series {j} point {k} fill", p_state, p_hex, True)
+                    if m:
+                        messages.append(m)
+                required_fill, required_line = False, False
+            else:
+                required_fill, required_line = (not line_family), line_family
+
+            for label, state, hex_value, required in (
+                (f"series {j} fill", fill_state, fill_hex, required_fill),
+                (f"series {j} line", line_state, line_hex, required_line),
             ):
-                if hex_value is not None and lint._norm(hex_value) not in _token_colours(tk):
-                    messages.append(
-                        f"[chart] slide {index}: chart '{name}' series {j} {label} "
-                        f"[colour] has {label}={hex_value!r} which is not in colour_roles"
-                    )
-                elif hex_value is None and is_theme and label != channel:
-                    messages.append(
-                        f"[chart] slide {index}: chart '{name}' series {j} {label} "
-                        f"[explicit] is a theme colour, not a token; pass a "
-                        f"T.colours value or no {label} at all"
-                    )
+                m = _judge(label, state, hex_value, required)
+                if m:
+                    messages.append(m)
 
     if getattr(chart, "has_legend", False):
         try:
@@ -593,11 +657,16 @@ def _lint_slide(index, slide, tk, brand_fonts, slide_w, slide_h):
             f"[background] slide {index}: background {lint._norm(background)} "
             f"is not a brand token"
         )
-    elif _theme_background(slide):
-        violations.append(
-            f"[background] slide {index}: background is a theme colour, not a "
-            f"token; pass background: {{ color: T.colours.<role> }}"
-        )
+    else:
+        try:
+            bg_state = _paint_state(slide.background.fill)[0]
+        except Exception:  # noqa: BLE001
+            bg_state = ABSENT
+        if bg_state == OTHER:
+            violations.append(
+                f"[background] slide {index}: background is a theme or non-solid "
+                f"paint, not a token; pass background: {{ color: T.colours.<role> }}"
+            )
 
     for shape in _flatten(slide.shapes, []):
         kind = _kind_of(shape)
@@ -608,16 +677,16 @@ def _lint_slide(index, slide, tk, brand_fonts, slide_w, slide_h):
             # A python-pptx Connector (the fallback renderer's tree edges) has
             # no .fill at all; pptxgenjs lines are plain shapes and do.
             fill = getattr(shape, "fill", None)
-            fill_hex = _solid_fill_hex(fill) if fill is not None else None
-            if fill is not None and _theme_fill(fill):
+            fill_state, fill_hex = _paint_state(fill)
+            if fill_state == OTHER:
                 violations.append(
-                    f"[explicit] slide {index}: shape '{name}' fill is a theme "
-                    f"colour, not a token; pass fill: {{ color: T.colours.<role> }}"
+                    f"[explicit] slide {index}: shape '{name}' fill is a theme or "
+                    f"non-solid paint, not a token; pass fill: {{ color: T.colours.<role> }}"
                 )
-            if _theme_line(shape):
+            if _line_state(shape)[0] == OTHER:
                 violations.append(
-                    f"[explicit] slide {index}: shape '{name}' line is a theme "
-                    f"colour, not a token; pass line: {{ color: T.colours.<role> }}"
+                    f"[explicit] slide {index}: shape '{name}' line is a theme or "
+                    f"non-solid paint, not a token; pass line: {{ color: T.colours.<role> }}"
                 )
             element = {
                 "kind": kind,
@@ -670,16 +739,18 @@ def _lint_slide(index, slide, tk, brand_fonts, slide_w, slide_h):
             table = shape.table
             for row in table.rows:
                 for cell in row.cells:
-                    cell_fill = _solid_fill_hex(cell.fill)
+                    cell_state, cell_fill = _paint_state(cell.fill)
                     if cell_fill is not None:
                         fills.append(cell_fill)
-                    elif _theme_fill(cell.fill):
+                    elif cell_state == OTHER:
                         violations.append(
                             f"[explicit] slide {index}: table '{name}' cell fill "
-                            f"is a theme colour, not a token; pass fill with a "
-                            f"T.colours value"
+                            f"is a theme or non-solid paint, not a token; pass "
+                            f"fill with a T.colours value"
                         )
-                    cell_ground = cell_fill if cell_fill is not None else ground
+                    # AR-009: a translucent cell fill sits on the table's ground.
+                    cell_ground = (composite(cell_fill, _cell_fill_alpha(cell), ground)
+                                   if cell_fill is not None else ground)
                     for paragraph, run in _text_frame_runs(cell.text_frame):
                         violations.extend(_check_run(
                             index, name, run.text,
@@ -697,18 +768,18 @@ def _lint_slide(index, slide, tk, brand_fonts, slide_w, slide_h):
         frame = shape.text_frame
         # AR-001: a text box's own solid fill is what its runs sit on —
         # composited over the ground beneath when the fill carries alpha.
-        own_fill = _solid_fill_hex(shape.fill)
+        own_state, own_fill = _paint_state(shape.fill)
         if own_fill is not None:
             ground = composite(own_fill, _shape_fill_alpha(shape), ground)
-        elif _theme_fill(shape.fill):
+        elif own_state == OTHER:
             violations.append(
-                f"[explicit] slide {index}: text box '{name}' fill is a theme "
-                f"colour, not a token; pass fill: {{ color: T.colours.<role> }}"
+                f"[explicit] slide {index}: text box '{name}' fill is a theme or "
+                f"non-solid paint, not a token; pass fill: {{ color: T.colours.<role> }}"
             )
-        if _theme_line(shape):
+        if _line_state(shape)[0] == OTHER:
             violations.append(
-                f"[explicit] slide {index}: text box '{name}' line is a theme "
-                f"colour, not a token; pass line: {{ color: T.colours.<role> }}"
+                f"[explicit] slide {index}: text box '{name}' line is a theme or "
+                f"non-solid paint, not a token; pass line: {{ color: T.colours.<role> }}"
             )
         sizes = []
         first_colour = None
