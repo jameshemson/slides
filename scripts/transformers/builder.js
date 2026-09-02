@@ -11,11 +11,19 @@ import {
 import { join, dirname } from 'path';
 import { transform } from './transform.js';
 
-function walkFiles(root, dir, callback) {
+// Directories that must never be emitted from source: package installs and
+// bytecode caches created beside the scripts. They are gitignored, so
+// check-sync cannot see them, and they are never part of a skill. The skip
+// applies to the source walk only — the output sweep (listAllFiles) still
+// recurses into them so stale copies in an output tree are unlinked.
+const SKIPPED_DIRS = new Set(['node_modules', '__pycache__']);
+
+function walkFiles(root, dir, callback, skipDir = null) {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) {
-      walkFiles(root, full, callback);
+      if (skipDir && skipDir(entry)) continue;
+      walkFiles(root, full, callback, skipDir);
     } else {
       callback(full, full.slice(root.length + 1));
     }
@@ -65,7 +73,7 @@ export function buildProvider({ root, sourceDir, providerName, config }) {
         mkdirSync(dirname(outPath), { recursive: true });
         copyFileSync(filePath, outPath);
       }
-    });
+    }, (entry) => SKIPPED_DIRS.has(entry));
   }
 
   // File-only sweep: remove any file in outBase not emitted this run.
