@@ -23,6 +23,14 @@ ELEMENT_CAP = 24
 # element marked `ghost`, and check_no_overlap skips any pair containing one.
 GHOST_MULTIPLE = 3.0
 
+# WCAG 2.2 AA contrast floors. Text at or above LARGE_TEXT_PT counts as
+# "large" (WCAG's 18pt / 14pt-bold threshold) and needs 3:1; anything
+# smaller needs 4.5:1. check_contrast judges a run against the ground it
+# actually sits on, not against the paper token.
+LARGE_TEXT_PT = 18.0
+CONTRAST_LARGE = 3.0
+CONTRAST_SMALL = 4.5
+
 
 class LintError(Exception):
     """A composed slide that fails the mechanical lint. render.py turns this into a SpecError."""
@@ -31,6 +39,50 @@ class LintError(Exception):
 def _norm(h: str) -> str:
     """Normalise a hex colour string to '#RRGGBB' uppercase form."""
     return "#" + h.lstrip("#").upper()
+
+
+# --- WCAG 2.2 contrast helpers ------------------------------------------
+# These moved here from composition.py so the mechanical gate owns them:
+# check_contrast is a hard rule, and composition.py (advisory) re-exports
+# them by importing from this module. lint.py must never import composition
+# at module level, so the direction of the dependency is one-way.
+
+def _hex_to_rgb(h: str):
+    """Return (r, g, b) tuple in 0-255 range from a hex colour string."""
+    h = h.strip().lstrip("#").upper()
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+
+def _rel_luminance(h: str) -> float:
+    """
+    Relative luminance per WCAG 2.2.
+    Linearises each sRGB channel:
+        lin = c/12.92          if c <= 0.03928
+        lin = ((c+0.055)/1.055)**2.4  otherwise
+    L = 0.2126*R + 0.7152*G + 0.0722*B
+    """
+    r, g, b = _hex_to_rgb(h)
+    channels = []
+    for raw in (r, g, b):
+        c = raw / 255.0
+        if c <= 0.03928:
+            channels.append(c / 12.92)
+        else:
+            channels.append(((c + 0.055) / 1.055) ** 2.4)
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+
+
+def contrast_ratio(h1: str, h2: str) -> float:
+    """
+    WCAG contrast ratio between two hex colours.
+    ((L_light + 0.05) / (L_dark + 0.05))
+    """
+    l1 = _rel_luminance(h1)
+    l2 = _rel_luminance(h2)
+    light, dark = (l1, l2) if l1 >= l2 else (l2, l1)
+    return (light + 0.05) / (dark + 0.05)
 
 
 # Every key on an element that carries a colour. Text elements colour their
@@ -254,6 +306,37 @@ def check_hierarchy(elements: list) -> list:
     return []
 
 
+def check_contrast(elements: list, tokens: dict) -> list:
+    """
+    Return violation messages for text whose colour does not read on its ground.
+
+    Only elements that carry both `colour` and `ground` (hex) are judged — a
+    caller that knows the real background sets `ground`; an element without
+    it is skipped, so the check is inert for callers that predate it. An
+    element marked `ghost`, or whose `role` starts with "slides-ghost", is the
+    one written exception. Threshold: CONTRAST_LARGE at or above
+    LARGE_TEXT_PT, else CONTRAST_SMALL.
+
+    Tag: [contrast]
+    """
+    messages = []
+    for el in elements:
+        colour, ground = el.get("colour"), el.get("ground")
+        if colour is None or ground is None or el.get("font_pt") is None:
+            continue
+        if el.get("ghost") or str(el.get("role", "")).startswith("slides-ghost"):
+            continue
+        ratio = contrast_ratio(_norm(colour), _norm(ground))
+        needed = CONTRAST_LARGE if el["font_pt"] >= LARGE_TEXT_PT else CONTRAST_SMALL
+        if ratio < needed:
+            messages.append(
+                f"[contrast] element {_label(el)} colour={_norm(colour)} on "
+                f"ground={_norm(ground)} has ratio {ratio:.2f}, below {needed} "
+                f"for {el['font_pt']}pt text"
+            )
+    return messages
+
+
 def check_count(elements: list) -> list:
     """
     Return a violation message if the number of elements exceeds ELEMENT_CAP.
@@ -269,7 +352,7 @@ def check_count(elements: list) -> list:
 
 def check(elements: list, tokens: dict, slide_w: int, slide_h: int) -> None:
     """
-    Run all six lint rules and raise LintError if any violations are found.
+    Run all seven lint rules and raise LintError if any violations are found.
 
     Returns None if the slide is clean.
     """
@@ -279,6 +362,7 @@ def check(elements: list, tokens: dict, slide_w: int, slide_h: int) -> None:
         + check_within_margins(elements, tokens, slide_w, slide_h)
         + check_no_overlap(elements)
         + check_hierarchy(elements)
+        + check_contrast(elements, tokens)
         + check_count(elements)
     )
     if messages:

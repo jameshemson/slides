@@ -28,6 +28,14 @@ contrast_ratio(h1, h2)  -> float
 # ---------------------------------------------------------------------------
 # WCAG contrast helpers — stdlib only, no external imports
 # ---------------------------------------------------------------------------
+# _rel_luminance and contrast_ratio now live in lint.py, which owns the hard
+# contrast gate (lint.check_contrast); they are re-exported here so the
+# advisory rules below — and any existing caller importing them from
+# composition — keep working unchanged. lint.py imports composition only
+# lazily inside review(), so this module-level import raises no cycle.
+
+from lint import contrast_ratio, _rel_luminance  # noqa: F401
+
 
 def _norm(h: str) -> str:
     """Return colour as '#RRGGBB' uppercase, stripping any leading '#'."""
@@ -41,36 +49,6 @@ def _hex_to_rgb(h: str):
     """Return (r, g, b) tuple in 0-255 range from a hex colour string."""
     h = _norm(h).lstrip("#")
     return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-
-
-def _rel_luminance(h: str) -> float:
-    """
-    Relative luminance per WCAG 2.2.
-    Linearises each sRGB channel:
-        lin = c/12.92          if c <= 0.03928
-        lin = ((c+0.055)/1.055)**2.4  otherwise
-    L = 0.2126*R + 0.7152*G + 0.0722*B
-    """
-    r, g, b = _hex_to_rgb(h)
-    channels = []
-    for raw in (r, g, b):
-        c = raw / 255.0
-        if c <= 0.03928:
-            channels.append(c / 12.92)
-        else:
-            channels.append(((c + 0.055) / 1.055) ** 2.4)
-    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
-
-
-def contrast_ratio(h1: str, h2: str) -> float:
-    """
-    WCAG contrast ratio between two hex colours.
-    ((L_light + 0.05) / (L_dark + 0.05))
-    """
-    l1 = _rel_luminance(h1)
-    l2 = _rel_luminance(h2)
-    light, dark = (l1, l2) if l1 >= l2 else (l2, l1)
-    return (light + 0.05) / (dark + 0.05)
 
 
 # ---------------------------------------------------------------------------

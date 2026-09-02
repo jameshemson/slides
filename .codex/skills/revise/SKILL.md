@@ -17,7 +17,7 @@ You change a deck that already exists — one you rendered last week, one a coll
 
 ## Step 1: Check the toolchain
 
-The renderer needs Python. Run `python3 --version` and `python3 -c "import pptx"`.
+The renderer needs Python. Run `python3 --version` and `python3 -c "import pptx"`. If the deck was script-built (Step 2 tells you — its slides carry `slides-role:` names), the re-render also needs Node 22 or newer with `pptxgenjs` resolvable; check it the way build-deck's Step 1 does, and fall back to the Python renderer if it isn't there.
 
 If `python3` is missing, tell the user to install Python 3.9 or newer. If the `import pptx` line fails, give them the remedy:
 
@@ -44,7 +44,7 @@ print((Presentation('<deck>.pptx').core_properties.comments or '').strip())
 
 - **Stamp found** (`slides-spec: <name> sha256:<hash>`) **and `<name>` exists** nearby (same directory as the deck, or the project root): **Tier 1, sync.** Say so plainly — "found the lineage stamp, found the spec, checking for drift" — and go to Step 3a.
 - **Stamp found but `<name>` can't be located** (moved, renamed): ask the user for its path before giving up. If they don't have it, fall to Tier 2 and say why — the spec the stamp names couldn't be found.
-- **No stamp at all**, or `comments` is empty: **Tier 2, import.** Say plainly this deck is foreign to the pack (or pre-dates the lineage stamp) and go to Step 3b. A pack-rendered deck's slides also carry per-slide name stamps the extractor reads first (**Tier 0**), so even its import comes back exact.
+- **No stamp at all**, or `comments` is empty: **Tier 2, import.** Say plainly this deck is foreign to the pack (or pre-dates the lineage stamp) and go to Step 3b. A pack-rendered deck's slides also carry per-slide name stamps the extractor reads first (**Tier 0**), so even its import comes back exact. A script-built deck carries the same stamps from two writers: `stamp.py` names each slide `slides-role:<role>` after the build, and the build script itself names each text shape `slides-field:<Field>` or `slides-lead:<Field>` for the field that leads. Tier 0 reads both prefixes the same way, so a script-built deck round-trips exactly too.
 
 ## Step 3a: Tier 1 — sync the spec
 
@@ -102,7 +102,9 @@ Run the Deck Slop Test from slop.md on the slides you touched, and the five-dime
 
 ## Step 6: Re-render
 
-Same shape as build-deck's Step 3:
+A **script-built deck** goes back the way it came: edit the spec — including the `Brief:` line of any slide whose composition changed — and re-run build-deck's script path on it (emit the tokens, rewrite `<deck>.build.cjs` from the changed spec, `check_script.py`, the sandboxed `node --permission` run, then `lint_pptx.py`). Do not hand-edit the old build script's output; the spec is the source of truth. Stamp the new file again with `stamp.py` so it keeps round-tripping.
+
+Otherwise, same shape as build-deck's Step 3b:
 
 ```
 python3 ../build-deck/scripts/render.py --spec <deck>.deck.md \
@@ -111,8 +113,8 @@ python3 ../build-deck/scripts/render.py --spec <deck>.deck.md \
 
 Never point `--out` at the original `.pptx` without an explicit yes. If the user hesitates, offer `<deck>-v2.pptx` instead and render there.
 
-Run build-deck's Step 4 render-back loop on the re-rendered deck before calling the revision done — the lint proves on-brand, not that nothing overflowed. Same terms: look against the checklist, and for a fault fixable from the spec, edit the spec and re-render, at most two fix-and-re-render passes, then stop and report.
+Run build-deck's Step 6 render-back loop on the re-rendered deck before calling the revision done — the lint proves on-brand, not that nothing overflowed. Same terms: look against the checklist, and for a fault fixable from the spec, edit the spec and re-render, at most two fix-and-re-render passes, then stop and report.
 
 ## Step 7: Report
 
-Tell the user what changed, where the spec lives, and where the deck was written (the original path, or the `-v2` one). Include the "what the look found and changed" note from Step 4's loop (or that it found nothing to fix). The new render carries a fresh lineage stamp, so this deck round-trips again — the next ``revise` (via `$skill revise` or `/skills`)` starts at Tier 1.
+Tell the user what changed, where the spec lives, and where the deck was written (the original path, or the `-v2` one). Include the "what the look found and changed" note from Step 6's loop (or that it found nothing to fix). The new render carries a fresh lineage stamp, so this deck round-trips again — the next ``revise` (via `$skill revise` or `/skills`)` starts at Tier 1.
