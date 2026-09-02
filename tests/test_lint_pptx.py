@@ -556,6 +556,57 @@ class TestGround(unittest.TestCase):
         messages = _tagged(_violations(prs), "[background]")
         self.assertTrue(any("theme" in m for m in messages), _violations(prs))
 
+    def test_translucent_cell_fill_composites(self):
+        # AR-009: a 20%-opaque paper cell over an ink slide is dark grey; ink
+        # text in it cannot read, whatever the cell's nominal fill says.
+        prs = _deck()
+        slide = _slide(prs)
+        _background(slide, INK)
+        frame = slide.shapes.add_table(1, 1, Inches(1), Inches(1), Inches(6), Inches(1))
+        frame.name = "grid"
+        cell = frame.table.cell(0, 0)
+        cell.fill.solid()
+        cell.fill.fore_color.rgb = RGBColor.from_string(PAPER.lstrip("#"))
+        _apply_alpha(cell._tc.tcPr, 20000)
+        cell.text_frame.text = "Quiet"
+        _style_run(cell.text_frame.paragraphs[0].runs[0], 16, INK, "Calibri")
+        self.assertTrue(_tagged(_violations(prs), "[contrast]"), _violations(prs))
+
+    def test_opaque_cell_fill_is_clean(self):
+        prs = _deck()
+        slide = _slide(prs)
+        _background(slide, INK)
+        frame = slide.shapes.add_table(1, 1, Inches(1), Inches(1), Inches(6), Inches(1))
+        frame.name = "grid"
+        cell = frame.table.cell(0, 0)
+        cell.fill.solid()
+        cell.fill.fore_color.rgb = RGBColor.from_string(PAPER.lstrip("#"))
+        cell.text_frame.text = "Loud"
+        _style_run(cell.text_frame.paragraphs[0].runs[0], 16, INK, "Calibri")
+        self.assertEqual(_tagged(_violations(prs), "[contrast]"), [])
+
+    def test_gradient_fill_is_explicit_violation(self):
+        # AR-010: non-solid paint is present paint the gate cannot read.
+        prs = _deck()
+        slide = _slide(prs)
+        box = _box(slide, 1, 1, 4, 2, ACCENT, name="panel")
+        box.fill.gradient()
+        messages = _tagged(_violations(prs), "[explicit]")
+        self.assertTrue(any("non-solid" in m and "fill" in m for m in messages), _violations(prs))
+
+    def test_theme_run_colour_does_not_inherit(self):
+        # AR-010: an explicit theme colour on the run is the run's colour; it
+        # never falls through to a token colour on the paragraph.
+        from pptx.enum.dml import MSO_THEME_COLOR
+        prs = _deck()
+        slide = _slide(prs)
+        shape = _text(slide, "Hello", 1, 1, 6, 1, 24, INK, "Calibri", name="body")
+        paragraph = shape.text_frame.paragraphs[0]
+        paragraph.font.color.rgb = RGBColor.from_string(INK.lstrip("#"))
+        paragraph.runs[0].font.color.theme_color = MSO_THEME_COLOR.ACCENT_2
+        messages = _tagged(_violations(prs), "[explicit]")
+        self.assertTrue(any("theme colour" in m for m in messages), _violations(prs))
+
     def test_full_bleed_panel_is_clean(self):
         prs = _deck()
         slide = _slide(prs)
@@ -716,6 +767,72 @@ class TestCharts(unittest.TestCase):
         self.assertTrue(
             any("[explicit]" in m and "line" in m and "theme" in m for m in messages),
             messages)
+
+    def _pie(self, slide, name="share"):
+        frame = slide.shapes.add_chart(
+            XL_CHART_TYPE.PIE, Inches(1), Inches(1), Inches(6), Inches(3), _chart_data())
+        frame.name = name
+        frame.chart.has_legend = False
+        frame.chart.has_title = False
+        return frame.chart.plots[0].series[0]
+
+    def _paint_point(self, point, rgb):
+        point.format.fill.solid()
+        point.format.fill.fore_color.rgb = RGBColor.from_string(rgb.lstrip("#"))
+
+    def test_pie_token_points_are_clean(self):
+        # AR-008: a pie's visible paint lives on its points; token points with
+        # no series fill are the natural, clean representation.
+        prs = _deck()
+        series = self._pie(_slide(prs))
+        for k, point in enumerate(series.points):
+            self._paint_point(point, ACCENT if k % 2 == 0 else INK)
+        self.assertEqual(_tagged(_violations(prs), "[chart]"), [])
+
+    def test_pie_automatic_point_is_explicit(self):
+        prs = _deck()
+        series = self._pie(_slide(prs))
+        points = list(series.points)
+        for point in points[:-1]:
+            self._paint_point(point, ACCENT)
+        messages = _tagged(_violations(prs), "[chart]")
+        self.assertTrue(any("[explicit]" in m and "point" in m for m in messages), messages)
+
+    def test_pie_theme_point_is_explicit(self):
+        from pptx.enum.dml import MSO_THEME_COLOR
+        prs = _deck()
+        series = self._pie(_slide(prs))
+        points = list(series.points)
+        for point in points:
+            self._paint_point(point, ACCENT)
+        points[0].format.fill.fore_color.theme_color = MSO_THEME_COLOR.ACCENT_2
+        messages = _tagged(_violations(prs), "[chart]")
+        self.assertTrue(any("[explicit]" in m and "point 0" in m for m in messages), messages)
+
+    def test_pie_off_token_point_is_colour(self):
+        prs = _deck()
+        series = self._pie(_slide(prs))
+        points = list(series.points)
+        for point in points:
+            self._paint_point(point, ACCENT)
+        self._paint_point(points[0], OFF_TOKEN)
+        messages = _tagged(_violations(prs), "[chart]")
+        self.assertTrue(any("[colour]" in m and "point 0" in m for m in messages), messages)
+
+    def test_gradient_outline_on_series_is_explicit(self):
+        # AR-010: a present non-solid outline is not "no outline".
+        prs = _deck()
+        slide = _slide(prs)
+        frame = _chart(slide, 1, 1, 6, 3, name="figure")
+        chart = frame.chart
+        for axis in (chart.category_axis, chart.value_axis):
+            _style_chart_font(axis.tick_labels.font, 16, INK, "Calibri")
+        series = chart.plots[0].series[0]
+        series.format.fill.solid()
+        series.format.fill.fore_color.rgb = RGBColor.from_string(ACCENT.lstrip("#"))
+        series.format.line.fill.gradient()
+        messages = _tagged(_violations(prs), "[chart]")
+        self.assertTrue(any("[explicit]" in m and "line" in m for m in messages), messages)
 
     def test_clean_chart(self):
         prs = _deck()
