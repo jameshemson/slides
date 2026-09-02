@@ -526,6 +526,36 @@ class TestGround(unittest.TestCase):
             any("plain paper" in n for n in _report(prs)["deck_notes"]),
             _report(prs)["deck_notes"])
 
+    def test_theme_fill_is_explicit_violation(self):
+        # AR-006: a solid theme fill is visible paint the gate cannot read.
+        from pptx.enum.dml import MSO_THEME_COLOR
+        prs = _deck()
+        slide = _slide(prs)
+        shape = _text(slide, "Six people", 1, 1, 6, 1, 16, MUTED, "Calibri", name="body")
+        shape.fill.solid()
+        shape.fill.fore_color.theme_color = MSO_THEME_COLOR.DARK_1
+        messages = _tagged(_violations(prs), "[explicit]")
+        self.assertTrue(any("theme" in m and "fill" in m for m in messages), _violations(prs))
+
+    def test_theme_line_is_explicit_violation(self):
+        from pptx.enum.dml import MSO_THEME_COLOR
+        prs = _deck()
+        slide = _slide(prs)
+        box = _box(slide, 1, 1, 4, 2, ACCENT, name="panel")
+        box.line.color.theme_color = MSO_THEME_COLOR.ACCENT_2
+        messages = _tagged(_violations(prs), "[explicit]")
+        self.assertTrue(any("theme" in m and "line" in m for m in messages), _violations(prs))
+
+    def test_theme_background_is_violation(self):
+        from pptx.enum.dml import MSO_THEME_COLOR
+        prs = _deck()
+        slide = _slide(prs)
+        slide.background.fill.solid()
+        slide.background.fill.fore_color.theme_color = MSO_THEME_COLOR.ACCENT_1
+        _text(slide, "Title", 1, 1, 6, 1, 40, INK, "Georgia", name="slides-lead:Title")
+        messages = _tagged(_violations(prs), "[background]")
+        self.assertTrue(any("theme" in m for m in messages), _violations(prs))
+
     def test_full_bleed_panel_is_clean(self):
         prs = _deck()
         slide = _slide(prs)
@@ -630,6 +660,44 @@ class TestCharts(unittest.TestCase):
         self.assertTrue(
             any("[explicit]" in m and "series 0" in m for m in chart_messages),
             chart_messages)
+
+    def test_line_chart_requires_explicit_token_line(self):
+        # AR-005: on a line chart the visible paint is the line, whatever the
+        # (unused) fill says.
+        prs = _deck()
+        slide = _slide(prs)
+        frame = slide.shapes.add_chart(
+            XL_CHART_TYPE.LINE, Inches(1), Inches(1), Inches(6), Inches(3), _chart_data())
+        frame.name = "trend"
+        chart = frame.chart
+        chart.has_legend = False  # a default legend would carry an inherited font
+        for axis in (chart.category_axis, chart.value_axis):
+            _style_chart_font(axis.tick_labels.font, 16, INK, "Calibri")
+        series = chart.plots[0].series[0]
+        series.format.fill.solid()
+        series.format.fill.fore_color.rgb = RGBColor.from_string(ACCENT.lstrip("#"))
+        # automatic line with a token fill → [explicit] on the line
+        messages = _tagged(_violations(prs), "[chart]")
+        self.assertTrue(any("[explicit]" in m and "line" in m for m in messages), messages)
+        # off-token line → [colour]
+        series.format.line.color.rgb = RGBColor.from_string(OFF_TOKEN.lstrip("#"))
+        messages = _tagged(_violations(prs), "[chart]")
+        self.assertTrue(any("[colour]" in m and "line" in m for m in messages), messages)
+        # explicit token line → clean
+        series.format.line.color.rgb = RGBColor.from_string(ACCENT.lstrip("#"))
+        self.assertEqual(_tagged(_violations(prs), "[chart]"), [])
+
+    def test_theme_cell_fill_is_explicit_violation(self):
+        from pptx.enum.dml import MSO_THEME_COLOR
+        prs = _deck()
+        slide = _slide(prs)
+        frame = slide.shapes.add_table(2, 2, Inches(1), Inches(1), Inches(6), Inches(2))
+        frame.name = "grid"
+        cell = frame.table.cell(0, 0)
+        cell.fill.solid()
+        cell.fill.fore_color.theme_color = MSO_THEME_COLOR.ACCENT_1
+        messages = _tagged(_violations(prs), "[explicit]")
+        self.assertTrue(any("theme" in m and "cell" in m for m in messages), _violations(prs))
 
     def test_clean_chart(self):
         prs = _deck()
