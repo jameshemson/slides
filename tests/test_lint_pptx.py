@@ -479,6 +479,53 @@ class TestGround(unittest.TestCase):
         conn.line.color.rgb = RGBColor.from_string(INK.lstrip("#"))
         self.assertEqual(_violations(prs), [])
 
+    def test_own_fill_is_the_ground(self):
+        # AR-001: muted 16 pt inside an ink-filled text box on a paper slide
+        # sits on ink, not paper — and muted on ink fails the small-text bar.
+        prs = _deck()
+        slide = _slide(prs)
+        shape = _text(slide, "Six people", 1, 1, 6, 1, 16, MUTED, "Calibri", name="body")
+        shape.fill.solid()
+        shape.fill.fore_color.rgb = RGBColor.from_string(INK.lstrip("#"))
+        self.assertTrue(_tagged(_violations(prs), "[contrast]"), _violations(prs))
+
+    def test_own_fill_paper_text_is_clean(self):
+        prs = _deck()
+        slide = _slide(prs)
+        shape = _text(slide, "Six people", 1, 1, 6, 1, 24, PAPER, "Calibri",
+                      name="slides-lead:Title")
+        shape.fill.solid()
+        shape.fill.fore_color.rgb = RGBColor.from_string(INK.lstrip("#"))
+        self.assertEqual(_violations(prs), [])
+
+    def test_translucent_own_fill_composites(self):
+        # A paper fill at 20% over an ink background is dark grey; ink text on
+        # it cannot read, whatever the fill's nominal colour says.
+        prs = _deck()
+        slide = _slide(prs)
+        _background(slide, INK)
+        shape = _text(slide, "Quiet", 1, 1, 6, 1, 24, INK, "Calibri",
+                      name="slides-lead:Title")
+        shape.fill.solid()
+        shape.fill.fore_color.rgb = RGBColor.from_string(PAPER.lstrip("#"))
+        _apply_alpha(shape._element.spPr, 20000)
+        self.assertTrue(_tagged(_violations(prs), "[contrast]"), _violations(prs))
+
+    def test_edge_connector_does_not_count_as_ground(self):
+        # AR-003: a line touching the slide edge is not a ground; the all-paper
+        # deck note must still fire.
+        from pptx.enum.shapes import MSO_CONNECTOR
+        prs = _deck()
+        slide = _slide(prs)
+        _text(slide, "Title", 1, 1, 6, 1, 40, INK, "Georgia", name="slides-lead:Title")
+        conn = slide.shapes.add_connector(
+            MSO_CONNECTOR.STRAIGHT, Inches(0), Inches(3), Inches(5), Inches(3)
+        )
+        conn.line.color.rgb = RGBColor.from_string(INK.lstrip("#"))
+        self.assertTrue(
+            any("plain paper" in n for n in _report(prs)["deck_notes"]),
+            _report(prs)["deck_notes"])
+
     def test_full_bleed_panel_is_clean(self):
         prs = _deck()
         slide = _slide(prs)
@@ -570,6 +617,19 @@ class TestCharts(unittest.TestCase):
                         chart_messages)
         self.assertTrue(any("[colour]" in m and OFF_TOKEN in m
                             for m in chart_messages), chart_messages)
+
+    def test_automatic_series_paint_is_explicit_violation(self):
+        # AR-002: a series left on automatic/theme paint is not a token.
+        prs = _deck()
+        slide = _slide(prs)
+        frame = _chart(slide, 1, 1, 6, 3, name="figure")
+        chart = frame.chart
+        for axis in (chart.category_axis, chart.value_axis):
+            _style_chart_font(axis.tick_labels.font, 16, INK, "Calibri")
+        chart_messages = _tagged(_violations(prs), "[chart]")
+        self.assertTrue(
+            any("[explicit]" in m and "series 0" in m for m in chart_messages),
+            chart_messages)
 
     def test_clean_chart(self):
         prs = _deck()

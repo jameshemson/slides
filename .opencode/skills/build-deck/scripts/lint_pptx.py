@@ -458,11 +458,26 @@ def _check_chart(index, shape, ground, tk, brand_fonts):
         except Exception:  # noqa: BLE001
             series = []
         for j, one in enumerate(series):
-            fill_hex = _solid_fill_hex(one.format.fill)
-            if fill_hex is not None and lint._norm(fill_hex) not in _token_colours(tk):
+            # AR-002: a series left on automatic or theme paint is not a
+            # token; a line-drawn series carries its paint on the line.
+            paint = _solid_fill_hex(one.format.fill)
+            if paint is None:
+                try:
+                    line_fill = one.format.line.fill
+                    if line_fill.type == MSO_FILL.SOLID:
+                        paint = "#" + str(line_fill.fore_color.rgb)
+                except Exception:  # noqa: BLE001
+                    paint = None
+            if paint is None:
+                messages.append(
+                    f"[chart] slide {index}: chart '{name}' series {j} "
+                    f"[explicit] has no explicit paint; pass chartColors with "
+                    f"T.colours values"
+                )
+            elif lint._norm(paint) not in _token_colours(tk):
                 messages.append(
                     f"[chart] slide {index}: chart '{name}' series {j} fill "
-                    f"[colour] has fill={fill_hex!r} which is not in colour_roles"
+                    f"[colour] has fill={paint!r} which is not in colour_roles"
                 )
 
     if getattr(chart, "has_legend", False):
@@ -607,6 +622,11 @@ def _lint_slide(index, slide, tk, brand_fonts, slide_w, slide_h):
 
         # kind == "text"
         frame = shape.text_frame
+        # AR-001: a text box's own solid fill is what its runs sit on —
+        # composited over the ground beneath when the fill carries alpha.
+        own_fill = _solid_fill_hex(shape.fill)
+        if own_fill is not None:
+            ground = composite(own_fill, _shape_fill_alpha(shape), ground)
         sizes = []
         first_colour = None
         for paragraph, run in _text_frame_runs(frame):
@@ -636,7 +656,6 @@ def _lint_slide(index, slide, tk, brand_fonts, slide_w, slide_h):
             element["font_pt"] = max(sizes)
         if first_colour is not None:
             element["colour"] = first_colour
-        own_fill = _solid_fill_hex(shape.fill)
         if own_fill is not None:
             element["fill"] = own_fill
         own_stroke = _line_hex(shape)
@@ -730,7 +749,9 @@ def lint_deck(pptx_path, brand, register=None):
         background = _background_hex(slide)
         if background is not None and lint._norm(background) != paper:
             any_ground = True
-        if any(e.get("kind") in ("box", "connector") and e.get("full_bleed")
+        # AR-003: a ground is a filled panel that bleeds; a bare line touching
+        # the edge is not one.
+        if any(e.get("kind") == "box" and e.get("full_bleed") and e.get("fill")
                for e in elements):
             any_ground = True
         slides.append({

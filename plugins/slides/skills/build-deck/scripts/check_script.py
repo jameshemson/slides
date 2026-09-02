@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
-"""Static guard for a deck build script — run before `node`.
+"""Usability gate for a deck build script — run before `node`.
 
     python3 check_script.py <deck>.build.cjs
 
-A deck script is model-authored code executed on the user's machine, so its
-boundary is declared and enforced twice: here, statically, and in the craft
-reference by construction (content lives in one JSON block). The script may
-require only the tokens module (by the one idiom), Node's "path" and
-"pptxgenjs"; it may not spawn processes, reach the network, evaluate strings,
-import dynamically, read the environment, or touch the filesystem beyond the
---out write pptxgenjs performs. Comments are not exempt: a forbidden token in
-a comment is refused too, so the file reads the same to a person and to this
-guard.
+This is NOT the boundary. The boundary is Node's permission model: build-deck
+runs every script as `node --permission --allow-fs-read=<project>
+--allow-fs-write=<deck dir>`, which refuses child processes, native addons and
+any file outside the two allowlists whatever the source contains. Network is
+not covered by that model and this gate does not close the gap either — a
+substring scan can be sidestepped by computed names, and says so.
+
+What the gate does is cheaper and useful: it names the common mistakes in a
+script before the run, with the fix — a `require` outside the tokens idiom,
+"path" and "pptxgenjs"; child_process, eval, new Function, dynamic import,
+process.env, fetch, spawn, execSync — and it skips the JSON content line, which
+is data and may contain anything. Comments are not exempt, so the file reads
+the same to a person and to this gate.
 """
 import argparse
 import re
