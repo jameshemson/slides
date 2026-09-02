@@ -62,7 +62,10 @@ BLOCK_FIELDS = {"Body", "Left", "Right"}
 # Fields any slide may carry, handled outside the role's placeholder fill.
 # Canvas (REQ-205/D-405) names the colour role a brand-fidelity slide's
 # background is painted with; template fidelity rejects it by name (D-411).
-META_FIELDS = {"Visual", "Notes", "Canvas"}
+# Brief is the composition brief narrative commits per slide (the one thing,
+# the form it earns and why, what leads, a named reference): accepted on
+# every role, read by build-deck when it composes, never drawn, never notes.
+META_FIELDS = {"Visual", "Notes", "Canvas", "Brief"}
 # The colour roles a `Canvas:` value may name — the same four canonical role
 # names the freeform vocabulary uses (_FREEFORM_COLOURS); listed in the error.
 CANVAS_ROLES = ("ink", "paper", "accent", "muted")
@@ -541,7 +544,7 @@ def _parse_block_header(number, rest):
 def _parse_composed_slide(number, lines, spec_dir=None):
     """Parse a `composed` slide into title, blocks, and meta. Raises SpecError.
 
-    Recognises `Title:` (optional, inline), `Canvas:` (optional, a colour-role
+    Recognises `Title:` (optional, inline), `Brief:` (optional, meta), `Canvas:` (optional, a colour-role
     name, REQ-205), `Notes:` (optional, meta), and one or more
     `Block: <type> [at <placement>]` blocks, each followed by its item
     lines. Several blocks either all carry an `at ...` placement (they tile the
@@ -552,6 +555,7 @@ def _parse_composed_slide(number, lines, spec_dir=None):
     """
     title = None
     canvas = None
+    brief = None
     notes_lines = []
     blocks = []
     current = None  # None | "notes" | a raw block dict {"type", "items"}
@@ -572,6 +576,10 @@ def _parse_composed_slide(number, lines, spec_dir=None):
             canvas = _validate_canvas_value(
                 number, stripped.split(":", 1)[1].strip()
             )
+            current = None
+            continue
+        if low.startswith("brief:"):
+            brief = stripped.split(":", 1)[1].strip()
             current = None
             continue
         if low.startswith("notes:"):
@@ -619,6 +627,8 @@ def _parse_composed_slide(number, lines, spec_dir=None):
     if canvas:
         fields["Canvas"] = canvas
     meta = {"Notes": " ".join(notes_lines)} if notes_lines else {}
+    if brief:
+        meta["Brief"] = brief
     return {
         "number": number,
         "role": "composed",
