@@ -31,7 +31,6 @@ never emits a half-built .pptx.
 """
 import argparse
 import csv
-import hashlib
 import json
 import os
 import re
@@ -1969,12 +1968,8 @@ def build_deck(brand, slides, out_path, charts_dir=None, brand_path=None,
         # core_properties.comments (e.g. python-pptx's own default) — that is
         # overwritten unconditionally, by design (plan risk 4): on a
         # generated deck, the comments field is ours.
-        with open(spec_path, "rb") as fh:
-            spec_bytes = fh.read()
-        prs.core_properties.comments = (
-            f"slides-spec: {os.path.basename(spec_path)} "
-            f"sha256:{hashlib.sha256(spec_bytes).hexdigest()}"
-        )
+        import stamp as stamp_mod
+        prs.core_properties.comments = stamp_mod.lineage_comment(spec_path)
 
     prs.save(out_path)
 
