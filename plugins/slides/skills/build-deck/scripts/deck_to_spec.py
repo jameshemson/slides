@@ -93,6 +93,9 @@ PICTURE_NOTE = (
 # these prefixes are the exact inverse read of those stamps.
 ROLE_STAMP_PREFIX = "slides-role:"
 FIELD_STAMP_PREFIX = "slides-field:"
+# A script-built deck names the field that leads "slides-lead:<Field>" — the
+# same field stamp, read the same way (composition by code, D-004).
+LEAD_STAMP_PREFIX = "slides-lead:"
 
 STAMP_RE = re.compile(
     r"^slides-spec:\s*(?P<name>\S.*?)\s+sha256:(?P<sha>[0-9a-f]{64})\s*$"
@@ -340,7 +343,7 @@ def _stamped_fields(slide, role):
     """Read a stamped slide's fields back out of its shape-name stamps.
 
     Walks the slide's top-level shapes (role slides never group), collecting
-    each "slides-field:<Field>" shape's text-frame text per field, in shape
+    each "slides-field:<Field>" or "slides-lead:<Field>" shape's text per field, in shape
     order. A block field (`render.BLOCK_FIELDS`) lists one item per stamped
     shape — render.py drew one shape per item, in stack order — and each
     value is also split on newlines, since column items may share one shape.
@@ -354,11 +357,15 @@ def _stamped_fields(slide, role):
     collected = {}
     for shape in slide.shapes:
         name = shape.name or ""
-        if not name.startswith(FIELD_STAMP_PREFIX):
+        prefix = next(
+            (p for p in (FIELD_STAMP_PREFIX, LEAD_STAMP_PREFIX) if name.startswith(p)),
+            None,
+        )
+        if prefix is None:
             continue
         if not getattr(shape, "has_text_frame", False):
             continue
-        field = name[len(FIELD_STAMP_PREFIX):]
+        field = name[len(prefix):]
         collected.setdefault(field, []).append(shape.text_frame.text)
 
     fields = {}

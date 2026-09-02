@@ -144,6 +144,10 @@ The reference files below carry the full craft. Read the one the task needs.
 - **`reference/composition.md`**: what good looks like for a composed slide — the
   advisory rules per primitive. Read when composing boxes (card grid, comparison,
   process, timeline, stat row).
+- **`reference/composing-in-code.md`**: how a deck is composed as code under the
+  brand tokens — the deck-level decisions, the per-slide rules, what reads as AI,
+  the script contract, the execution boundary and the gates. Read when build-deck
+  writes a build script.
 - **`reference/design-research.md`**: the committed evidence base behind the
   compositions (the design system, the four primitives, the myths kept out). Read
   to know *why* a composition is shaped the way it is.
