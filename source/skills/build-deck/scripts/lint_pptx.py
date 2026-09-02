@@ -515,11 +515,21 @@ def _check_chart(index, shape, ground, tk, brand_fonts):
                     f"[explicit] {why}, not a token; pass chartColors with "
                     f"T.colours values"
                 )
-            for label, hex_value in (("fill", fill_hex), ("line", line_hex)):
+            # AR-007: every other present paint is held to the same rule —
+            # an explicit off-token RGB is [colour], a theme colour is [explicit].
+            for label, hex_value, is_theme in (
+                ("fill", fill_hex, fill_theme), ("line", line_hex, line_theme)
+            ):
                 if hex_value is not None and lint._norm(hex_value) not in _token_colours(tk):
                     messages.append(
                         f"[chart] slide {index}: chart '{name}' series {j} {label} "
                         f"[colour] has {label}={hex_value!r} which is not in colour_roles"
+                    )
+                elif hex_value is None and is_theme and label != channel:
+                    messages.append(
+                        f"[chart] slide {index}: chart '{name}' series {j} {label} "
+                        f"[explicit] is a theme colour, not a token; pass a "
+                        f"T.colours value or no {label} at all"
                     )
 
     if getattr(chart, "has_legend", False):
