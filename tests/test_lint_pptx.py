@@ -465,6 +465,20 @@ class TestGround(unittest.TestCase):
               name="slides-ghost")
         self.assertEqual(_violations(prs), [])
 
+    def test_connector_shape_does_not_crash(self):
+        # A true python-pptx Connector (render.py's tree edges use one) has no
+        # .fill; the lint must read it as a connector, not fail the whole deck.
+        from pptx.enum.shapes import MSO_CONNECTOR
+        from pptx.util import Inches
+        prs = _deck()
+        slide = _slide(prs)
+        _text(slide, "Title", 1, 1, 6, 1, 40, INK, "Georgia", name="slides-lead:Title")
+        conn = slide.shapes.add_connector(
+            MSO_CONNECTOR.STRAIGHT, Inches(1), Inches(2.2), Inches(5), Inches(2.2)
+        )
+        conn.line.color.rgb = RGBColor.from_string(INK.lstrip("#"))
+        self.assertEqual(_violations(prs), [])
+
     def test_full_bleed_panel_is_clean(self):
         prs = _deck()
         slide = _slide(prs)

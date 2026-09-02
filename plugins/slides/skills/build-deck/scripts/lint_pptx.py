@@ -533,7 +533,10 @@ def _lint_slide(index, slide, tk, brand_fonts, slide_w, slide_h):
         name = shape.name
 
         if kind in ("box", "connector"):
-            fill_hex = _solid_fill_hex(shape.fill)
+            # A python-pptx Connector (the fallback renderer's tree edges) has
+            # no .fill at all; pptxgenjs lines are plain shapes and do.
+            fill = getattr(shape, "fill", None)
+            fill_hex = _solid_fill_hex(fill) if fill is not None else None
             element = {
                 "kind": kind,
                 "role": name,
