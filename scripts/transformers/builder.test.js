@@ -86,6 +86,29 @@ test('stale files are swept on rebuild', () => {
   assert.ok(existsSync(join(sandbox, '.claude/skills/alpha/SKILL.md')));
 });
 
+test('builder skips node_modules and __pycache__ on emission and sweeps them from outputs', () => {
+  writeSource('demo/SKILL.md', '---\nname: demo\ndescription: D\n---\nbody');
+  writeSource('demo/scripts/z.py', 'print("z")');
+  writeSource('demo/scripts/node_modules/x.js', 'module.exports = 1;');
+  writeSource('demo/scripts/__pycache__/y.pyc', 'bytecode');
+
+  // Stale copies already sitting in every output tree must still be swept.
+  for (const outDir of ['.claude/skills', '.opencode/skills']) {
+    writeOutput(`${outDir}/demo/scripts/__pycache__/stale.pyc`, 'stale');
+    writeOutput(`${outDir}/demo/scripts/node_modules/stale.js`, 'stale');
+  }
+
+  runBuild();
+
+  for (const outDir of ['.claude/skills', '.opencode/skills']) {
+    assert.ok(existsSync(join(sandbox, outDir, 'demo/scripts/z.py')), `${outDir} z.py emitted`);
+    assert.ok(!existsSync(join(sandbox, outDir, 'demo/scripts/node_modules/x.js')), `${outDir} x.js not emitted`);
+    assert.ok(!existsSync(join(sandbox, outDir, 'demo/scripts/__pycache__/y.pyc')), `${outDir} y.pyc not emitted`);
+    assert.ok(!existsSync(join(sandbox, outDir, 'demo/scripts/__pycache__/stale.pyc')), `${outDir} stale.pyc swept`);
+    assert.ok(!existsSync(join(sandbox, outDir, 'demo/scripts/node_modules/stale.js')), `${outDir} stale.js swept`);
+  }
+});
+
 test('pre-existing output directories are preserved (never rm-ed)', () => {
   writeSource('alpha/SKILL.md', '---\nname: alpha\ndescription: A\n---\nbody');
 
