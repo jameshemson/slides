@@ -673,5 +673,71 @@ class TestFullBleedMargins(unittest.TestCase):
         self.assertIsNone(lint.check(els, TOKENS, SLIDE_W, SLIDE_H))
 
 
+# --- Contrast rule (T-004) -------------------------------------------------
+#
+# check_contrast is the seventh hard rule: text must read on the ground it
+# actually sits on. It is opt-in by data — only an element carrying BOTH
+# `colour` and `ground` is judged — so every caller that predates it
+# (render.py never sets `ground`) is unaffected.
+
+
+def contrast_element(colour="#C0504D", ground="#000000", font_pt=12.0):
+    # 12pt, not 24pt: muted-on-ink is 4.50:1, which CLEARS the 3:1 large-text
+    # floor. Only below LARGE_TEXT_PT does the 4.5:1 small-text floor bite —
+    # and 12.0 is on this module's TOKENS type_scale, so check_sizes stays
+    # clean and the contrast rule is the only thing check() can trip on.
+    return {
+        "role": "x",
+        "text": "t",
+        "left": 457200,
+        "top": 2000000,
+        "width": 2000000,
+        "height": 600000,
+        "font_pt": font_pt,
+        "colour": colour,
+        "ground": ground,
+    }
+
+
+class TestContrastRule(unittest.TestCase):
+    def test_contrast_fails_muted_on_ink(self):
+        el = contrast_element(colour="#C0504D", ground="#000000", font_pt=12.0)
+        violations = lint.check_contrast([el], TOKENS)
+        self.assertEqual(len(violations), 1, violations)
+        self.assertIn("[contrast]", violations[0])
+
+    def test_contrast_passes_paper_on_ink(self):
+        el = contrast_element(colour="#FFFFFF", ground="#000000", font_pt=12.0)
+        self.assertEqual(lint.check_contrast([el], TOKENS), [])
+
+    def test_contrast_skips_without_ground(self):
+        el = contrast_element()
+        del el["ground"]
+        self.assertEqual(lint.check_contrast([el], TOKENS), [])
+
+    def test_contrast_ghost_exempt(self):
+        by_flag = contrast_element()
+        by_flag["ghost"] = True
+        self.assertEqual(lint.check_contrast([by_flag], TOKENS), [])
+
+        by_role = contrast_element()
+        by_role["role"] = "slides-ghost"
+        self.assertEqual(lint.check_contrast([by_role], TOKENS), [])
+
+    def test_check_raises_on_contrast(self):
+        # Otherwise valid: token colour, on-scale size, inside the margins,
+        # nothing to overlap — only the ground makes it unreadable.
+        el = contrast_element()
+        self.assertEqual(lint.check_colours([el], TOKENS), [])
+        self.assertEqual(lint.check_sizes([el], TOKENS), [])
+        self.assertEqual(
+            lint.check_within_margins([el], TOKENS, SLIDE_W, SLIDE_H), []
+        )
+        with self.assertRaises(lint.LintError) as ctx:
+            lint.check([el], TOKENS, SLIDE_W, SLIDE_H)
+        self.assertIn("[contrast]", str(ctx.exception))
+
+
+
 if __name__ == "__main__":
     unittest.main()
