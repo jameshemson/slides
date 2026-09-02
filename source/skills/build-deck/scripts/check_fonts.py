@@ -7,9 +7,11 @@ The deck file always names the brand font (the lint enforces it). This answers
 a different question: will the render-back preview on THIS machine draw that
 font, or substitute one? Each family gets one of three answers: installed,
 missing (LibreOffice substitutes; treat text-fit as approximate), or unknown
-(no checker could run here). Probes run in order — matplotlib's font manager,
-fontconfig's fc-list, then a scan of the platform font folders — and the first
-probe that can answer wins.
+(no checker could run here). Three probes — matplotlib's font manager,
+fontconfig's fc-list, a scan of the platform font folders — are aggregated:
+installed if any probe finds the family, missing only when every probe that
+could run missed it, unknown when none could run. A matplotlib miss never
+hides a font the system folders can see; LibreOffice reads the system's.
 """
 import argparse
 import json
