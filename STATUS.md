@@ -1,6 +1,6 @@
 # Status
 
-A snapshot of where the slides skill pack stands. Last updated 2026-11-06 (v0.21.0).
+A snapshot of where the slides skill pack stands. Last updated 2026-11-06 (v0.22.0).
 
 ## Released
 
@@ -8,6 +8,7 @@ All on `main`, each git-tagged with a GitHub release (latest first):
 
 | Version | What it added |
 |---------|---------------|
+| v0.22.0 | One skill. `/slides:slides` is now the whole pack; `teach-slides`, `narrative`, `build-deck`, `slop-check`, `revise` and `presentation-craft` are removed, and remain at the `v0.21.0` tag. |
 | v0.21.0 | A lighter way in, the answer to "it helps with the narrative and hinders the slides". `/slides:slides` asks a short grill, shows the story back as headers for approval, then builds with Anthropic's `pptx` skill, with `scripts/brand.py` capturing the brand once and checking fonts and colours only. It sits alongside the full route, which is unchanged. Not yet run end to end: this release is its first live trial. |
 | v0.20.0 | Composition by code — the answer to "the decks are boring and bland". The model composes each deck as a per-deck pptxgenjs script under the brand tokens (from the spec's new `structure:`/`motif:` and per-slide `Brief:`), the script runs under Node's permission model, and `lint_pptx.py` gates the finished file (every visible run on-token, on-scale, in the brand font, legible on its real ground; tables and charts included). `stamp.py` keeps the revise round trip; `check_fonts.py` reports substitution; `check_script.py` names mistakes early. The Python renderer stays as the fallback and for template fidelity. Proven end to end on this machine (`tests/test_build_script.py`, `tests/test_sandbox.py`); those two tests skip in CI, which has no npm packages. |
 | v0.19.0 | The brief before the box — the answer to "the same issues persisted, and Claude's template-heavy decks looked better". The pack jumped from content straight to placing boxes; this adds impeccable's engine — decide the composition up front, refuse the reflex not the device. narrative Step 2 gains a composition brief (the one thing, the form the content EARNS and why, the emphasis, a named reference — a conversational contract folded into the outline the user signs off). The device reflex (a hero number / dumbbell / big-text line reached for by default) is named and refused across narrative, slop.md, build-deck, slop-check and the always-loaded SKILL: earn the form, don't ban the device. Mechanical teeth, both advisory and outside the rule registry (RULES stays 35): `deck_device_repetition` flags one named composed device carried across most of the deck (≥3 slides, >half the content slides), and a `display`/`h1` freeform line that wraps past one line is noted. Template fidelity reframed as frozen composition thinking (equity when good, debt when the usual corporate template); brand fidelity still the default; the type-scale ceiling change deferred. 642 Python + 44 JS + check-sync green; architect-reviewed. |
@@ -30,92 +31,19 @@ All on `main`, each git-tagged with a GitHub release (latest first):
 | v0.2.0 | Native charts: `build-deck` draws bar, column, pie, scatter, and line charts from a `Chart:` block (matplotlib), placed on-brand; degrades to a `VISUAL TO ADD` note when matplotlib is absent. |
 | v0.1.0 | Initial release: five skills, cross-harness pipeline, python-pptx renderer, two-layer slop detector. |
 
-Automated gates at this snapshot: `python3 -m unittest discover tests` 434 passing, `npm test` 44 passing, `npm run check-sync` in sync — enforced by CI (`.github/workflows/ci.yml`) on every push/PR to main. `cairosvg` and `matplotlib` are installed locally: the icon raster path is verified (icons recolour to the brand accent and rasterise crisply) and the multi-series grouped-bar chart is verified visually (Revenue accent + Cost grey). On a machine without `cairosvg`, icons degrade to a note (as designed).
+Automated gates: `npm test`, `npm run check-sync` and `python3 -m unittest discover tests`, enforced by CI (`.github/workflows/ci.yml`) on every push and PR to main.
 
-The render-back visual-QA loop (v0.10.0) is scaffold-only in this environment: no
-rasteriser was installed. Its testable parts (backend detection, degradation,
-PDF→PNG, the blank check, contact sheet) pass; the `.pptx`→PDF step needs an
-external app (LibreOffice, PowerPoint, or Keynote) and is verified manually, not
-in CI. To enable the automatic headless render-back review: `brew install --cask
-libreoffice`. The PowerPoint backend (v0.16.0) runs automatically on Windows
-(COM, hidden window) and ask-first on macOS (AppleScript opens the app); the
-Keynote backend works on macOS but opens the app, so build-deck runs it only if
-the user asks.
+## Owed
 
-Visual-vocabulary follow-ups deferred by design (v0.8.0): **logo capture** —
-python-pptx cannot write pictures to a master/layout, so a positive fixture/test
-can't be built cleanly and detect-only is low value; `[icon]` on process and
-comparison items (it lands in freeform, icon-list, card, and tree); shape
-**auto-inference** from the template's own shapes (the `shape` token defaults +
-explicit override ship now). Icons need the optional `cairosvg` to rasterise,
-like `matplotlib` for charts.
-
-Composed mode follow-ups shipped in v0.7.0: four more primitives, a `freeform`
-block, explicit grid placement (`Block: … at cols/rows`), stacking several blocks
-per slide, and a shape-aware lint. The render-to-PNG vision loop shipped in
-v0.10.0 and the table primitive in v0.12.0. Still deferred by design: a funnel
-primitive; wiring the composition rules into `slop-check`; region-aware
-breathing-room and small-number contrast. Concreteness stays doc-only (authored
-judgement, not a mechanical test).
-
-## Owed before a fully human-verified release
-
-These could not run in the build environment; each needs a human in Claude Code or desktop PowerPoint. The releases above shipped ahead of them by choice.
-
-- [ ] **Open a v0.20.0 script-built deck in desktop PowerPoint** (`example.build.cjs` on `tests/fixtures/sample-deck.md`): confirm every shape is native and editable, the brand font is named on every run, and the notes carry the spec's text. Then run the live arc once in Claude Code with a real brand — `narrative` (with `structure:`/`motif:` and `Brief:` lines) → `build-deck` (script path, guard, sandboxed run, lint, stamp, font check, raster) → `revise` on a hand-edited copy.
-
-- [ ] **Eyeball a v0.17.0 brand-fidelity deck against the hostile-template evidence.** Render any spec twice — brand fidelity (default) and `"fidelity": "template"` against `tests/fixtures/hostile-template.pptx` — and open both beside a v0.16-era corporate-template render. Confirm the brand deck reads with clear hierarchy (title >> body), clean paper canvas, one accent, and that the role anatomy (eyebrow tick, ghost section numeral) reads as design, not decoration. The dissection metrics passed (16pt floor, ≤15 elements, zero off-token colours); the eye confirms it *looks* right.
-
-- [ ] Run the live arc once in Claude Code: `teach-slides` -> `narrative` -> `build-deck` -> `slop-check`. Confirm `teach-slides` writes a real `.slides/` and `narrative` pushes back on a one-line prompt. Exercise the v0.5.0 fast path: `init_brand.py` from a deck produces a renderable `.slides/brand.json`.
-- [ ] Open a `build-deck`-rendered `.pptx` in **desktop PowerPoint**. Confirm it reads on-brand, with no strapline, ad copy, or sensational titles, and that `Chart:` slides' embedded pictures sit correctly. (Verified in-session via LibreOffice render, not PowerPoint.)
-- [ ] Smoke-test one skill in **Codex** and one in **opencode** (`codex exec`, `opencode run`).
+- [ ] **Run `/slides:slides` end to end on a real deck with a real brand.** It has never been run. Watch whether the grill feels worth answering, whether approved headers survive word for word, and whether the brand check catches real drift.
+- [ ] **Open a deck built this way in desktop PowerPoint.** Confirm the theme carries the brand, so text added by hand matches.
+- [ ] **Smoke-test in Codex and OpenCode.** The pack no longer ships a renderer, so what happens without Anthropic's `pptx` skill is unknown.
 - [ ] Re-verify that Codex repo-local discovery is still `.agents/skills/` against current Codex docs.
-- [ ] **Eyeball a `composed` stat-row slide** rendered from a real template against a placeholder-filled slide from the same template (open in any viewer — PowerPoint, Keynote, or a LibreOffice/Keynote PNG export; no specific tool required). The lint guarantees on-brand-by-tokens, not beautiful; confirm the composed slide sits in the template's own rhythm and reads as the same deck. (The automated test confirms the row aligns to the derived margins; the eye confirms it looks right.) While there, confirm the **advisory composition notes read as helpful, not noisy** on a real deck.
-- [ ] **Eyeball the v0.7.0 primitives** — `card-grid`, `comparison`, `process`, `timeline`, and a `freeform` slide — rendered from a real template. Confirm the boxes read on-brand and the compositions look intentional, not templated (the lint proves on-brand, not well-composed, especially for `freeform`). Confirm `narrative` actually reaches for a composition (and `freeform` when an idea fits none of the five) rather than defaulting to bullets.
-- [ ] **Run the v0.14.0 live revise arc in Claude Code**: render a deck,
-  hand-edit one title and one note in PowerPoint/LibreOffice, run `/revise` —
-  confirm it names both edits before anything is overwritten, folds them in on
-  request, applies a requested slide change, and re-renders only after the
-  yes. Then `/revise` a genuinely foreign deck and confirm the import report
-  reads honestly. Smoke-test `/revise` once in OpenCode.
-- [ ] **Open a v0.13.0 `native: true` chart in desktop PowerPoint**: edit a
-  value and confirm the chart re-plots; confirm the styling (accent emphasis,
-  muted rest, no gridlines, hidden value axis) reads as the brand, not as
-  default PowerPoint (plan assumption A-002 — the read-back tests prove the
-  XML, not the look). Render-back a mixed deck (native chart, stacked, target,
-  composed `Block: chart`) and eyeball.
-- [ ] **Eyeball the v0.12.0 table and waterfall** from a real template: open a
-  `Block: table` slide in **desktop PowerPoint** — confirm the muted row
-  hairlines (`a:lnB` raw XML, plan assumption A-002) survive, the cells are
-  editable, and no theme banding leaks; view a `type: waterfall` slide via the
-  LibreOffice render-back — confirm connectors touch bar corners and the signed
-  labels read cleanly.
-- [ ] **Eyeball the v0.15.0 changes on a real deck**: a multi-series `type:
-  line` chart (image and `native: true`) — confirm the emphasis series reads
-  as *the* line and the muted rest stay legible; a caption-stepped table —
-  confirm 12pt-scale cells still read from the back of a room or say so; and
-  the advisory-with-message run summary — confirm it reads as coaching, not
-  nagging, when a real deck trips two or three notes at once.
-- [ ] **Eyeball the v0.8.0 vocabulary** with `cairosvg` installed: a `tree`, an `icon-list`, and a card/tree with a `[icon]` — confirm the icons recolour to the brand accent and sit crisply, the tree reads as an org chart, and the brand-derived type scale looks right (composed slides should feel like the brand). The raster path is skip-guarded in tests; this is the human confirmation.
-- [ ] **Run the v0.16.0 PowerPoint render-back once on each platform**: on
-  Windows, confirm the COM path exports the PDF with no visible window; on
-  macOS, confirm the AppleScript path exports after the one-time automation
-  prompt. (The wrap-aware geometry is verified by tests and a python-pptx
-  smoke render; the backend needs a real PowerPoint.) While there, eyeball a
-  card-grid with a long body: the card should be taller, the text inside it,
-  and a genuinely overlong spec should fail with the "wraps deeper" error.
-
-## Deferred (next touch of those files)
-
-- DEF-001: extract a `_render_chart_slide` helper from `build_deck` in `render.py` (the chart branch is long).
-- DEF-002: promote `charts.py`'s recurring inline tuning constants (axis headroom, label offset, fill alpha, marker size, legend anchor) to named module constants.
-- DEF-003: extract the stacked branch of `charts.py`'s `_draw_bars` into a `_draw_stacked_bars` helper, mirroring the `_draw_waterfall` split (`_draw_bars` is ~146 lines after v0.13.0; architect-review note).
 
 ## Unconfirmed
 
 - LICENSE is assumed MIT.
-- Graphic Continuum attribution wording in `data-viz.md`.
 
 ## Working on the repo
 
-Edit `source/skills/`, never the generated output dirs. After any source change run `npm run build`, then the gate before pushing: `npm run check-sync && npm test && python3 -m unittest discover tests`. `matplotlib` is an optional dependency, needed only to draw chart slides.
+Edit `source/skills/`, never the generated output dirs. After any source change run `npm run build`, commit, then run the gates before pushing: `npm run check-sync && npm test && python3 -m unittest discover tests`.

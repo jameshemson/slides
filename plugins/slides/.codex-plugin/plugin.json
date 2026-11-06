@@ -1,19 +1,19 @@
 {
   "name": "slides",
-  "version": "0.21.0",
-  "description": "A 7-skill pack for going from a vague idea to a finished, on-brand, slop-free .pptx deck. 6 user-invocable skills: slides (start here), teach-slides, narrative, build-deck, slop-check, revise.",
+  "version": "0.22.0",
+  "description": "Make a slide deck from an idea and some notes: a short grill, the story shown back as headers for approval, then the build, with your brand's fonts and colours checked.",
   "author": {
     "name": "James Hemson"
   },
   "homepage": "https://github.com/jameshemson/slides",
   "repository": "https://github.com/jameshemson/slides",
   "license": "MIT",
-  "keywords": ["slides", "presentation", "powerpoint", "pptx", "narrative", "skills"],
+  "keywords": ["slides", "presentation", "powerpoint", "pptx", "brand", "skills"],
   "skills": "./skills/",
   "interface": {
     "displayName": "slides",
-    "shortDescription": "From a vague idea to a finished, on-brand, slop-free PowerPoint deck.",
-    "longDescription": "Seven skills that work standalone or chained: slides is the light route, with a short grill, the story shown back as headers for approval, then the build and a check of fonts and colours; teach-slides onboards you to presentation craft; narrative shapes a vague idea into a tight deck story; build-deck renders an on-brand .pptx; slop-check audits a deck for generic, AI-flavoured slop; revise changes a rendered deck by conversation — syncing its spec, reconciling hand-edits, and re-rendering through the same gates. presentation-craft is the shared knowledge base behind all of them.",
+    "shortDescription": "From an idea and some notes to a finished, on-brand PowerPoint deck.",
+    "longDescription": "Asks a few short questions only you can answer, shows you the story as slide headers for approval, then builds the deck, with your brand's fonts and colours checked.",
     "developerName": "James Hemson",
     "category": "Productivity"
   }

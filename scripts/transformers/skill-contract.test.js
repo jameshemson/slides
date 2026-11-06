@@ -7,9 +7,7 @@ import { ROOT } from './utils.js';
 // Contract gate for the authored skill prompts in source/skills/. Asserts:
 //   - every source/skills/<skill>/SKILL.md carries `name` and `description`
 //     frontmatter fields;
-//   - prompt-size ceilings: presentation-craft/SKILL.md <= 210 lines, every
-//     command (user-invocable) SKILL.md <= 170 lines, and each
-//     presentation-craft/reference/*.md <= 190 lines.
+//   - a prompt-size ceiling: every SKILL.md <= 170 lines.
 //
 // Vacuous-pass guard (finding I-003): if the glob finds ZERO SKILL.md files,
 // this suite FAILS LOUDLY rather than passing silently — a missing source
@@ -17,11 +15,8 @@ import { ROOT } from './utils.js';
 
 const SKILLS_DIR = join(ROOT, 'source', 'skills');
 
-// Per-file hard line ceilings. Anything not listed here falls under the
-// generic command-skill ceiling (COMMAND_SKILL_LINE_LIMIT).
-const PRESENTATION_CRAFT_LINE_LIMIT = 210;
+// Hard line ceiling for a skill prompt.
 const COMMAND_SKILL_LINE_LIMIT = 170;
-const REFERENCE_LINE_LIMIT = 190;
 
 function lineCount(content) {
   return content.split('\n').length - (content.endsWith('\n') ? 1 : 0);
@@ -53,15 +48,6 @@ function findSkillMds() {
   return out;
 }
 
-// Discover every presentation-craft/reference/*.md.
-function findReferenceMds() {
-  const refDir = join(SKILLS_DIR, 'presentation-craft', 'reference');
-  if (!existsSync(refDir)) return [];
-  return readdirSync(refDir)
-    .filter((f) => f.endsWith('.md'))
-    .map((f) => ({ name: f, path: join(refDir, f) }));
-}
-
 const skillMds = findSkillMds();
 
 test('source/skills contains at least one SKILL.md (vacuous-pass guard)', () => {
@@ -91,23 +77,9 @@ test('SKILL.md prompts stay below hard line ceilings', () => {
   assert.ok(skillMds.length > 0, 'no SKILL.md files to check — see vacuous-pass guard');
   for (const { skill, path } of skillMds) {
     const lines = lineCount(readFileSync(path, 'utf8'));
-    const limit =
-      skill === 'presentation-craft'
-        ? PRESENTATION_CRAFT_LINE_LIMIT
-        : COMMAND_SKILL_LINE_LIMIT;
     assert.ok(
-      lines <= limit,
-      `${skill}/SKILL.md has ${lines} lines, exceeding hard ceiling ${limit}`,
-    );
-  }
-});
-
-test('presentation-craft reference files stay below hard line ceiling', () => {
-  for (const { name, path } of findReferenceMds()) {
-    const lines = lineCount(readFileSync(path, 'utf8'));
-    assert.ok(
-      lines <= REFERENCE_LINE_LIMIT,
-      `presentation-craft/reference/${name} has ${lines} lines, exceeding hard ceiling ${REFERENCE_LINE_LIMIT}`,
+      lines <= COMMAND_SKILL_LINE_LIMIT,
+      `${skill}/SKILL.md has ${lines} lines, exceeding hard ceiling ${COMMAND_SKILL_LINE_LIMIT}`,
     );
   }
 });

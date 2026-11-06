@@ -4,11 +4,38 @@ All notable changes to the slides skill pack are recorded here. The format
 follows [Keep a Changelog](https://keepachangelog.com/), and the pack uses
 [semantic versioning](https://semver.org/).
 
+## [0.22.0] - 2026-11-06
+
+One skill. `/slides:slides` is now the whole pack, and a general request for a
+deck has nothing else in the pack competing for it.
+
+### Removed
+
+- `teach-slides`, `narrative`, `build-deck`, `slop-check`, `revise` and
+  `presentation-craft`, with their scripts, reference files, command wrappers
+  and tests. All of it is still in the repo at the `v0.21.0` tag.
+
+### Compatibility
+
+- Existing `.slides/brand.json` files still work, because the brand check reads
+  their fonts and colours. They may list only part of a brand's palette, so the
+  check can flag colours the brand does allow. Add those to the file.
+- Decks built from a `.deck.md` spec have no renderer here any more. To change
+  an existing deck, ask for the change and the `pptx` skill edits the file.
+
+### Known limits
+
+- The skill has not yet been run end to end.
+- The pack no longer ships a renderer, so where Anthropic's `pptx` skill is
+  missing, which includes Codex and OpenCode, the build depends on what that tool
+  has. This is untested.
+- There is no longer a mechanical check of sizes, overlap or contrast, and no
+  audit for generic prose. Those rest on the `pptx` skill's own checks.
+
 ## [0.21.0] - 2026-11-06
 
 A lighter way in. James's read on the pack: it helped with the narrative and
-hurt the slides, and he had basically stopped using it. A blind test on three
-decks mostly backed that. On what he would actually use, plain Claude with
+hurt the slides. A blind test on three decks mostly backed that. On what he would actually use, plain Claude with
 Anthropic's `pptx` skill came first on two, a version composed freely from
 `narrative`'s story came first on the third, and the pack came first on none.
 The pack did lead on story on two decks and, narrowly, on looks on one. It was
