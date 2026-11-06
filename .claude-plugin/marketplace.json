@@ -10,8 +10,8 @@
   "plugins": [
     {
       "name": "slides",
-      "description": "A 6-skill pack for going from a vague idea to a finished, on-brand, slop-free .pptx deck. 5 user-invocable skills: teach-slides, narrative, build-deck, slop-check, revise.",
-      "version": "0.20.0",
+      "description": "A 7-skill pack for going from a vague idea to a finished, on-brand, slop-free .pptx deck. 6 user-invocable skills: slides (start here), teach-slides, narrative, build-deck, slop-check, revise.",
+      "version": "0.21.0",
       "author": {
         "name": "James Hemson"
       },

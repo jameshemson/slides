@@ -1,12 +1,13 @@
 # slides
 
-A skill pack that takes you from a vague idea to a finished, on-brand, slop-free PowerPoint deck. Six skills for Claude Code, Codex, and OpenCode — all six are portable across every harness.
+A skill pack that takes you from a vague idea to a finished, on-brand, slop-free PowerPoint deck. Seven skills for Claude Code, Codex, and OpenCode, and all seven are portable across every harness.
 
 ## Skills
 
 | Skill | What it does |
 |-------|-------------|
-| `presentation-craft` | Shared knowledge base on presentation craft. Not invoked directly — every other skill in the pack draws on it |
+| `/slides:slides` | **Start here.** The light route: a short grill on who the deck is for and what they should think, feel and do, the story shown back as headers for your approval, then the build with Anthropic's `pptx` skill and a check of fonts and colours against your brand |
+| `presentation-craft` | Shared knowledge base on presentation craft. Not invoked directly. The five skills of the full route draw on it |
 | `/slides:teach-slides` | Onboards you to presentation craft: narrative, structure, design, and how to avoid slop |
 | `/slides:narrative` | Shapes a vague idea into a tight, audience-aware deck story |
 | `/slides:build-deck` | Composes an on-brand `.pptx` deck as code from a narrative and your brand profile: a per-deck pptxgenjs script written under your design tokens, run inside Node's permission model, and gated by a mechanical lint (a template is optional; native charts included) |
@@ -36,7 +37,7 @@ codex plugin install slides/slides
 
 Or via repo-local discovery: copy the `.agents/` directory into your project so the final layout is `<your-project>/.agents/skills/<skill-name>/SKILL.md`. Codex picks it up automatically.
 
-All six skills are available in every harness. Unlike a typical orchestrated pack, no skill depends on Claude-only sub-agent or Task tooling, so nothing is excluded from OpenCode or Codex output.
+All seven skills are available in every harness. Unlike a typical orchestrated pack, no skill depends on Claude-only sub-agent or Task tooling, so nothing is excluded from OpenCode or Codex output.
 
 ## Requirements
 
@@ -57,6 +58,7 @@ On a managed macOS Python, add `--break-system-packages` to the `pip install`, o
 | `teach-slides` | ✓ | ✓ | ✓ |
 | `narrative` | ✓ | ✓ | ✓ |
 | `build-deck` | ✓ | ✓ | ✓ |
+| `slides` | ✓ | ✓ | ✓ |
 | `slop-check` | ✓ | ✓ | ✓ |
 | `revise` | ✓ | ✓ | ✓ |
 
@@ -64,7 +66,9 @@ See [HARNESSES.md](HARNESSES.md) for the full capability matrix and install stor
 
 ## How it works
 
-The pack moves an idea through five stages:
+**The light route.** `/slides:slides` does it in one go. It asks who the deck is for, whether it's presented or read, and what they should think, feel and do. It shows the story back as slide headers, and builds nothing until you approve them. Then it builds with Anthropic's `pptx` skill and checks the deck's fonts and colours against your brand. It needs python-pptx, and works best where the `pptx` skill is installed. Your brand is captured once, from a template or an on-brand deck, so every deck starts from the same file.
+
+**The full route.** The other skills move an idea through five stages:
 
 1. **Learn** — `/slides:teach-slides` grounds you in presentation craft: how to find the through-line, structure a deck, design slides that read, and recognise slop before it ships. It also captures your brand into a `.slides/` profile the other skills read; point it at a template or an existing deck and it reads your fonts and colours straight from that file rather than asking you to type them. And if `.slides/` is missing when you run `/slides:build-deck` or `/slides:narrative`, they offer to set up your brand from a template or deck in one step, so you are never left with an off-brand deck.
 2. **Shape** — `/slides:narrative` turns a vague brief into a concrete story: the audience, the one thing they should remember, the spine of the argument, and a slide-by-slide outline.
@@ -72,7 +76,7 @@ The pack moves an idea through five stages:
 4. **Check** — `/slides:slop-check` audits a finished deck for generic, AI-flavoured slop — hollow phrasing, filler bullets, decorative-but-empty visuals — and reports concrete fixes.
 5. **Revise** — `/slides:revise` closes the loop: point it at the rendered `.pptx`, hand-edit a title in PowerPoint or LibreOffice first if you want to see it work, and it names the edit before anything is overwritten — nothing gets clobbered without a yes. To try this yourself: render a deck, change one slide's title in PowerPoint, save, then run `/slides:revise deck.pptx` and confirm it reports the title as changed and asks whether to fold it into the spec before it re-renders.
 
-`presentation-craft` is the non-invocable knowledge base every other skill reads from. Editing craft guidance in one place keeps all five user-facing skills consistent.
+`presentation-craft` is the non-invocable knowledge base the full route reads from. Editing craft guidance in one place keeps all five user-facing skills consistent.
 
 Skill prompts are intentionally kept compact. Detailed craft guidance lives in reference files under `presentation-craft/reference/`, and `npm test` enforces hard line ceilings for the main skill prompts.
 

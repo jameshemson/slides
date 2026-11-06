@@ -30,10 +30,10 @@ class ScriptPathContractTest(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertTrue(os.path.isfile(path), f"missing {path}")
 
-    def test_version_is_0_20_0_everywhere(self):
+    def test_version_is_0_21_0_everywhere(self):
         for rel, getter in CARRIERS:
             with open(os.path.join(REPO_ROOT, rel), encoding="utf-8") as fh:
-                self.assertEqual(getter(json.load(fh)), "0.20.0", rel)
+                self.assertEqual(getter(json.load(fh)), "0.21.0", rel)
 
     def test_changelog_has_release(self):
         with open(os.path.join(REPO_ROOT, "CHANGELOG.md"), encoding="utf-8") as fh:
