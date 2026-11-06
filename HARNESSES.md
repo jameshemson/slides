@@ -1,6 +1,6 @@
 # Harness capability matrix
 
-This table is the authoritative reference for transformer decisions. Any new skill that depends on a row marked "No" for a given harness must be excluded from that harness's output. Today, none of the six slides skills do — all six are portable.
+This table is the authoritative reference for transformer decisions. Any new skill that depends on a row marked "No" for a given harness must be excluded from that harness's output. Today, none of the seven slides skills do, and all seven are portable.
 
 | Capability | Claude Code | OpenCode | Codex |
 | --- | --- | --- | --- |
@@ -11,6 +11,7 @@ This table is the authoritative reference for transformer decisions. Any new ski
 | Sub-agent / Task tools (`Agent`, `TaskCreate`, etc.) | Yes | No | No |
 | Per-skill `model` / `effort` / `context` frontmatter | Yes | No | No |
 | Per-skill `allowed-tools` frontmatter | Yes | No | No |
+| Runtime for `slides`: Python 3.9+ with python-pptx for its brand script. It builds with Anthropic's `pptx` skill where that is installed, and otherwise with whatever .pptx tooling the harness has | Yes | Yes | Yes |
 | Runtime for `build-deck`: Python 3.9+ with python-pptx (always); Node 22+ with pptxgenjs 4.0.1 for the default script path, run under `node --permission`, else the Python fallback | Yes | Yes | Yes |
 
 ## Skill availability
@@ -23,16 +24,17 @@ This table is the authoritative reference for transformer decisions. Any new ski
 | `build-deck` | Yes | Yes | Yes | Portable |
 | `slop-check` | Yes | Yes | Yes | Portable |
 | `revise` | Yes | Yes | Yes | Portable |
+| `slides` | Yes | Yes | Yes | Portable. Stands alone, without `presentation-craft`. Best where Anthropic's `pptx` skill is installed |
 
-All six skills run on every harness. No skill relies on Claude-only sub-agent or Task tooling, so no provider has an `exclude` list — every output tree contains the full six-skill set.
+All seven skills run on every harness. No skill relies on Claude-only sub-agent or Task tooling, so no provider has an `exclude` list — every output tree contains the full seven-skill set.
 
 ## OpenCode install story
 
-OpenCode reads both `.opencode/skills/` and `.claude/skills/`. This means opening this repo root directly in OpenCode produces duplicate entries for the five skills (one from each path).
+OpenCode reads both `.opencode/skills/` and `.claude/skills/`. This means opening this repo root directly in OpenCode produces duplicate entries for the skills (one from each path).
 
 **Supported OpenCode path**: copy this repo's `.opencode/` directory (including the leading dot) into the target project so the final layout is `<target-project>/.opencode/skills/<skill-name>/SKILL.md` and `<target-project>/.opencode/commands/<command-name>.md`. Do not flatten to `<target-project>/skills/` — OpenCode will not find skills there. Do not point OpenCode at this repo root directly (duplicate skills will appear).
 
-**Slash command bundle.** In addition to the five skills at `.opencode/skills/`, we ship four OpenCode slash commands at `.opencode/commands/` (`teach-slides.md`, `narrative.md`, `build-deck.md`, `slop-check.md`) — one per user-invocable skill. `presentation-craft` is a non-invocable knowledge base and has no command wrapper. Each command's body is a single `@.opencode/skills/<name>/SKILL.md` line — OpenCode resolves `@<path>` against the project worktree and inlines the file content at invocation time (verified against OpenCode `packages/opencode/src/session/prompt.ts`). Users invoke as `/narrative <task>` etc.; pass-through arguments become the skill's task input. Commands use flat (non-namespaced) names: collision with an unrelated local command in the user's project is possible and requires renaming one of the two.
+**Slash command bundle.** In addition to the skills at `.opencode/skills/`, we ship six OpenCode slash commands at `.opencode/commands/` (`slides.md`, `teach-slides.md`, `narrative.md`, `build-deck.md`, `slop-check.md`, `revise.md`) — one per user-invocable skill. `presentation-craft` is a non-invocable knowledge base and has no command wrapper. Each command's body is a single `@.opencode/skills/<name>/SKILL.md` line — OpenCode resolves `@<path>` against the project worktree and inlines the file content at invocation time (verified against OpenCode `packages/opencode/src/session/prompt.ts`). Users invoke as `/narrative <task>` etc.; pass-through arguments become the skill's task input. Commands use flat (non-namespaced) names: collision with an unrelated local command in the user's project is possible and requires renaming one of the two.
 
 ## Codex install story
 
@@ -47,9 +49,9 @@ codex plugin marketplace add jameshemson/slides
 codex plugin install slides/slides
 ```
 
-The marketplace manifest is at `.agents/plugins/marketplace.json`; the plugin manifest is at `plugins/slides/.codex-plugin/plugin.json`. Both are hand-authored and committed. All five skills ship in the plugin.
+The marketplace manifest is at `.agents/plugins/marketplace.json`; the plugin manifest is at `plugins/slides/.codex-plugin/plugin.json`. Both are hand-authored and committed. All seven skills ship in the plugin.
 
-A user who both clones the repo AND installs the plugin will see duplicate entries for the five skills. The two copies are byte-identical (enforced by a sandbox byte-equality test); behavior is the same, only the UI listing is noisier.
+A user who both clones the repo AND installs the plugin will see duplicate entries for the skills. The two copies are byte-identical (enforced by a sandbox byte-equality test); behavior is the same, only the UI listing is noisier.
 
 **Cross-harness skill bridge.** In addition to `.agents/skills/` (Codex CLI primary) and `plugins/slides/skills/` (Codex plugin package), this repo also emits `.codex/skills/`. Byte-identical to `.agents/skills/` (enforced by a 3-way sandbox byte-equality test — `codex` ↔ `codex-plugin` ↔ `codex-cross` share `codexRewrites` by reference). This path exists so cross-reading harnesses — notably Cursor, which documents `.codex/skills/` as a scan path — can discover the skills without additional configuration.
 

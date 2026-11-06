@@ -4,6 +4,45 @@ All notable changes to the slides skill pack are recorded here. The format
 follows [Keep a Changelog](https://keepachangelog.com/), and the pack uses
 [semantic versioning](https://semver.org/).
 
+## [0.21.0] - 2026-11-06
+
+A lighter way in. James's read on the pack: it helped with the narrative and
+hurt the slides, and he had basically stopped using it. A blind test on three
+decks mostly backed that. On what he would actually use, plain Claude with
+Anthropic's `pptx` skill came first on two, a version composed freely from
+`narrative`'s story came first on the third, and the pack came first on none.
+The pack did lead on story on two decks and, narrowly, on looks on one. It was
+one run each, so a direction rather than proof. This release adds a short route
+that keeps the thinking and leaves layout to the `pptx` skill. The full route is
+unchanged.
+
+### Added
+
+- **`/slides:slides`.** Three steps. A short grill: who it's for and where they
+  are now, presented or read, and what they should think, feel and do, in the
+  person's own words, because that thinking is theirs. The story shown back: the
+  one idea, a shape chosen to suit the deck (a story, a flow, a contrast, or tell
+  them, tell them, tell them), and the slide headers, with nothing built until
+  they are approved. The build: Anthropic's `pptx` skill, with the approved
+  headers word for word.
+- **`scripts/brand.py`.** `capture` reads the fonts and colours from a template's
+  theme into `.slides/brand.json` or `~/.slides/brand.json`, so every deck starts
+  from the same file. `check` holds a finished deck to them, reading through the
+  theme, and names anything off brand by slide. It looks at fonts and colours
+  only, not sizes, grid or layout.
+
+### Known limits
+
+- The skill has not yet been run end to end. This release is its first live
+  trial.
+- The intended build uses Anthropic's `pptx` skill. Where that is missing, the
+  skill says so and uses whatever the harness has, which is untested.
+- It sits alongside the full route, so `narrative` or `build-deck` may still pick
+  up a general request for a deck. Call `/slides:slides` by name.
+- `revise` has not been tried on decks built this way.
+- The brand check does not look inside pictures, and it can only be as good as
+  the brand file: anything the brand allows but the file leaves out gets flagged.
+
 ## [0.20.0] - 2026-09-02
 
 Composition by code. James's read on 0.19: the decks were bland and showed

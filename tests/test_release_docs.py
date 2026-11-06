@@ -1,4 +1,4 @@
-"""Content contract for the 0.20.0 docs and release carriers (composition by code)."""
+"""Content contract for the release docs and version carriers (0.21.0)."""
 import json
 import os
 import unittest
@@ -22,6 +22,9 @@ REQUIRED = [
     ("HARNESSES.md", "`revise`"),
     ("CLAUDE.md", "composing-in-code.md"),
     ("CHANGELOG.md", "## [0.20.0]"),
+    ("CHANGELOG.md", "## [0.21.0]"),
+    ("README.md", "/slides:slides"),
+    ("HARNESSES.md", "`slides`"),
 ]
 
 FORBIDDEN = [
@@ -37,10 +40,10 @@ def _read(rel):
 
 
 class ReleaseDocsTest(unittest.TestCase):
-    def test_carriers_read_0_20_0(self):
+    def test_carriers_read_0_21_0(self):
         for rel, getter in CARRIERS:
             with self.subTest(carrier=rel):
-                self.assertEqual(getter(json.loads(_read(rel))), "0.20.0")
+                self.assertEqual(getter(json.loads(_read(rel))), "0.21.0")
 
     def test_required_content(self):
         for rel, needle in REQUIRED:
