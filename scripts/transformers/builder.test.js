@@ -316,7 +316,7 @@ test('real source/skills: each provider emits expected skill set with no Claude-
   }
 });
 
-test('real source/commands: opencode emits exactly the six expected commands with @include bodies', () => {
+test('real source/commands: opencode emits exactly the expected commands with @include bodies', () => {
   cpSync(join(ROOT, 'source/skills'), join(sandbox, 'source/skills'), {
     recursive: true,
   });
@@ -333,7 +333,7 @@ test('real source/commands: opencode emits exactly the six expected commands wit
   const emitted = readdirSync(join(sandbox, '.opencode/commands')).sort();
   assert.deepEqual(
     emitted,
-    ['build-deck.md', 'narrative.md', 'revise.md', 'slides.md', 'slop-check.md', 'teach-slides.md'],
+    ['slides.md'],
     `Unexpected command file set: ${JSON.stringify(emitted)}`,
   );
 

@@ -13,20 +13,11 @@ const opencodeCommandsDir = join(ROOT, '.opencode/commands');
 const sourceCommandsDir = join(ROOT, 'source/commands');
 const sourceSkillsDir = join(ROOT, 'source/skills');
 
-// All seven slides skills are portable — no provider excludes any of them.
-const PORTABLE_SKILLS = [
-  'build-deck',
-  'narrative',
-  'presentation-craft',
-  'revise',
-  'slides',
-  'slop-check',
-  'teach-slides',
-];
+// The skill is portable: no provider excludes it.
+const PORTABLE_SKILLS = ['slides'];
 
-// The six user-invocable skills have OpenCode command wrappers;
-// presentation-craft is a non-invocable knowledge base and has none.
-const COMMAND_SKILLS = ['build-deck', 'narrative', 'revise', 'slides', 'slop-check', 'teach-slides'];
+// The user-invocable skill has an OpenCode command wrapper.
+const COMMAND_SKILLS = ['slides'];
 
 function readDescription(mdPath) {
   const content = readFileSync(mdPath, 'utf8');
@@ -99,7 +90,7 @@ test('plugins/slides/skills directory exists', () => {
   assert.ok(statSync(codexSkillsDir).isDirectory());
 });
 
-test('plugins/slides/skills contains exactly the seven portable skills', () => {
+test('plugins/slides/skills contains exactly the portable skills', () => {
   const entries = readdirSync(codexSkillsDir).sort();
   assert.deepEqual(entries, PORTABLE_SKILLS);
 });
@@ -138,12 +129,12 @@ test('Codex marketplace category is a non-empty string', () => {
   assert.ok(market.plugins[0].category.length > 0);
 });
 
-test('.codex/skills/ contains exactly the seven portable skills', () => {
+test('.codex/skills/ contains exactly the portable skills', () => {
   const entries = readdirSync(codexCrossSkillsDir).sort();
   assert.deepEqual(entries, PORTABLE_SKILLS);
 });
 
-test('.opencode/commands/ contains exactly the six expected command files', () => {
+test('.opencode/commands/ contains exactly the expected command files', () => {
   const entries = readdirSync(opencodeCommandsDir).sort();
   assert.deepEqual(
     entries,
@@ -168,11 +159,8 @@ test('each source/commands/*.md description matches the corresponding source/ski
 
 test('source/commands/ name set matches the user-invocable skill name set', () => {
   // Parity gate: if a contributor renames a user-invocable skill but forgets
-  // to rename its command wrapper, this test fires. presentation-craft is a
-  // non-invocable knowledge base and is excluded from the command set.
-  const skillNames = readdirSync(sourceSkillsDir)
-    .filter((n) => !['presentation-craft'].includes(n))
-    .sort();
+  // to rename its command wrapper, this test fires.
+  const skillNames = readdirSync(sourceSkillsDir).sort();
   const commandNames = readdirSync(sourceCommandsDir)
     .filter((f) => f.endsWith('.md'))
     .map((f) => f.replace(/\.md$/, ''))
@@ -180,6 +168,6 @@ test('source/commands/ name set matches the user-invocable skill name set', () =
   assert.deepEqual(
     commandNames,
     skillNames,
-    'source/commands/ must have one .md file per user-invocable skill (presentation-craft is non-invocable and excluded)',
+    'source/commands/ must have one .md file per user-invocable skill',
   );
 });

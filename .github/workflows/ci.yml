@@ -30,7 +30,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install Python dependencies
-        run: pip install python-pptx matplotlib
+        run: pip install python-pptx
 
       - name: Run Python test suite
         run: python3 -m unittest discover tests
