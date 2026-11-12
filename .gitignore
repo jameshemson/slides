@@ -10,3 +10,4 @@ __pycache__/
 notes/
 PLAN.md
 .claude/settings.local.json
+.impeccable/
